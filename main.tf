@@ -1,12 +1,18 @@
 data "ibm_is_security_group" "clustersg" {
-  count = var.deploy_dsc ? 1 : 0
+  count = var.add_dsc_rules_to_cluster_sg ? 1 : 0
   name  = "kube-${var.cluster_id}"
 }
+
+data "ibm_container_vpc_cluster" "cluster" {
+  name              = var.cluster_id
+  resource_group_id = var.cluster_resource_group_id
+}
+
 module "dsc_sg_rule" {
-  count                        = var.deploy_dsc ? 1 : 0
+  count                        = var.add_dsc_rules_to_cluster_sg ? 1 : 0
   source                       = "terraform-ibm-modules/security-group/ibm"
   version                      = "v2.8.0"
-  resource_group               = var.resource_group
+  resource_group               = var.cluster_resource_group_id
   existing_security_group_name = "kube-${var.cluster_id}"
   use_existing_security_group  = true
   security_group_rules = [
@@ -49,47 +55,37 @@ module "dsc_sg_rule" {
   ]
 }
 
-resource "kubernetes_namespace" "dsc" {
-  count = var.deploy_dsc && var.dsc.create_namespace ? 1 : 0
-  metadata {
-    name = var.dsc.namespace
-  }
-}
-
-resource "helm_release" "dsc_chart" {
-  count      = var.deploy_dsc ? 1 : 0
-  name       = var.dsc.release_name
-  chart      = var.dsc.chart_name
-  repository = var.dsc.chart_repository
-  namespace  = var.dsc.namespace
-  version    = var.dsc.chart_version
-  timeout    = var.dsc.timeout
+resource "helm_release" "data_source_connector" {
+  depends_on       = [module.dsc_sg_rule]
+  name             = var.dsc_name
+  chart            = var.dsc_chart
+  repository       = var.dsc_chart_location
+  namespace        = var.dsc_namespace
+  version          = var.dsc_chart_version
+  create_namespace = true
+  timeout          = 1200
+  wait             = true
   values = [
     yamlencode({
       secrets = {
-        registrationToken = var.dsc.registration_token
+        registrationToken = var.dsc_registration_token
       }
       image = {
-        namespace  = var.dsc.image.namespace
-        repository = var.dsc.image.repository
-        tag        = var.dsc.image.tag
-        pullPolicy = var.dsc.image.pullPolicy
+        namespace  = element(split("/", var.dsc_image), 1)
+        repository = "${element(split("/", var.dsc_image), 2)}/${element(split("/", var.dsc_image), 3)}"
+        tag        = var.dsc_image_version_tag
       }
-      replicaCount     = var.dsc.replica_count
-      fullnameOverride = var.dsc.release_name
+      replicaCount     = var.dsc_replicas
+      fullnameOverride = var.dsc_name
     })
-  ]
-
-  depends_on = [
-    module.dsc_sg_rule,
-    kubernetes_namespace.dsc
   ]
 }
 
 resource "kubernetes_service_account" "brsagent" {
+  depends_on = [helm_release.data_source_connector]
   metadata {
     name      = "brsagent"
-    namespace = "default"
+    namespace = var.dsc_namespace
   }
 }
 
@@ -107,7 +103,7 @@ resource "kubernetes_cluster_role_binding" "brsagent_admin" {
   subject {
     kind      = "ServiceAccount"
     name      = kubernetes_service_account.brsagent.metadata[0].name
-    namespace = "default"
+    namespace = var.dsc_namespace
   }
 }
 
@@ -115,7 +111,7 @@ resource "kubernetes_cluster_role_binding" "brsagent_admin" {
 resource "kubernetes_secret" "brsagent_token" {
   metadata {
     name      = "brsagent-token"
-    namespace = "default"
+    namespace = var.dsc_namespace
     annotations = {
       "kubernetes.io/service-account.name" = kubernetes_service_account.brsagent.metadata[0].name
     }
@@ -125,32 +121,32 @@ resource "kubernetes_secret" "brsagent_token" {
 }
 
 resource "ibm_backup_recovery_source_registration" "source_registration" {
-  x_ibm_tenant_id = var.brsintance.tenant_id
+  x_ibm_tenant_id = var.brs_tenant_id
   environment     = "kKubernetes"
   connection_id   = var.connection_id
-  name            = var.registration.name
+  name            = var.registration_name
   kubernetes_params {
-    endpoint                               = var.registration.cluster.endpoint
-    kubernetes_distribution                = var.registration.cluster.distribution
-    data_mover_image_location              = var.registration.cluster.images.data_mover
-    velero_image_location                  = var.registration.cluster.images.velero
-    velero_aws_plugin_image_location       = var.registration.cluster.images.velero_aws_plugin
-    velero_openshift_plugin_image_location = var.registration.cluster.images.velero_openshift_plugin
-    init_container_image_location          = var.registration.cluster.images.init_container
+    endpoint                               = var.cluster_config_endpoint_type == "private" || data.ibm_container_vpc_cluster.cluster.private_service_endpoint ? data.ibm_container_vpc_cluster.cluster.private_service_endpoint_url : data.ibm_container_vpc_cluster.cluster.public_service_endpoint_url
+    kubernetes_distribution                = var.kube_type == "ROKS" ? "kROKS" : "kIKS"
+    data_mover_image_location              = var.registration_images.data_mover
+    velero_image_location                  = var.registration_images.velero
+    velero_aws_plugin_image_location       = var.registration_images.velero_aws_plugin
+    velero_openshift_plugin_image_location = var.registration_images.velero_openshift_plugin
+    init_container_image_location          = var.registration_images.init_container
+    kubernetes_type                        = "kCluster"
     client_private_key                     = chomp(kubernetes_secret.brsagent_token.data["token"])
   }
-  endpoint_type = var.brsintance.endpoint_type
-  instance_id   = var.brsintance.guid
-  region        = var.brsintance.region
-  depends_on    = [kubernetes_secret.brsagent_token]
+  endpoint_type = var.brs_endpoint_type
+  instance_id   = var.brs_instance_guid
+  region        = var.brs_instance_region
 }
 
 resource "ibm_backup_recovery_protection_policy" "protection_policy" {
-  x_ibm_tenant_id = var.brsintance.tenant_id
+  x_ibm_tenant_id = var.brs_tenant_id
   name            = var.policy.name
-  endpoint_type   = var.brsintance.endpoint_type
-  instance_id     = var.brsintance.guid
-  region          = var.brsintance.region
+  endpoint_type   = var.brs_endpoint_type
+  instance_id     = var.brs_instance_guid
+  region          = var.brs_instance_region
   backup_policy {
     regular {
       incremental {

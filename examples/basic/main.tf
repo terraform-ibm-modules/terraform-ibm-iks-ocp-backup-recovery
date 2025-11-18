@@ -108,60 +108,27 @@ module "backup_recovery_instance" {
 
 
 module "backup_recover_protect_ocp" {
-  source         = "../.."
-  resource_group = var.resource_group
-  # --- DSC Helm Chart ---
-  dsc = {
-    release_name       = "dsc"
-    chart_name         = "cohesity-dsc-chart"
-    chart_repository   = "oci://icr.io/ext/brs/"
-    namespace          = "dsc"
-    create_namespace   = true
-    chart_version      = "7.2.15-release-20250721-6aa24701"
-    registration_token = module.backup_recovery_instance.registration_token
-    replica_count      = 1
-    timeout            = 1800
-
-    image = {
-      namespace  = "ext"
-      repository = "brs/cohesity-data-source-connector_7.2.15-release-20250721"
-      tag        = "6aa24701"
-      pullPolicy = "IfNotPresent"
-    }
-  }
-
+  source                    = "../.."
+  cluster_id                = module.ocp_base.cluster_id
+  cluster_resource_group_id = module.resource_group.resource_group_id
+  dsc_registration_token    = module.backup_recovery_instance.registration_token
+  kube_type                 = "ROKS"
+  connection_id             = module.backup_recovery_instance.connection_id
   # --- B&R Instance ---
-  brsintance = {
-    guid          = module.backup_recovery_instance.brs_instance_guid
-    region        = var.region
-    endpoint_type = "public"
-    tenant_id     = module.backup_recovery_instance.tenant_id
+  brs_instance_guid   = module.backup_recovery_instance.brs_instance_guid
+  brs_instance_region = var.region
+  brs_endpoint_type   = "public"
+  brs_tenant_id       = module.backup_recovery_instance.tenant_id
+  registration_name   = module.ocp_base.cluster_name
+  registration_images = {
+    data_mover              = "icr.io/ext/brs/cohesity-datamover:7.2.15-p2"
+    velero                  = "icr.io/ext/brs/velero:7.2.15-p2"
+    velero_aws_plugin       = "icr.io/ext/brs/velero-plugin-for-aws:7.2.15-p2"
+    velero_openshift_plugin = "icr.io/ext/brs/velero-plugin-for-openshift:7.2.15-p2"
   }
-
-  # --- Cluster Registration ---
-  cluster_id    = module.ocp_base.cluster_id
-  connection_id = module.backup_recovery_instance.connection_id
-
-  registration = {
-    name = module.ocp_base.cluster_name
-    cluster = {
-      resource_group_id = module.resource_group.resource_group_id
-      endpoint          = module.ocp_base.private_service_endpoint_url
-      distribution      = "kROKS"
-      images = {
-        data_mover              = "icr.io/ext/brs/cohesity-datamover:7.2.15-p2"
-        velero                  = "icr.io/ext/brs/velero:7.2.15-p2"
-        velero_aws_plugin       = "icr.io/ext/brs/velero-plugin-for-aws:7.2.15-p2"
-        velero_openshift_plugin = "icr.io/ext/brs/velero-plugin-for-openshift:7.2.15-p2"
-        init_container          = ""
-      }
-    }
-  }
-
   # --- Backup Policy ---
   policy = {
     name = "daily-with-weekly-lock"
-
     schedule = {
       unit      = "Hours"
       frequency = 6
@@ -170,12 +137,10 @@ module "backup_recover_protect_ocp" {
         day_of_week = ["Sunday"]
       }
     }
-
     retention = {
       duration = 4
       unit     = "Weeks"
     }
-
     use_default_backup_target = true
   }
 }
