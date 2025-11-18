@@ -59,59 +59,59 @@ variable "kube_type" {
 # }
 
 ##############################################################################
-# Data Source Connector
+# Data Source Connector (BRS)
 ##############################################################################
 
 variable "add_dsc_rules_to_cluster_sg" {
   type        = bool
-  description = "Set to true to deploy the BRS DSC via Helm. Set to false to only register the cluster and create policy."
+  description = "Set to true to automatically add required security group rules for the Data Source Connector. Set to false to only register the cluster and create the policy."
   default     = true
 }
 
 variable "dsc_chart" {
-  description = "The name of the Helm chart to deploy."
+  description = "Name of the Data Source Connector Helm chart."
   type        = string
-  default     = "cohesity-dsc-chart" # Replace with the actual chart name if different
+  default     = "cohesity-dsc-chart"
   nullable    = false
 }
 
 variable "dsc_chart_location" {
-  description = "The location of the Logs agent helm chart."
+  description = "OCI registry location of the Data Source Connector Helm chart."
   type        = string
   default     = "oci://icr.io/ext/brs" # Public registry - no authentication required
   nullable    = false
 }
 
 variable "dsc_chart_version" {
-  description = "The version of the Helm chart to deploy."
+  description = "Version of the Data Source Connector Helm chart to deploy."
   type        = string
-  default     = "7.2.15-release-20250721-6aa24701" # datasource: icr.io/ext/brs/cohesity-charts
+  default     = "7.2.15-release-20250721-6aa24701"
   nullable    = false
 }
 
 variable "dsc_image" {
-  description = "The version of the Logs agent image to deploy."
+  description = "Container image for the Data Source Connector."
   type        = string
-  default     = "icr.io/ext/brs/cohesity-data-source-connector_7.2.15-release-20250721" # datasource: icr.io/ext/brs/cohesity-data-source-connector
+  default     = "icr.io/ext/brs/cohesity-data-source-connector_7.2.15-release-20250721"
   nullable    = false
 }
 
 variable "dsc_image_version_tag" {
-  description = "The version of the Logs agent image to deploy."
+  description = "Image tag for the Data Source Connector container."
   type        = string
-  default     = "6aa24701" # datasource: icr.io/ext/brs/cohesity-data-source-connector
+  default     = "6aa24701"
   nullable    = false
 }
 
 variable "dsc_name" {
-  description = "The name of the Logs agent. The name is used in all Kubernetes and Helm resources in the cluster."
+  description = "Release name for the Data Source Connector Helm deployment."
   type        = string
   default     = "dsc"
   nullable    = false
 }
 
 variable "dsc_replicas" {
-  description = "The name of the Logs agent. The name is used in all Kubernetes and Helm resources in the cluster."
+  description = "Number of Data Source Connector pods to run (typically 1)."
   type        = number
   default     = 1
   nullable    = false
@@ -119,16 +119,16 @@ variable "dsc_replicas" {
 
 variable "dsc_namespace" {
   type        = string
-  description = "The namespace where the Logs agent is deployed. The default value is `ibm-observe`."
+  description = "Kubernetes namespace where the Data Source Connector will be installed. Will be created if it does not exist."
   default     = "data-source-connector"
   nullable    = false
 }
 
 variable "dsc_registration_token" {
   type        = string
-  description = "The namespace where the Logs agent is deployed. The default value is `ibm-observe`."
-  nullable    = false
+  description = "Registration token generated in the Backup & Recovery Service UI when adding a Kubernetes data source."
   sensitive   = true
+  nullable    = false
 }
 
 ##############################################################################

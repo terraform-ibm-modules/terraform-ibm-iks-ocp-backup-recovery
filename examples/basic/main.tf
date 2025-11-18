@@ -128,14 +128,10 @@ module "backup_recover_protect_ocp" {
   }
   # --- Backup Policy ---
   policy = {
-    name = "daily-with-weekly-lock"
+    name = "daily-with-monthly-retention"
     schedule = {
       unit      = "Hours"
-      frequency = 6
-      # Optional layered schedule
-      week_schedule = {
-        day_of_week = ["Sunday"]
-      }
+      frequency = 24
     }
     retention = {
       duration = 4

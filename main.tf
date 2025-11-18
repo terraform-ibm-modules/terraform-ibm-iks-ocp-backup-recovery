@@ -63,7 +63,7 @@ resource "helm_release" "data_source_connector" {
   namespace        = var.dsc_namespace
   version          = var.dsc_chart_version
   create_namespace = true
-  timeout          = 1200
+  timeout          = 1500
   wait             = true
   values = [
     yamlencode({
