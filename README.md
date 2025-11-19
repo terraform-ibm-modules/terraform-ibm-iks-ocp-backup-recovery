@@ -50,13 +50,13 @@ terraform {
 }
 
 provider "ibm" {
-  ibmcloud_api_key = "your-api-key-here" # pragma: allowlist secret
+  ibmcloud_api_key = "xxXXxxXXxXxXXXXxxXxxxXXXXxXXXXX" # pragma: allowlist secret
   region           = "us-south"
 }
 
 module "backup_recovery" {
   source  = "terraform-ibm-modules/iks-ocp-backup-recovery/ibm"
-  version = "1.0.0"  # Use latest release
+  version = "X.Y.Z"  # Replace "X.Y.Z" with a release version to lock into a specific release
 
   # --- DSC Helm Chart ---
   dsc = {
@@ -66,7 +66,7 @@ module "backup_recovery" {
     namespace          = "cohesity-dsc"
     create_namespace   = true
     chart_version      = "7.2.15"
-    registration_token = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+    registration_token = "XXXXxxXXxxXXxXxXXXXxxXxxxXXXXxXXXXX"
     replica_count      = 1
     timeout            = 1800
 
@@ -80,22 +80,23 @@ module "backup_recovery" {
 
   # --- B&R Instance ---
   brsintance = {
-    guid          = "6B29FC40-CA47-1067-B31D-00DD010662DA"
+    guid          = "xxXXxxXXxXxXXXXxxXxxxXXXXxXXXXX"
     region        = "us-south"
     endpoint_type = "public"
     tenant_id     = "tenant-67890"
   }
 
   # --- Cluster Registration ---
+  cluster_id    = "c123XXXXXXXXXXXXxxxxXXXXXxxxxcdef" # pragma: allowlist secret
   cluster_id    = "c1234567890abcdef1234567890abcdef" # pragma: allowlist secret
   connection_id = "conn-12345"
 
   registration = {
     name = "my-iks-cluster"
     cluster = {
-      id                = "c1234567890abcdef1234567890abcdef" # pragma: allowlist secret
-      resource_group_id = "rg-12345"
-      endpoint          = "c1234567890abcdef1234567890abcdef.us-south.containers.cloud.ibm.com"
+      id                = "c123XXXXXXXXXXXXxxxxXXXXXxxxxcdef" # pragma: allowlist secret
+      resource_group_id = "xxXXxxXXxxXXXXxxxxxxXXXXX"
+      endpoint          = "c123XXXXXXXXXXXXxxxxXXXXXxxxxcdef.us-south.containers.cloud.ibm.com"
       distribution      = "IKS"
       images = {
         data_mover              = "icr.io/cohesity/data-mover:7.2.15"
@@ -185,27 +186,27 @@ You need the following permissions to run this module:
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| <a name="input_add_dsc_rules_to_cluster_sg"></a> [add\_dsc\_rules\_to\_cluster\_sg](#input\_add\_dsc\_rules\_to\_cluster\_sg) | Set to true to deploy the BRS DSC via Helm. Set to false to only register the cluster and create policy. | `bool` | `true` | no |
+| <a name="input_add_dsc_rules_to_cluster_sg"></a> [add\_dsc\_rules\_to\_cluster\_sg](#input\_add\_dsc\_rules\_to\_cluster\_sg) | Set to `true` to automatically add required security group rules for the Data Source Connector and set to `false` to only register the cluster and create the policy. | `bool` | `true` | no |
 | <a name="input_brs_endpoint_type"></a> [brs\_endpoint\_type](#input\_brs\_endpoint\_type) | The endpoint type to use when connecting to the Backup and Recovery service for creating a data source connection. Allowed values are 'public' or 'private'. | `string` | `"public"` | no |
 | <a name="input_brs_instance_guid"></a> [brs\_instance\_guid](#input\_brs\_instance\_guid) | GUID of the Backup & Recovery Service instance. | `string` | n/a | yes |
 | <a name="input_brs_instance_region"></a> [brs\_instance\_region](#input\_brs\_instance\_region) | Region of the Backup & Recovery Service instance. | `string` | n/a | yes |
 | <a name="input_brs_tenant_id"></a> [brs\_tenant\_id](#input\_brs\_tenant\_id) | BRS tenant ID in the format `<tenant-guid>/`. Required for API calls and agent configuration. | `string` | n/a | yes |
 | <a name="input_cluster_config_endpoint_type"></a> [cluster\_config\_endpoint\_type](#input\_cluster\_config\_endpoint\_type) | The type of endpoint to use for the cluster config access: `default`, `private`, `vpe`, or `link`. The `default` value uses the default endpoint of the cluster. | `string` | `"default"` | no |
 | <a name="input_cluster_id"></a> [cluster\_id](#input\_cluster\_id) | The ID of the cluster to deploy the agent. | `string` | n/a | yes |
-| <a name="input_cluster_resource_group_id"></a> [cluster\_resource\_group\_id](#input\_cluster\_resource\_group\_id) | The resource group ID of the cluster. | `string` | n/a | yes |
+| <a name="input_cluster_resource_group_id"></a> [cluster\_resource\_group\_id](#input\_cluster\_resource\_group\_id) | Resource group ID the cluster is deployed in. | `string` | n/a | yes |
 | <a name="input_connection_id"></a> [connection\_id](#input\_connection\_id) | Connection ID for the backup service | `string` | n/a | yes |
-| <a name="input_dsc_chart"></a> [dsc\_chart](#input\_dsc\_chart) | The name of the Helm chart to deploy. | `string` | `"cohesity-dsc-chart"` | no |
-| <a name="input_dsc_chart_location"></a> [dsc\_chart\_location](#input\_dsc\_chart\_location) | The location of the Logs agent helm chart. | `string` | `"oci://icr.io/ext/brs"` | no |
-| <a name="input_dsc_chart_version"></a> [dsc\_chart\_version](#input\_dsc\_chart\_version) | The version of the Helm chart to deploy. | `string` | `"7.2.15-release-20250721-6aa24701"` | no |
-| <a name="input_dsc_image"></a> [dsc\_image](#input\_dsc\_image) | The version of the Logs agent image to deploy. | `string` | `"icr.io/ext/brs/cohesity-data-source-connector_7.2.15-release-20250721"` | no |
-| <a name="input_dsc_image_version_tag"></a> [dsc\_image\_version\_tag](#input\_dsc\_image\_version\_tag) | The version of the Logs agent image to deploy. | `string` | `"6aa24701"` | no |
-| <a name="input_dsc_name"></a> [dsc\_name](#input\_dsc\_name) | The name of the Logs agent. The name is used in all Kubernetes and Helm resources in the cluster. | `string` | `"dsc"` | no |
-| <a name="input_dsc_namespace"></a> [dsc\_namespace](#input\_dsc\_namespace) | The namespace where the Logs agent is deployed. The default value is `ibm-observe`. | `string` | `"data-source-connector"` | no |
-| <a name="input_dsc_registration_token"></a> [dsc\_registration\_token](#input\_dsc\_registration\_token) | The namespace where the Logs agent is deployed. The default value is `ibm-observe`. | `string` | n/a | yes |
-| <a name="input_dsc_replicas"></a> [dsc\_replicas](#input\_dsc\_replicas) | The name of the Logs agent. The name is used in all Kubernetes and Helm resources in the cluster. | `number` | `1` | no |
-| <a name="input_kube_type"></a> [kube\_type](#input\_kube\_type) | Specify true if the target cluster for the agent is a VPC cluster, false if it is a classic cluster. | `string` | `"ROKS"` | no |
-| <a name="input_policy"></a> [policy](#input\_policy) | IBM Backup & Recovery Protection Policy – fully validated | <pre>object({<br/>    name = string<br/>    schedule = object({<br/>      unit      = string # Minutes, Hours, Days, Weeks, Months, Years, Runs<br/>      frequency = number # required when unit is Minutes/Hours/Days<br/><br/>      # Optional extra layers (allowed even when unit = Minutes)<br/>      minute_schedule = optional(object({ frequency = number }))<br/>      hour_schedule   = optional(object({ frequency = number }))<br/>      day_schedule    = optional(object({ frequency = number }))<br/>      week_schedule   = optional(object({ day_of_week = list(string) }))<br/>      month_schedule = optional(object({<br/>        day_of_week   = optional(list(string))<br/>        week_of_month = optional(string) # First, Second, Third, Fourth, Last<br/>        day_of_month  = optional(number)<br/>      }))<br/>      year_schedule = optional(object({ day_of_year = string })) # First, Last<br/>    })<br/><br/>    retention = object({<br/>      duration = number<br/>      unit     = string # Days, Weeks, Months, Years<br/><br/>      data_lock_config = optional(object({<br/>        mode                           = string # Compliance, Administrative<br/>        unit                           = string # Days, Weeks, Months, Years<br/>        duration                       = number<br/>        enable_worm_on_external_target = optional(bool, false)<br/>      }))<br/>    })<br/><br/>    use_default_backup_target = optional(bool, true)<br/>  })</pre> | n/a | yes |
-| <a name="input_registration_images"></a> [registration\_images](#input\_registration\_images) | value | <pre>object({<br/>    data_mover              = optional(string, null)<br/>    velero                  = optional(string, null)<br/>    velero_aws_plugin       = optional(string, null)<br/>    velero_openshift_plugin = optional(string, null)<br/>    init_container          = optional(string, null)<br/>  })</pre> | `{}` | no |
+| <a name="input_dsc_chart"></a> [dsc\_chart](#input\_dsc\_chart) | Name of the Data Source connector Helm chart. | `string` | `"cohesity-dsc-chart"` | no |
+| <a name="input_dsc_chart_location"></a> [dsc\_chart\_location](#input\_dsc\_chart\_location) | OCI registry location of the Data Source Connector Helm chart. | `string` | `"oci://icr.io/ext/brs"` | no |
+| <a name="input_dsc_chart_version"></a> [dsc\_chart\_version](#input\_dsc\_chart\_version) | Version of the Data Source Connector Helm chart to deploy. | `string` | `"7.2.15-release-20250721-6aa24701"` | no |
+| <a name="input_dsc_image"></a> [dsc\_image](#input\_dsc\_image) | Container image for the Data Source Connector. | `string` | `"icr.io/ext/brs/cohesity-data-source-connector_7.2.15-release-20250721"` | no |
+| <a name="input_dsc_image_version_tag"></a> [dsc\_image\_version\_tag](#input\_dsc\_image\_version\_tag) | Image tag for the Data Source Connector container. | `string` | `"6aa24701"` | no |
+| <a name="input_dsc_name"></a> [dsc\_name](#input\_dsc\_name) | Release name for the Data Source Connector Helm deployment. | `string` | `"dsc"` | no |
+| <a name="input_dsc_namespace"></a> [dsc\_namespace](#input\_dsc\_namespace) | Kubernetes namespace where the Data Source Connector will be installed. Will be created if it does not exist. | `string` | `"data-source-connector"` | no |
+| <a name="input_dsc_registration_token"></a> [dsc\_registration\_token](#input\_dsc\_registration\_token) | Registration token generated in the Backup & Recovery Service UI when adding a Kubernetes data source. | `string` | n/a | yes |
+| <a name="input_dsc_replicas"></a> [dsc\_replicas](#input\_dsc\_replicas) | Number of Data Source Connector pods to run (typically 1). | `number` | `1` | no |
+| <a name="input_kube_type"></a> [kube\_type](#input\_kube\_type) | Specify the type of target cluster for the agent. Accepted values are `ROKS` or `IKS`. | `string` | `"ROKS"` | no |
+| <a name="input_policy"></a> [policy](#input\_policy) | IBM Backup & Recovery Protection Policy - fully validated | <pre>object({<br/>    name = string<br/>    schedule = object({<br/>      unit      = string # Minutes, Hours, Days, Weeks, Months, Years, Runs<br/>      frequency = number # required when unit is Minutes/Hours/Days<br/><br/>      # Optional extra layers (allowed even when unit = Minutes)<br/>      minute_schedule = optional(object({ frequency = number }))<br/>      hour_schedule   = optional(object({ frequency = number }))<br/>      day_schedule    = optional(object({ frequency = number }))<br/>      week_schedule   = optional(object({ day_of_week = list(string) }))<br/>      month_schedule = optional(object({<br/>        day_of_week   = optional(list(string))<br/>        week_of_month = optional(string) # First, Second, Third, Fourth, Last<br/>        day_of_month  = optional(number)<br/>      }))<br/>      year_schedule = optional(object({ day_of_year = string })) # First, Last<br/>    })<br/><br/>    retention = object({<br/>      duration = number<br/>      unit     = string # Days, Weeks, Months, Years<br/><br/>      data_lock_config = optional(object({<br/>        mode                           = string # Compliance, Administrative<br/>        unit                           = string # Days, Weeks, Months, Years<br/>        duration                       = number<br/>        enable_worm_on_external_target = optional(bool, false)<br/>      }))<br/>    })<br/><br/>    use_default_backup_target = optional(bool, true)<br/>  })</pre> | n/a | yes |
+| <a name="input_registration_images"></a> [registration\_images](#input\_registration\_images) | Registration image | <pre>object({<br/>    data_mover              = optional(string, null)<br/>    velero                  = optional(string, null)<br/>    velero_aws_plugin       = optional(string, null)<br/>    velero_openshift_plugin = optional(string, null)<br/>    init_container          = optional(string, null)<br/>  })</pre> | `{}` | no |
 | <a name="input_registration_name"></a> [registration\_name](#input\_registration\_name) | Name of the registration. | `string` | n/a | yes |
 
 ### Outputs
