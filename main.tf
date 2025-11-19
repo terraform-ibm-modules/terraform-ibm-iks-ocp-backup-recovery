@@ -90,7 +90,6 @@ resource "kubernetes_service_account" "brsagent" {
 }
 
 # Create a cluster role binding for the service account
-# TODO: Least-privilege ClusterRole
 resource "kubernetes_cluster_role_binding" "brsagent_admin" {
   metadata {
     name = "brsagent-admin"

@@ -9,7 +9,7 @@ variable "cluster_id" {
 
 variable "cluster_resource_group_id" {
   type        = string
-  description = "The resource group ID of the cluster."
+  description = "Resource group ID the cluster is deployed in."
 }
 
 variable "cluster_config_endpoint_type" {
@@ -24,39 +24,19 @@ variable "cluster_config_endpoint_type" {
 }
 
 variable "kube_type" {
-  description = "Specify true if the target cluster for the agent is a VPC cluster, false if it is a classic cluster."
+  description = "Specify the type of target cluster for the agent. Accepted values are `ROKS` or `IKS`."
   type        = string
   default     = "ROKS"
+
   validation {
     condition = contains([
       "ROKS",
       "IKS",
     ], var.kube_type)
-    error_message = "Accepted values are : ROKS or IKS"
+    error_message = "Accepted values are: ROKS or IKS."
   }
 }
 
-# variable "wait_till" {
-#   description = "To avoid long wait times when you run your Terraform code, you can specify the stage when you want Terraform to mark the cluster resource creation as completed. Depending on what stage you choose, the cluster creation might not be fully completed and continues to run in the background. However, your Terraform code can continue to run without waiting for the cluster to be fully created. Supported args are `MasterNodeReady`, `OneWorkerNodeReady`, `IngressReady` and `Normal`"
-#   type        = string
-#   default     = "Normal"
-
-#   validation {
-#     error_message = "`wait_till` value must be one of `MasterNodeReady`, `OneWorkerNodeReady`, `IngressReady` or `Normal`."
-#     condition = contains([
-#       "MasterNodeReady",
-#       "OneWorkerNodeReady",
-#       "IngressReady",
-#       "Normal"
-#     ], var.wait_till)
-#   }
-# }
-
-# variable "wait_till_timeout" {
-#   description = "Timeout for wait_till in minutes."
-#   type        = number
-#   default     = 90
-# }
 
 ##############################################################################
 # Data Source Connector (BRS)
@@ -64,12 +44,12 @@ variable "kube_type" {
 
 variable "add_dsc_rules_to_cluster_sg" {
   type        = bool
-  description = "Set to true to automatically add required security group rules for the Data Source Connector. Set to false to only register the cluster and create the policy."
+  description = "Set to `true` to automatically add required security group rules for the Data Source Connector and set to `false` to only register the cluster and create the policy."
   default     = true
 }
 
 variable "dsc_chart" {
-  description = "Name of the Data Source Connector Helm chart."
+  description = "Name of the Data Source connector Helm chart."
   type        = string
   default     = "cohesity-dsc-chart"
   nullable    = false
@@ -159,7 +139,7 @@ variable "brs_endpoint_type" {
 
   validation {
     condition     = contains(["public", "private"], var.brs_endpoint_type)
-    error_message = "endpoint_type must be 'public' or 'private'."
+    error_message = "`endpoint_type` must be 'public' or 'private'."
   }
 }
 
@@ -184,7 +164,7 @@ variable "registration_images" {
     init_container          = optional(string, null)
   })
   default     = {}
-  description = "value"
+  description = "Registration image"
 }
 
 variable "policy" {
@@ -222,5 +202,5 @@ variable "policy" {
     use_default_backup_target = optional(bool, true)
   })
 
-  description = "IBM Backup & Recovery Protection Policy – fully validated"
+  description = "IBM Backup & Recovery Protection Policy - fully validated"
 }

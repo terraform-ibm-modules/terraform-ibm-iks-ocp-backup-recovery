@@ -1,13 +1,6 @@
-# output "helm_release_name" {
-#   description = "Name of the deployed Helm release"
-#   value       = helm_release.dsc_chart.name
-# }
-
-# output "helm_release_status" {
-#   description = "Status of the Helm release"
-#   value       = helm_release.dsc_chart.status
-# }
-
+##############################################################################
+# Outputs
+##############################################################################
 
 output "protection_policy_name" {
   description = "Name of the created protection policy"

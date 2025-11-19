@@ -15,8 +15,11 @@ variable "resource_group" {
 
 variable "prefix" {
   type        = string
-  description = "A unique prefix to name all resources created by this example. Must be lowercase, no spaces, and 3–12 characters."
-  default     = "brs-basic"
+  description = "Prefix for name of all resource created by this example"
+  validation {
+    error_message = "Prefix must begin and end with a letter and contain only letters, numbers, and - characters."
+    condition     = can(regex("^([A-z]|[a-z][-a-z0-9]*[a-z0-9])$", var.prefix))
+  }
 }
 
 variable "resource_tags" {
@@ -27,13 +30,12 @@ variable "resource_tags" {
 
 variable "region" {
   type        = string
-  description = "Region to provision all resources created by this example."
-  default     = "au-syd"
+  description = "Region where resources are created."
 }
 
 variable "access_tags" {
   type        = list(string)
-  description = "Optional list of access management tags to add to resources that are created"
+  description = "A list of access tags to apply to the resources created by the module."
   default     = []
 }
 
