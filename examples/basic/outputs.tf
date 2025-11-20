@@ -1,38 +1,12 @@
-########################################################################################################################
+##############################################################################
 # Outputs
-########################################################################################################################
+##############################################################################
 
-#
-# Developer tips:
-#   - Include all relevant outputs from the modules being called in the example
-#
-
-output "account_id" {
-  description = "An alpha-numeric value identifying the account ID."
-  value       = module.cos.account_id
+output "protection_policy_name" {
+  description = "Name of the created protection policy"
+  value       = module.backup_recover_protect_ocp.protection_policy_name
 }
-
-output "guid" {
-  description = "The GUID of the resource instance."
-  value       = module.cos.account_id
-}
-
-output "id" {
-  description = "The unique identifier of the resource instance."
-  value       = module.cos.id
-}
-
-output "crn" {
-  description = "The CRN of the resource instance."
-  value       = module.cos.crn
-}
-
-output "resource_group_name" {
-  description = "Resource group name."
-  value       = module.resource_group.resource_group_name
-}
-
-output "resource_group_id" {
-  description = "Resource group ID."
-  value       = module.resource_group.resource_group_id
+output "source_registration_id" {
+  description = "ID of the registered Kubernetes source"
+  value       = module.backup_recover_protect_ocp.source_registration_id
 }

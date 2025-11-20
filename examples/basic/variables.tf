@@ -1,39 +1,52 @@
 ########################################################################################################################
 # Input variables
 ########################################################################################################################
-
-#
-# Module developer tips:
-#   - Examples are references that consumers can use to see how the module can be consumed. They are not designed to be
-#     flexible re-usable solutions for general consumption, so do not expose any more variables here and instead hard
-#     code things in the example main.tf with code comments explaining the different configurations.
-#   - For the same reason as above, do not add default values to the example inputs.
-#
-
 variable "ibmcloud_api_key" {
   type        = string
   description = "The IBM Cloud API Key."
   sensitive   = true
 }
 
-variable "region" {
+variable "resource_group" {
   type        = string
-  description = "Region to provision all resources created by this example."
+  description = "An existing resource group name to use for this example, if unset a new resource group will be created"
+  default     = null
 }
 
 variable "prefix" {
   type        = string
-  description = "A string value to prefix to all resources created by this example."
-}
-
-variable "resource_group" {
-  type        = string
-  description = "The name of an existing resource group to provision resources in to. If not set a new resource group will be created using the prefix variable."
-  default     = null
+  description = "Prefix for name of all resource created by this example"
+  validation {
+    error_message = "Prefix must begin and end with a letter and contain only letters, numbers, and - characters."
+    condition     = can(regex("^([A-z]|[a-z][-a-z0-9]*[a-z0-9])$", var.prefix))
+  }
 }
 
 variable "resource_tags" {
   type        = list(string)
-  description = "List of resource tag to associate with all resource instances created by this example."
+  description = "Optional list of tags to be added to created resources"
   default     = []
+}
+
+variable "region" {
+  type        = string
+  description = "Region where resources are created."
+}
+
+variable "access_tags" {
+  type        = list(string)
+  description = "A list of access tags to apply to the resources created by the module."
+  default     = []
+}
+
+variable "ocp_version" {
+  type        = string
+  description = "Version of the OCP cluster to provision"
+  default     = "4.18"
+}
+
+variable "ocp_entitlement" {
+  type        = string
+  description = "Value that is applied to the entitlements for OCP cluster provisioning"
+  default     = null
 }
