@@ -129,6 +129,10 @@ variable "brs_instance_region" {
   type        = string
   description = "Region of the Backup & Recovery Service instance."
   nullable    = false
+  validation {
+    condition     = contains(["us-east"], var.brs_instance_region)
+    error_message = "IKS/ROKS backup recovery is only supported in these regions: \"us-east\"."
+  }
 }
 
 variable "brs_endpoint_type" {
