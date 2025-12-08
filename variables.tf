@@ -175,6 +175,7 @@ variable "registration_images" {
     velero_openshift_plugin = "icr.io/ext/brs/velero-plugin-for-openshift:7.2.15-p2@sha256:6b643edcb920ad379c9ef1e2cca112a2ad0a1d55987f9c27af4022f7e3b19552"
   }
   description = "The images required for backup and recovery registration."
+  nullable = false
 }
 
 variable "policy" {
