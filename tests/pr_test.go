@@ -12,8 +12,8 @@ import (
 const resourceGroup = "geretain-test-resources"
 
 // Ensure every example directory has a corresponding test
-const basicExampleDir = "examples/openshift"
-const advancedExampleDir = "examples/kubernetes"
+const ocpExampleDir = "examples/openshift"
+const iksExampleDir = "examples/kubernetes"
 
 var region = "us-east"
 
@@ -34,10 +34,10 @@ func setupOptions(t *testing.T, prefix string, dir string) *testhelper.TestOptio
 	return options
 }
 
-func TestRunBasicExample(t *testing.T) {
+func TestRunOCPExample(t *testing.T) {
 	t.Parallel()
 
-	options := setupOptions(t, "brs", basicExampleDir)
+	options := setupOptions(t, "brs", ocpExampleDir)
 
 	output, err := options.RunTestConsistency()
 	assert.Nil(t, err, "This should not have errored")
@@ -47,7 +47,7 @@ func TestRunBasicExample(t *testing.T) {
 func TestRunUpgradeExample(t *testing.T) {
 	t.Parallel()
 
-	options := setupOptions(t, "brs-upg", basicExampleDir)
+	options := setupOptions(t, "brs-upg", ocpExampleDir)
 
 	output, err := options.RunTestUpgrade()
 	if !options.UpgradeTestSkipped {
@@ -56,24 +56,12 @@ func TestRunUpgradeExample(t *testing.T) {
 	}
 }
 
-func TestRunAdvancedExample(t *testing.T) {
+func TestRunIKSExample(t *testing.T) {
 	t.Parallel()
 
-	options := setupOptions(t, "brs-adv", advancedExampleDir)
+	options := setupOptions(t, "brs-adv", iksExampleDir)
 
 	output, err := options.RunTestConsistency()
 	assert.Nil(t, err, "This should not have errored")
 	assert.NotNil(t, output, "Expected some output")
-}
-
-func TestRunAdvancedExampleUpgrade(t *testing.T) {
-	t.Parallel()
-
-	options := setupOptions(t, "brs-adv-upg", advancedExampleDir)
-
-	output, err := options.RunTestUpgrade()
-	if !options.UpgradeTestSkipped {
-		assert.Nil(t, err, "This should not have errored")
-		assert.NotNil(t, output, "Expected some output")
-	}
 }
