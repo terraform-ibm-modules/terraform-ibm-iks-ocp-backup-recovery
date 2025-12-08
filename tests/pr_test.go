@@ -13,6 +13,7 @@ const resourceGroup = "geretain-test-resources"
 
 // Ensure every example directory has a corresponding test
 const basicExampleDir = "examples/openshift"
+const advancedExampleDir = "examples/kubernetes"
 
 var region = "us-east"
 
@@ -46,6 +47,28 @@ func TestRunUpgradeExample(t *testing.T) {
 	t.Parallel()
 
 	options := setupOptions(t, "brs-upg", basicExampleDir)
+
+	output, err := options.RunTestUpgrade()
+	if !options.UpgradeTestSkipped {
+		assert.Nil(t, err, "This should not have errored")
+		assert.NotNil(t, output, "Expected some output")
+	}
+}
+
+func TestRunAdvancedExample(t *testing.T) {
+	t.Parallel()
+
+	options := setupOptions(t, "brs-adv", advancedExampleDir)
+
+	output, err := options.RunTestConsistency()
+	assert.Nil(t, err, "This should not have errored")
+	assert.NotNil(t, output, "Expected some output")
+}
+
+func TestRunAdvancedExampleUpgrade(t *testing.T) {
+	t.Parallel()
+
+	options := setupOptions(t, "brs-adv-upg", advancedExampleDir)
 
 	output, err := options.RunTestUpgrade()
 	if !options.UpgradeTestSkipped {
