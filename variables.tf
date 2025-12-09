@@ -15,7 +15,7 @@ variable "cluster_resource_group_id" {
 variable "cluster_config_endpoint_type" {
   description = "The type of endpoint to use for the cluster config access: `default`, `private`, `vpe`, or `link`. The `default` value uses the default endpoint of the cluster."
   type        = string
-  default     = "default"
+  default     = "private"
   nullable    = false # use default if null is passed in
   validation {
     error_message = "Invalid endpoint type. Valid values are `default`, `private`, `vpe`, or `link`."
@@ -123,7 +123,7 @@ variable "dsc_replicas" {
 variable "dsc_namespace" {
   type        = string
   description = "The cluster namespace where the Data Source Connector will be installed. Will be created if it does not exist."
-  default     = "data-source-connector"
+  default     = "ibm-brs-data-source-connector"
   nullable    = false
 }
 
