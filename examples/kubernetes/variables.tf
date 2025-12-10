@@ -33,3 +33,14 @@ variable "region" {
   description = "Region where resources are created."
   default     = "us-east"
 }
+
+variable "cluster_name_id" {
+  type        = string
+  description = <<EOT
+Name or ID of the existing Kubernetes cluster to protect.
+If left empty (null, which is the default), this example will automatically create a new VPC
+and provision a Kubernetes cluster for you.
+If you provide a value, the module will use that existing cluster instead of creating a new one.
+EOT
+  default     = null
+}
