@@ -51,3 +51,14 @@ variable "ocp_entitlement" {
   description = "Value that is applied to the entitlements for OCP cluster provisioning"
   default     = null
 }
+
+variable "cluster_name_id" {
+  type        = string
+  description = <<EOT
+Name or ID of the existing OpenShift cluster to protect.
+If left empty (null, which is the default), this example will automatically create a new VPC
+and provision a OpenShift cluster for you.
+If you provide a value, the module will use that existing cluster instead of creating a new one.
+EOT
+  default     = null
+}
