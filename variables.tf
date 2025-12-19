@@ -203,7 +203,7 @@ variable "registration_images" {
 variable "policy" {
   type = object({
     name = string
-    schedule = object({
+    schedule = optional(object({
       unit      = string # Minutes, Hours, Days, Weeks, Months, Years, Runs
       frequency = number # required when unit is Minutes/Hours/Days
 
@@ -218,9 +218,9 @@ variable "policy" {
         day_of_month  = optional(number)
       }))
       year_schedule = optional(object({ day_of_year = string })) # First, Last
-    })
+    }))
 
-    retention = object({
+    retention = optional(object({
       duration = number
       unit     = string # Days, Weeks, Months, Years
 
@@ -230,7 +230,7 @@ variable "policy" {
         duration                       = number
         enable_worm_on_external_target = optional(bool, false)
       }))
-    })
+    }))
 
     use_default_backup_target = optional(bool, true)
   })
@@ -246,6 +246,13 @@ variable "policy" {
     }
     use_default_backup_target = true
   }
-
+  validation {
+    condition = contains(["Gold", "Silver", "Bronze"], var.policy.name) ? (
+      var.policy.schedule == null && var.policy.retention == null
+      ) : (
+      var.policy.schedule != null && var.policy.retention != null
+    )
+    error_message = "If using built-in policies (Gold, Silver, Bronze), do not provide schedule or retention. For custom policies, both are required."
+  }
   description = "The backup schedule and retentions of a Protection Policy."
 }

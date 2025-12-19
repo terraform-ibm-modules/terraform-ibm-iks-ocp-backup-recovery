@@ -121,6 +121,25 @@ resource "kubernetes_secret" "brsagent_token" {
   wait_for_service_account_token = true
 }
 
+locals {
+  use_existing_policy = contains(["Gold", "Silver", "Bronze"], var.policy.name)
+
+  policy_id = local.use_existing_policy ? (
+    data.ibm_backup_recovery_protection_policies.existing_policies[0].policies[0].id
+    ) : (
+    replace(ibm_backup_recovery_protection_policy.protection_policy[0].id, "${var.brs_tenant_id}::", "")
+  )
+}
+
+data "ibm_backup_recovery_protection_policies" "existing_policies" {
+  count           = local.use_existing_policy ? 1 : 0
+  x_ibm_tenant_id = var.brs_tenant_id
+  instance_id     = var.brs_instance_guid
+  region          = var.brs_instance_region
+  endpoint_type   = var.brs_endpoint_type
+  policy_names    = [var.policy.name]
+}
+
 resource "ibm_backup_recovery_source_registration" "source_registration" {
   depends_on      = [kubernetes_secret.brsagent_token]
   x_ibm_tenant_id = var.brs_tenant_id
@@ -128,8 +147,12 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
   connection_id   = var.connection_id
   name            = var.registration_name
   kubernetes_params {
-    endpoint                               = var.cluster_config_endpoint_type == "private" && data.ibm_container_vpc_cluster.cluster.private_service_endpoint ? data.ibm_container_vpc_cluster.cluster.private_service_endpoint_url : data.ibm_container_vpc_cluster.cluster.public_service_endpoint_url
-    kubernetes_distribution                = var.kube_type == "openshift" ? "kROKS" : "kIKS"
+    endpoint                = var.cluster_config_endpoint_type == "private" && data.ibm_container_vpc_cluster.cluster.private_service_endpoint ? data.ibm_container_vpc_cluster.cluster.private_service_endpoint_url : data.ibm_container_vpc_cluster.cluster.public_service_endpoint_url
+    kubernetes_distribution = var.kube_type == "openshift" ? "kROKS" : "kIKS"
+    auto_protect_config {
+      is_default_auto_protected = true
+      policy_id                 = local.policy_id
+    }
     data_mover_image_location              = var.registration_images.data_mover
     velero_image_location                  = var.registration_images.velero
     velero_aws_plugin_image_location       = var.registration_images.velero_aws_plugin
@@ -144,6 +167,7 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
 }
 
 resource "ibm_backup_recovery_protection_policy" "protection_policy" {
+  count           = local.use_existing_policy ? 0 : 1
   x_ibm_tenant_id = var.brs_tenant_id
   name            = var.policy.name
   endpoint_type   = var.brs_endpoint_type
@@ -248,7 +272,7 @@ resource "ibm_backup_recovery_protection_policy" "protection_policy" {
   # RETRY OPTIONS
   # ================================
   retry_options {
-    retries             = 1
+    retries             = 3
     retry_interval_mins = 5
   }
 }

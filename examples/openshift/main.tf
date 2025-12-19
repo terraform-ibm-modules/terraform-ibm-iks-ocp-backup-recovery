@@ -56,7 +56,7 @@ locals {
         zone       = ibm_is_subnet.subnet_zone_1[0].zone
       }
     ]
-  } : null
+  } : {}
 
   worker_pools = [
     {
