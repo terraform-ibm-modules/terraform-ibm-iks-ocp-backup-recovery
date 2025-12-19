@@ -124,11 +124,14 @@ resource "kubernetes_secret" "brsagent_token" {
 locals {
   use_existing_policy = contains(["Gold", "Silver", "Bronze"], var.policy.name)
 
-  policy_id = local.use_existing_policy ? (
-    data.ibm_backup_recovery_protection_policies.existing_policies[0].policies[0].id
-    ) : (
-    replace(ibm_backup_recovery_protection_policy.protection_policy[0].id, "${var.brs_tenant_id}::", "")
-  )
+  # Only resolve policy_id if auto-protect is enabled
+  policy_id = var.enable_auto_protect ? (
+    local.use_existing_policy ? (
+      data.ibm_backup_recovery_protection_policies.existing_policies[0].policies[0].id
+      ) : (
+      replace(ibm_backup_recovery_protection_policy.protection_policy[0].id, "${var.brs_tenant_id}::", "")
+    )
+  ) : null
 }
 
 data "ibm_backup_recovery_protection_policies" "existing_policies" {
@@ -149,9 +152,12 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
   kubernetes_params {
     endpoint                = var.cluster_config_endpoint_type == "private" && data.ibm_container_vpc_cluster.cluster.private_service_endpoint ? data.ibm_container_vpc_cluster.cluster.private_service_endpoint_url : data.ibm_container_vpc_cluster.cluster.public_service_endpoint_url
     kubernetes_distribution = var.kube_type == "openshift" ? "kROKS" : "kIKS"
-    auto_protect_config {
-      is_default_auto_protected = true
-      policy_id                 = local.policy_id
+    dynamic "auto_protect_config" {
+      for_each = var.enable_auto_protect ? [1] : []
+      content {
+        is_default_auto_protected = true
+        policy_id                 = local.policy_id
+      }
     }
     data_mover_image_location              = var.registration_images.data_mover
     velero_image_location                  = var.registration_images.velero

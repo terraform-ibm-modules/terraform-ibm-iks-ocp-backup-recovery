@@ -256,3 +256,9 @@ variable "policy" {
   }
   description = "The backup schedule and retentions of a Protection Policy."
 }
+
+variable "enable_auto_protect" {
+  type        = bool
+  description = "Set to `true` to enable auto-protect on the registered cluster with the specified protection policy."
+  default     = true
+}
