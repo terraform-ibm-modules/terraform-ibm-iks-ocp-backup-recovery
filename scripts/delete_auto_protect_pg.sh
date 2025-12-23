@@ -1,10 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
+if [ "$#" -lt 3 ]; then
+    echo "Usage: $0 URL TENANT ENDPOINT_TYPE [PROTECTION_GROUP_ID]"
+    exit 1
+fi
+
 URL=$1
 TENANT=$2
 ENDPOINT_TYPE=$3
-PROTECTION_GROUP_ID=$4
+PROTECTION_GROUP_ID=${4:-}
 
 # IAM endpoint handling (unchanged)
 iam_cloud_endpoint="${IBMCLOUD_IAM_API_ENDPOINT:-"iam.cloud.ibm.com"}"
