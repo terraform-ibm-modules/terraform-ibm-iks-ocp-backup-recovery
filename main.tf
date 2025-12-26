@@ -67,6 +67,7 @@ resource "helm_release" "data_source_connector" {
   create_namespace = true
   timeout          = 1500
   wait             = true
+  atomic           = true
   values = [
     yamlencode({
       secrets = {
@@ -121,6 +122,28 @@ resource "kubernetes_secret_v1" "brsagent_token" {
   wait_for_service_account_token = true
 }
 
+locals {
+  use_existing_policy = contains(["Gold", "Silver", "Bronze"], var.policy.name)
+
+  # Only resolve policy_id if auto-protect is enabled
+  policy_id = var.enable_auto_protect ? (
+    local.use_existing_policy ? (
+      data.ibm_backup_recovery_protection_policies.existing_policies[0].policies[0].id
+      ) : (
+      replace(ibm_backup_recovery_protection_policy.protection_policy[0].id, "${var.brs_tenant_id}::", "")
+    )
+  ) : null
+}
+
+data "ibm_backup_recovery_protection_policies" "existing_policies" {
+  count           = local.use_existing_policy ? 1 : 0
+  x_ibm_tenant_id = var.brs_tenant_id
+  instance_id     = var.brs_instance_guid
+  region          = var.brs_instance_region
+  endpoint_type   = var.brs_endpoint_type
+  policy_names    = [var.policy.name]
+}
+
 resource "ibm_backup_recovery_source_registration" "source_registration" {
   depends_on      = [kubernetes_secret_v1.brsagent_token]
   x_ibm_tenant_id = var.brs_tenant_id
@@ -128,8 +151,15 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
   connection_id   = var.connection_id
   name            = var.registration_name
   kubernetes_params {
-    endpoint                               = var.cluster_config_endpoint_type == "private" && data.ibm_container_vpc_cluster.cluster.private_service_endpoint ? data.ibm_container_vpc_cluster.cluster.private_service_endpoint_url : data.ibm_container_vpc_cluster.cluster.public_service_endpoint_url
-    kubernetes_distribution                = var.kube_type == "openshift" ? "kROKS" : "kIKS"
+    endpoint                = var.cluster_config_endpoint_type == "private" && data.ibm_container_vpc_cluster.cluster.private_service_endpoint ? data.ibm_container_vpc_cluster.cluster.private_service_endpoint_url : data.ibm_container_vpc_cluster.cluster.public_service_endpoint_url
+    kubernetes_distribution = var.kube_type == "openshift" ? "kROKS" : "kIKS"
+    dynamic "auto_protect_config" {
+      for_each = var.enable_auto_protect ? [1] : []
+      content {
+        is_default_auto_protected = true
+        policy_id                 = local.policy_id
+      }
+    }
     data_mover_image_location              = var.registration_images.data_mover
     velero_image_location                  = var.registration_images.velero
     velero_aws_plugin_image_location       = var.registration_images.velero_aws_plugin
@@ -143,7 +173,52 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
   region        = var.brs_instance_region
 }
 
+# get protection groups for the registered source
+data "ibm_backup_recovery_protection_groups" "protection_groups" {
+  x_ibm_tenant_id = var.brs_tenant_id
+  instance_id     = var.brs_instance_guid
+  region          = var.brs_instance_region
+  endpoint_type   = var.brs_endpoint_type
+  source_ids      = [replace(ibm_backup_recovery_source_registration.source_registration.id, "${var.brs_tenant_id}::", "")]
+}
+
+locals {
+  backup_recovery_instance_url = var.brs_endpoint_type == "public" ? "https://${var.brs_instance_guid}.${var.brs_instance_region}.backup-recovery.cloud.ibm.com" : "https://${var.brs_instance_guid}.${var.brs_endpoint_type}.${var.brs_instance_region}.backup-recovery.cloud.ibm.com"
+
+  # Safely find the ID of the protection group whose name starts with "AutoProtectK8s-"
+  # - Filters the list of protection groups
+  # - Returns the .id of the first match (or null if none)
+  # - If no match or list empty, results in ""
+  protection_group_id = var.enable_auto_protect ? (
+    try(
+      [for pg in data.ibm_backup_recovery_protection_groups.protection_groups.protection_groups : pg.id if startswith(pg.name, "AutoProtectK8s-")][0],
+      ""
+    )
+  ) : ""
+}
+resource "terraform_data" "delete_auto_protect_pg" {
+  count = var.enable_auto_protect ? 1 : 0
+  input = {
+    url                 = local.backup_recovery_instance_url
+    tenant              = var.brs_tenant_id
+    endpoint_type       = var.brs_endpoint_type
+    protection_group_id = local.protection_group_id
+  }
+  triggers_replace = {
+    api_key = var.ibmcloud_api_key
+  }
+  provisioner "local-exec" {
+    when        = destroy
+    command     = "${path.module}/scripts/delete_auto_protect_pg.sh ${self.input.url} ${self.input.tenant} ${self.input.endpoint_type} ${self.input.protection_group_id}"
+    interpreter = ["/bin/bash", "-c"]
+
+    environment = {
+      API_KEY = self.triggers_replace.api_key
+    }
+  }
+}
 resource "ibm_backup_recovery_protection_policy" "protection_policy" {
+  count           = local.use_existing_policy ? 0 : 1
   x_ibm_tenant_id = var.brs_tenant_id
   name            = var.policy.name
   endpoint_type   = var.brs_endpoint_type
@@ -248,7 +323,7 @@ resource "ibm_backup_recovery_protection_policy" "protection_policy" {
   # RETRY OPTIONS
   # ================================
   retry_options {
-    retries             = 1
+    retries             = 3
     retry_interval_mins = 5
   }
 }
