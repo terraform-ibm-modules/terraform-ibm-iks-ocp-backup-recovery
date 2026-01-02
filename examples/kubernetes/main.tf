@@ -104,15 +104,17 @@ module "backup_recovery_instance" {
 ########################################################################################################################
 
 
-module "backup_recover_protect_ocp" {
+module "backup_recover_protect_iks" {
   source                       = "../.."
   cluster_id                   = data.ibm_container_vpc_cluster.cluster.id
   cluster_resource_group_id    = module.resource_group.resource_group_id
   cluster_config_endpoint_type = "private"
   add_dsc_rules_to_cluster_sg  = false
   dsc_registration_token       = module.backup_recovery_instance.registration_token
+  enable_auto_protect          = true
   kube_type                    = "kubernetes"
   connection_id                = module.backup_recovery_instance.connection_id
+  ibmcloud_api_key             = var.ibmcloud_api_key
   # --- B&R Instance ---
   brs_instance_guid   = module.backup_recovery_instance.brs_instance_guid
   brs_instance_region = var.region
@@ -123,12 +125,12 @@ module "backup_recover_protect_ocp" {
   policy = {
     name = "${var.prefix}-retention"
     schedule = {
-      unit      = "Hours"
-      frequency = 6
+      unit      = "Minutes"
+      frequency = 30
     }
     retention = {
-      duration = 4
-      unit     = "Weeks"
+      duration = 1
+      unit     = "Days"
     }
     use_default_backup_target = true
   }
