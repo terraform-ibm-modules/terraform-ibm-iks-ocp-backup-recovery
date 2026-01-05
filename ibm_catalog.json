@@ -1,0 +1,156 @@
+{
+  "products": [
+    {
+      "label": "Cloud automation for IKS/OCP Backup and Recovery",
+      "name": "deploy-arch-ibm-iks-ocp-backup-recovery",
+      "product_kind": "solution",
+      "tags": [
+        "ibm_created",
+        "target_terraform",
+        "terraform",
+        "solution",
+        "backup",
+        "recovery",
+        "kubernetes",
+        "openshift",
+        "platform_engineering"
+      ],
+      "keywords": [
+        "backup",
+        "recovery",
+        "iks",
+        "ocp",
+        "roks",
+        "kubernetes",
+        "openshift",
+        "IaC",
+        "infrastructure as code",
+        "terraform",
+        "solution"
+      ],
+      "provider_name": "IBM",
+      "short_description": "Automates the deployment of Data Source Connector, Data Mover and registration of IKS/Red Hat OpenShift clusters with IBM Backup & Recovery Service",
+      "long_description": "The Cloud Automation for Backup and Recovery on IBM Kubernetes Service (IKS) or Red Hat OpenShift on IBM Cloud (ROKS) simplifies the configuration of cluster protection using IBM Backup & Recovery Service. It deploys the Data Source Connector (DSC) via Helm, registers the cluster, adds necessary security group rules, and creates a configurable protection policy with scheduled backups and retention.\n\nLeverage [Terraform IBM Modules](https://github.com/terraform-ibm-modules) to shape and scale your solutions. You can integrate Terraform IBM Modules (TIM) to extend functionality and design a solution tailored to your environment and operations needs. These modules offer reusable, customizable elements that follow IBM Cloud's recommended practices. You can access the [source code and documentation](https://github.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery) and use it to extend your current architecture or create new solutions.\n\nℹ️ This Terraform-based automation is part of a broader suite of IBM-maintained Infrastructure as Code (IaC) assets, each following the naming pattern \"Cloud automation for *servicename*\" and focusing on single IBM Cloud service. These single-service deployable architectures can be used on their own to streamline and automate service deployments through an [IaC approach](https://cloud.ibm.com/docs/secure-enterprise?topic=secure-enterprise-understanding-projects), or assembled together into a broader [automated IaC stack](https://cloud.ibm.com/docs/secure-enterprise?topic=secure-enterprise-config-stack) to automate the deployment of an end-to-end solution architecture.",
+      "offering_docs_url": "https://github.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery/blob/main/README.md",
+      "offering_icon_url": "https://raw.githubusercontent.com/terraform-ibm-modules/terraform-ibm-logs-agent/refs/heads/main/images/logs-icon.svg",
+      "features": [
+        {
+          "title": "Data Source Connector",
+          "description": "Deploys the Data Source Connector Helm chart into the IKS/ROKS cluster for backup operations."
+        },
+        {
+          "title": "Cluster Registration & Policy",
+          "description": "Registers the cluster with IBM Backup & Recovery Service and creates a configurable protection policy with schedules and retention."
+        },
+        {
+          "title": "Security Group Rules",
+          "description": "Automatically adds required outbound security group rules for DSC communication with Backup & Recovery Service."
+        },
+        {
+          "title": "Composable and Extensible Architecture",
+          "description": "This architecture illustrates how Terraform IBM Modules (TIM) can be integrated to deliver a complete solution on IBM Cloud. Each module is a reusable, and validated component for security, compliance, and operational IBM best practices. You can deploy this architecture as-is or configure it as code by leveraging the underlying modules to fit your specific requirements. Explore the [source code and documentation](https://github.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery) to adapt, extend, or create entirely new solutions using these building blocks."
+        }
+      ],
+      "flavors": [
+        {
+          "label": "Fully configurable",
+          "name": "fully-configurable",
+          "index": 1,
+          "install_type": "fullstack",
+          "working_directory": "solutions/fully-configurable",
+          "short_description": "Ideal for users who want flexibility with a reliable starting point.",
+          "iam_permissions": [
+            {
+              "service_name": "Backup & Recovery",
+              "role_crns": [
+                "crn:v1:bluemix:public:iam::::role:Editor",
+                "crn:v1:bluemix:public:iam::::serviceRole:Manager"
+              ],
+              "notes": "Required to register clusters and create protection policies."
+            },
+            {
+              "service_name": "containers-kubernetes",
+              "role_crns": [
+                "crn:v1:bluemix:public:iam::::role:Viewer",
+                "crn:v1:bluemix:public:iam::::serviceRole:Administrator"
+              ],
+              "notes": "Required for Helm deployment and cluster access."
+            },
+            {
+              "service_name": "is.vpc",
+              "role_crns": [
+                "crn:v1:bluemix:public:iam::::role:Editor"
+              ],
+              "notes": "Required to add security group rules for DSC outbound communication."
+            },
+            {
+              "role_crns": [
+                "crn:v1:bluemix:public:iam::::role:Viewer"
+              ],
+              "service_name": "Resource group only",
+              "notes": "Viewer access is required in the resource group you want to provision in."
+            }
+          ],
+          "architecture": {
+            "features": [
+              {
+                "title": " ",
+                "description": "Configured to use IBM secure by default standards, but can be edited to fit your use case."
+              }
+            ],
+            "diagrams": []
+          },
+          "configuration": [
+            {
+              "key": "ibmcloud_api_key",
+              "required": true
+            },
+            {
+              "key": "resource_group",
+              "required": true
+            },
+            {
+              "key": "resource_tags",
+              "required": false,
+              "default_value": []
+            },
+            {
+              "key": "prefix",
+              "required": true,
+              "default_value": "dev",
+              "random_string": {
+                "length": 4
+              },
+              "value_constraints": [
+                {
+                  "type": "regex",
+                  "description": "Prefix must begin with a lowercase letter and may contain only lowercase letters, digits, and hyphens '-'. It must not end with a hyphen('-'), and cannot contain consecutive hyphens ('--'). It should not exceed 16 characters.",
+                  "value": "^$|^__NULL__$|^[a-z](?!.*--)(?:[a-z0-9-]{0,14}[a-z0-9])?$"
+                }
+              ]
+            },
+            {
+              "key": "region",
+              "required": true,
+              "default_value": "us-east"
+            },
+            {
+              "key": "cluster_name_id",
+              "display_name": "cluster",
+              "custom_config": {
+                "type": "cluster_var",
+                "grouping": "deployment",
+                "original_grouping": "deployment"
+              },
+              "required": true
+            }
+          ],
+          "dependencies": [],
+          "dependency_version_2": true,
+          "terraform_version": "1.12.2",
+          "ignore_readme": true
+        }
+      ]
+    }
+  ]
+}
