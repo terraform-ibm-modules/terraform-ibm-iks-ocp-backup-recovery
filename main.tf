@@ -174,28 +174,8 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
   region        = var.brs_instance_region
 }
 
-# get protection groups for the registered source
-data "ibm_backup_recovery_protection_groups" "protection_groups" {
-  x_ibm_tenant_id = var.brs_tenant_id
-  instance_id     = var.brs_instance_guid
-  region          = var.brs_instance_region
-  endpoint_type   = var.brs_endpoint_type
-  source_ids      = [replace(ibm_backup_recovery_source_registration.source_registration.id, "${var.brs_tenant_id}::", "")]
-}
-
 locals {
   backup_recovery_instance_url = var.brs_endpoint_type == "public" ? "https://${var.brs_instance_guid}.${var.brs_instance_region}.backup-recovery.cloud.ibm.com" : "https://${var.brs_instance_guid}.${var.brs_endpoint_type}.${var.brs_instance_region}.backup-recovery.cloud.ibm.com"
-
-  # Safely find the ID of the protection group whose name starts with "AutoProtectK8s-"
-  # - Filters the list of protection groups
-  # - Returns the .id of the first match (or null if none)
-  # - If no match or list empty, results in ""
-  protection_group_id = var.enable_auto_protect ? (
-    try(
-      [for pg in data.ibm_backup_recovery_protection_groups.protection_groups.protection_groups : pg.id if startswith(pg.name, "AutoProtectK8s-")][0],
-      ""
-    )
-  ) : ""
 }
 
 # when auto-protect is enabled for the registration, it created a protection group that is currently not deletable via terraform
@@ -206,7 +186,7 @@ resource "terraform_data" "delete_auto_protect_pg" {
     url                 = local.backup_recovery_instance_url
     tenant              = var.brs_tenant_id
     endpoint_type       = var.brs_endpoint_type
-    protection_group_id = local.protection_group_id
+    protection_group_id = ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id
     registration_id     = replace(ibm_backup_recovery_source_registration.source_registration.id, "${var.brs_tenant_id}::", "")
   }
   triggers_replace = {
