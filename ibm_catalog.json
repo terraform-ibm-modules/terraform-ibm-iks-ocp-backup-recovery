@@ -32,7 +32,7 @@
       "short_description": "Automates the deployment of Data Source Connector, Data Mover and registration of IKS/Red Hat OpenShift clusters with IBM Backup & Recovery Service",
       "long_description": "The Cloud Automation for Backup and Recovery on IBM Kubernetes Service (IKS) or Red Hat OpenShift on IBM Cloud (ROKS) simplifies the configuration of cluster protection using IBM Backup & Recovery Service. It deploys the Data Source Connector (DSC) via Helm, registers the cluster, adds necessary security group rules, and creates a configurable protection policy with scheduled backups and retention.\n\nLeverage [Terraform IBM Modules](https://github.com/terraform-ibm-modules) to shape and scale your solutions. You can integrate Terraform IBM Modules (TIM) to extend functionality and design a solution tailored to your environment and operations needs. These modules offer reusable, customizable elements that follow IBM Cloud's recommended practices. You can access the [source code and documentation](https://github.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery) and use it to extend your current architecture or create new solutions.\n\nℹ️ This Terraform-based automation is part of a broader suite of IBM-maintained Infrastructure as Code (IaC) assets, each following the naming pattern \"Cloud automation for *servicename*\" and focusing on single IBM Cloud service. These single-service deployable architectures can be used on their own to streamline and automate service deployments through an [IaC approach](https://cloud.ibm.com/docs/secure-enterprise?topic=secure-enterprise-understanding-projects), or assembled together into a broader [automated IaC stack](https://cloud.ibm.com/docs/secure-enterprise?topic=secure-enterprise-config-stack) to automate the deployment of an end-to-end solution architecture.",
       "offering_docs_url": "https://github.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery/blob/main/README.md",
-      "offering_icon_url": "https://raw.githubusercontent.com/terraform-ibm-modules/terraform-ibm-logs-agent/refs/heads/main/images/logs-icon.svg",
+      "offering_icon_url": "https://raw.githubusercontent.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery/refs/heads/main/images/logs-icon.svg",
       "features": [
         {
           "title": "Data Source Connector",
@@ -113,6 +113,24 @@
               "key": "resource_tags",
               "required": false,
               "default_value": []
+            },
+            {
+              "key": "provider_visibility",
+              "options": [
+                {
+                  "displayname": "private",
+                  "value": "private"
+                },
+                {
+                  "displayname": "public",
+                  "value": "public"
+                },
+                {
+                  "displayname": "public-and-private",
+                  "value": "public-and-private"
+                }
+              ],
+              "hidden": true
             },
             {
               "key": "prefix",

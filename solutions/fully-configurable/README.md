@@ -1,11 +1,3 @@
-# Kubernetes example
+# Cloud automation for Backup & Recovery of IKS or OCP clusters on VPC (Fully configurable)
 
-This example provisions VPC, kubernetes cluster, and a fully integrated Backup & Recovery environment with policies, source registration, connectivity, and data source connector deployment.
-
-A kubernetes example that will provision the following:
-
-- A new resource group, if an existing one is not passed in.
-- A basic VPC and subnet with public gateway enabled.
-- A single zone kubernetes VPC cluster.
-- A new Backup & Recovery instance.
-- A data source connection to integrate the cluster with the Backup & Recovery service.
+:exclamation: **Important:** This solution is not intended to be called by other modules because it contains a provider configuration and is not compatible with the `for_each`, `count`, and `depends_on` arguments. For more information, see [Providers Within Modules](https://developer.hashicorp.com/terraform/language/modules/develop/providers).

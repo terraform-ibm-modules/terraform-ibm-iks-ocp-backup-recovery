@@ -13,6 +13,17 @@ variable "resource_group" {
   default     = null
 }
 
+variable "provider_visibility" {
+  description = "Set the visibility value for the IBM terraform provider. [Learn more](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/guides/custom-service-endpoints)."
+  type        = string
+  default     = "private"
+
+  validation {
+    condition     = contains(["public", "private", "public-and-private"], var.provider_visibility)
+    error_message = "Invalid visibility option. Allowed values are 'public', 'private', or 'public-and-private'."
+  }
+}
+
 variable "prefix" {
   type        = string
   description = "Prefix for name of all resource created by this example"
