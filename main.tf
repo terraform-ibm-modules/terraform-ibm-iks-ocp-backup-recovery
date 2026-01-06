@@ -186,7 +186,7 @@ resource "terraform_data" "delete_auto_protect_pg" {
     url                 = local.backup_recovery_instance_url
     tenant              = var.brs_tenant_id
     endpoint_type       = var.brs_endpoint_type
-    protection_group_id = ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id
+    protection_group_id = replace(ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id, "${var.brs_tenant_id}::", "")
     registration_id     = replace(ibm_backup_recovery_source_registration.source_registration.id, "${var.brs_tenant_id}::", "")
   }
   triggers_replace = {
