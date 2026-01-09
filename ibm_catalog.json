@@ -229,7 +229,7 @@
               {
                 "diagram": {
                   "caption": "Backup & Recovery integration with ROKS - Fully Configurable",
-                  "url": "https://raw.githubusercontent.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery/main/reference-architectures/architecture_diagram.svg",
+                  "url": "https://raw.githubusercontent.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery/main/reference-architectures/architecture_diagram.png",
                   "type": "image/svg+xml"
                 },
                 "description": "This architecture integrates an existing <b>Red Hat OpenShift (ROKS) cluster</b> with <b>IBM Backup & Recovery Service</b>. The solution deploys the <b>Data Source Connector (DSC)</b> via Helm, creates necessary Kubernetes resources, optionally configures outbound security group rules, registers the cluster, and applies a fully customizable protection policy.<br><br>Backups are stored in IBM Cloud Object Storage (managed by the Backup & Recovery instance) with options for immutable storage (WORM) to meet compliance requirements. This enables reliable point-in-time recovery of applications, data, and cluster configurations."
@@ -1322,7 +1322,7 @@
               {
                 "diagram": {
                   "caption": "Backup & Recovery integration with ROKS - QuickStart",
-                  "url": "https://raw.githubusercontent.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery/main/reference-architectures/architecture_diagram.svg",
+                  "url": "https://raw.githubusercontent.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery/main/reference-architectures/architecture_diagram.png",
                   "type": "image/svg+xml"
                 },
                 "description": "This QuickStart variation provides a streamlined path to enable backup and recovery on an existing <b>Red Hat OpenShift (ROKS) cluster</b>. It deploys the Data Source Connector with default settings (1 replica), automatically adds required security group rules, registers the cluster, and applies a basic protection policy.<br><br>Perfect for proof-of-concept, development environments, or when you want to get started quickly with minimal inputs."
