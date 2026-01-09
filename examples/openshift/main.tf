@@ -127,7 +127,7 @@ module "backup_recovery_instance" {
 ########################################################################################################################
 
 
-module "backup_recover_protect_ocp" {
+module "protect_cluster" {
   source                       = "../.."
   cluster_id                   = var.cluster_name_id == null ? module.ocp_base[0].cluster_id : data.ibm_container_vpc_cluster.cluster[0].id
   cluster_resource_group_id    = module.resource_group.resource_group_id

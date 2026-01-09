@@ -323,7 +323,7 @@ module "backup_recovery_instance" {
 ########################################################################################################################
 
 
-module "backup_recover_protect_ocp" {
+module "protect_cluster" {
   source                       = "../.."
   cluster_id                   = module.ocp_base.cluster_id
   cluster_resource_group_id    = module.resource_group.resource_group_id
