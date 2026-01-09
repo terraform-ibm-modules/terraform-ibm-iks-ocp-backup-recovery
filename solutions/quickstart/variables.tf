@@ -44,7 +44,7 @@ variable "prefix" {
 variable "region" {
   type        = string
   description = "Region in which all the resources will be deployed. [Learn More](https://terraform-ibm-modules.github.io/documentation/#/region)."
-  default     = "us-south"
+  default     = "us-east"
 }
 
 variable "openshift_version" {

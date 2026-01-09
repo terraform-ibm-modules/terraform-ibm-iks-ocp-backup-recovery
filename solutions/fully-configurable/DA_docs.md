@@ -129,12 +129,12 @@ This variable defines the worker node pools for your OCP cluster, with each pool
     vpc_subnets                       = [
       {
         id = "<REPLACE ME>"
-        zone = "us-south-1"
+        zone = "us-east-1"
         cidr_block = "10.10.10.0/24"
       },
       {
         id = "<REPLACE ME>"
-        zone = "us-south-2"
+        zone = "us-east-2"
         cidr_block = "10.20.10.0/24"
       }
     ]
