@@ -12,25 +12,17 @@ locals {
   cluster_name = "${local.prefix}${var.cluster_name}"
 }
 
-########################################################################################################################
-# VPC + Subnet + Public Gateway
-########################################################################################################################
-locals {
-  octets = split(".", split("/", var.address_prefix)[0])
-  mask   = split("/", var.address_prefix)[1]
+#############################################################################
+# Provision VPC
+#############################################################################
 
+locals {
   subnets = {
     for count in range(1, 4) :
-    "zone-${count}" => count <= local.selected.zones ? [
+    "zone-${count}" => count == var.zone ? [
       {
-        name = "${local.prefix}subnet-${count}"
-        cidr = format(
-          "%d.%d.%d.0/%s",
-          tonumber(local.octets[0]),
-          tonumber(local.octets[1]) + (count - 1) * 10,
-          tonumber(local.octets[2]),
-          local.mask
-        )
+        name           = "${var.prefix}-subnet-a"
+        cidr           = var.address_prefix
         public_gateway = true
         acl_name       = "${var.prefix}-acl"
       }
@@ -39,29 +31,7 @@ locals {
 
   public_gateway = {
     for count in range(1, 4) :
-    "zone-${count}" => count <= local.selected.zones
-  }
-
-  network_acl = {
-    name                         = "${local.prefix}acl"
-    add_ibm_cloud_internal_rules = true
-    add_vpc_connectivity_rules   = true
-    prepend_ibm_rules            = true
-    rules = [{
-      name        = "${local.prefix}inbound"
-      action      = "allow"
-      source      = "0.0.0.0/0"
-      destination = "0.0.0.0/0"
-      direction   = "inbound"
-      },
-      {
-        name        = "${local.prefix}outbound"
-        action      = "allow"
-        source      = "0.0.0.0/0"
-        destination = "0.0.0.0/0"
-        direction   = "outbound"
-      }
-    ]
+    "zone-${count}" => count == var.zone
   }
 }
 
@@ -72,91 +42,93 @@ module "vpc" {
   region              = var.region
   name                = "vpc"
   prefix              = var.prefix
+  tags                = var.vpc_resource_tags
   subnets             = local.subnets
-  network_acls        = [local.network_acl]
   use_public_gateways = local.public_gateway
-}
-
-locals {
-  size_config = {
-    mini = {
-      flavor           = "bx2.4x16"
-      workers_per_zone = 1
-      zones            = 2
-
-    }
-    small = {
-      flavor           = "bx2.8x32"
-      workers_per_zone = 1
-      zones            = 3
-    }
-    medium = {
-      flavor           = "bx2.8x32"
-      workers_per_zone = 2
-      zones            = 3
-    }
-    large = {
-      flavor           = "bx2.16x64"
-      workers_per_zone = 3
-      zones            = 3
-    }
-  }
-
-  selected = lookup(local.size_config, var.size, local.size_config[var.size])
-
-  # Build the vpc_subnets for default pool
-  cluster_vpc_subnets = {
-    default = [
-      for i in range(local.selected.zones) : {
-        id         = module.vpc.subnet_zone_list[i].id
-        cidr_block = module.vpc.subnet_zone_list[i].cidr
-        zone       = module.vpc.subnet_zone_list[i].zone
+  network_acls = [{
+    name                         = "${var.prefix}-acl"
+    add_ibm_cloud_internal_rules = true
+    add_vpc_connectivity_rules   = true
+    prepend_ibm_rules            = true
+    rules = [{
+      name        = "inbound"
+      action      = "allow"
+      source      = "0.0.0.0/0"
+      destination = "0.0.0.0/0"
+      direction   = "inbound"
+      },
+      {
+        name        = "outbound"
+        action      = "allow"
+        source      = "0.0.0.0/0"
+        destination = "0.0.0.0/0"
+        direction   = "outbound"
       }
     ]
-  }
-
-  worker_pools = [
-    {
-      pool_name        = "default"
-      machine_type     = local.selected.flavor
-      operating_system = var.default_worker_pool_operating_system
-      workers_per_zone = local.selected.workers_per_zone
-      vpc_subnets      = local.cluster_vpc_subnets["default"]
-
     }
   ]
 }
 
-########################################################################################################################
-# OCP VPC cluster (single zone)
-########################################################################################################################
+#############################################################################
+# Provision Cluster
+#############################################################################
+
+locals {
+  worker_pools = [
+    {
+      subnet_prefix    = "zone-${var.zone}"
+      pool_name        = "default"
+      machine_type     = var.machine_type
+      workers_per_zone = var.workers_per_zone
+      operating_system = var.operating_system
+    }
+  ]
+
+  addons = merge({ for key, value in var.addons :
+    key => value != null ? {
+      version         = lookup(value, "version", null) == null && key == "openshift-data-foundation" ? "${var.openshift_version}.0" : lookup(value, "version", null)
+      parameters_json = lookup(value, "parameters_json", null)
+    } : null
+    },
+    # if the user overrides the values for the addons
+    lookup(var.addons, "openshift-data-foundation", null) == null ? { openshift-data-foundation = {
+      version         = "${var.openshift_version}.0"
+      parameters_json = "{\"osdStorageClassName\":\"localblock\",\"odfDeploy\":\"true\",\"autoDiscoverDevices\":\"true\"}"
+    } } : {},
+    lookup(var.addons, "vpc-file-csi-driver", null) == null ? { vpc-file-csi-driver = {
+      version = "2.0"
+  } } : {})
+}
+
 module "ocp_base" {
   source                              = "terraform-ibm-modules/base-ocp-vpc/ibm"
-  version                             = "3.76.4"
-  cluster_name                        = local.cluster_name
+  version                             = "3.76.3"
   resource_group_id                   = module.resource_group.resource_group_id
   region                              = var.region
-  ocp_version                         = var.openshift_version
-  ocp_entitlement                     = var.ocp_entitlement
+  tags                                = var.cluster_resource_tags
+  cluster_name                        = local.cluster_name
+  force_delete_storage                = true
   vpc_id                              = module.vpc.vpc_id
-  vpc_subnets                         = local.cluster_vpc_subnets
+  vpc_subnets                         = module.vpc.subnet_detail_map
+  ocp_version                         = var.openshift_version
   worker_pools                        = local.worker_pools
-  disable_outbound_traffic_protection = var.allow_outbound_traffic
   access_tags                         = var.access_tags
-  disable_public_endpoint             = !var.allow_public_access_to_cluster_management
-  cluster_config_endpoint_type        = "default"
+  ocp_entitlement                     = var.openshift_entitlement
+  addons                              = local.addons
+  cluster_ready_when                  = var.cluster_ready_when
+  disable_outbound_traffic_protection = true # set as True to enable outbound traffic; required for accessing Operator Hub in the OpenShift console.
 }
 
+#######################################################################################################################
+# Virtualization
+#######################################################################################################################
+
+# Retrieve information about an existing VPC cluster
 data "ibm_container_cluster_config" "cluster_config" {
   cluster_name_id   = module.ocp_base.cluster_id
-  resource_group_id = module.resource_group.resource_group_id
-  admin             = true
-}
-
-# Sleep to allow RBAC sync on cluster
-resource "time_sleep" "wait_operators" {
-  depends_on      = [data.ibm_container_cluster_config.cluster_config]
-  create_duration = "60s"
+  resource_group_id = module.ocp_base.resource_group_id
+  config_dir        = "${path.module}/kubeconfig"
+  endpoint_type     = var.cluster_config_endpoint_type != "default" ? var.cluster_config_endpoint_type : null
 }
 
 ########################################################################################################################
@@ -199,5 +171,7 @@ module "protect_cluster" {
   brs_tenant_id       = module.backup_recovery_instance.tenant_id
   registration_name   = module.ocp_base.cluster_name
   # --- Backup Policy ---
-  policy = var.policy
+  policy            = var.policy
+  wait_till         = var.wait_till
+  wait_till_timeout = var.wait_till_timeout
 }

@@ -17,9 +17,19 @@ output "cluster_crn" {
   value       = module.ocp_base.cluster_crn
 }
 
-output "vpc_name" {
-  description = "The name of the Virtual Private Cloud (VPC) in which the cluster is deployed."
-  value       = module.vpc.vpc_name
+output "workerpools" {
+  description = "A list of worker pools associated with the provisioned cluster."
+  value       = module.ocp_base.workerpools
+}
+
+output "ocp_version" {
+  description = "The version of OpenShift running on the provisioned cluster."
+  value       = module.ocp_base.ocp_version
+}
+
+output "cos_crn" {
+  description = "The Cloud Resource Name (CRN) of the Object Storage instance associated with the cluster."
+  value       = module.ocp_base.cos_crn
 }
 
 output "vpc_id" {
@@ -32,14 +42,14 @@ output "region" {
   value       = module.ocp_base.region
 }
 
-output "cos_crn" {
-  description = "The Cloud Resource Name (CRN) of the Object Storage instance associated with the cluster."
-  value       = module.ocp_base.cos_crn
-}
-
 output "resource_group_id" {
   description = "The ID of the resource group where the cluster is deployed."
   value       = module.ocp_base.resource_group_id
+}
+
+output "ingress_hostname" {
+  description = "The hostname assigned to the Cluster's Ingress subdomain for external access."
+  value       = module.ocp_base.ingress_hostname
 }
 
 output "public_service_endpoint_url" {
@@ -52,32 +62,37 @@ output "master_url" {
   value       = module.ocp_base.master_url
 }
 
+output "operating_system" {
+  description = "The operating system used by the worker nodes in the default worker pool."
+  value       = module.ocp_base.operating_system
+}
+
 output "master_status" {
   description = "The current status of the Kubernetes master node in the cluster."
   value       = module.ocp_base.master_status
 }
 
 output "next_steps_text" {
-  value       = "Your Red Hat OpenShift cluster is ready. You can now build, deploy, and manage containerized applications."
+  value       = "Your Red Hat OpenShift cluster is ready."
   description = "Next steps text"
 }
 
 output "next_step_primary_label" {
-  value       = "Red Hat OpenShift cluster overview page"
+  value       = "OpenShift cluster web console"
   description = "Primary label"
 }
 
 output "next_step_primary_url" {
-  value       = "https://cloud.ibm.com/containers/cluster-management/clusters/${module.ocp_base.cluster_id}/overview"
+  value       = "https://console-openshift-console.${module.ocp_base.ingress_hostname}/dashboards"
   description = "primary url"
 }
 
 output "next_step_secondary_label" {
-  value       = "Steps to deploy application on Cluster"
+  value       = "Red Hat OpenShift cluster overview page"
   description = "Secondary label"
 }
 
 output "next_step_secondary_url" {
-  value       = "https://cloud.ibm.com/docs/secure-infrastructure-vpc?topic=secure-infrastructure-vpc-tutorialDeployAppOpenShift"
-  description = "secondary url"
+  value       = "https://cloud.ibm.com/containers/cluster-management/clusters/${module.ocp_base.cluster_id}/overview"
+  description = "Secondary URL"
 }
