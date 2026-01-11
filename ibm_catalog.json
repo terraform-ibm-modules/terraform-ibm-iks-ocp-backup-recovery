@@ -295,22 +295,7 @@
                 "config_constraints": {
                   "generationType": "2"
                 }
-              }
-            },
-            {
-              "key": "region",
-              "required": true,
-              "type": "string",
-              "custom_config": {
-                "config_constraints": {
-                  "generationType": "2"
-                },
-                "grouping": "deployment",
-                "original_grouping": "deployment",
-                "type": "vpc_region"
               },
-              "description": "Region in which all the resources will be deployed. [Learn More](https://terraform-ibm-modules.github.io/documentation/#/region).",
-              "virtual": true,
               "default_value": "us-east"
             },
             {
