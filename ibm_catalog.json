@@ -343,59 +343,11 @@
               ]
             },
             {
-              "key": "default_worker_pool_machine_type",
-              "required": true,
-              "type": "string",
-              "default_value": "cx2d.metal.96x192",
-              "description": "Specifies the machine type for the default worker pool. This determines the CPU, memory, and disk resources available to each worker node. For OpenShift Virtualization installation, machines should be VPC bare metal servers. Refer [IBM Cloud documentation for available machine types](https://cloud.ibm.com/docs/vpc?topic=vpc-bare-metal-servers-profile&interface=ui#bare-metal-profile-availability-by-region).",
-              "virtual": true,
-              "options": [
-                {
-                  "displayname": "bx2.metal.96x384",
-                  "value": "bx2.metal.96x384"
-                },
-                {
-                  "displayname": "bx2d.metal.96x384",
-                  "value": "bx2d.metal.96x384"
-                },
-                {
-                  "displayname": "cx2.metal.96x192",
-                  "value": "cx2.metal.96x192"
-                },
-                {
-                  "displayname": "cx2d.metal.96x192",
-                  "value": "cx2d.metal.96x192"
-                },
-                {
-                  "displayname": "mx2.metal.96x768",
-                  "value": "mx2.metal.96x768"
-                },
-                {
-                  "displayname": "mx2d.metal.96x768",
-                  "value": "mx2d.metal.96x768"
-                }
-              ]
-            },
-            {
               "key": "default_worker_pool_workers_per_zone",
               "virtual": true,
               "type": "number",
               "default_value": 2,
               "description": "Defines the number of worker nodes to provision in each zone for the default worker pool. Overall cluster must have at least 2 worker nodes."
-            },
-            {
-              "key": "default_worker_pool_operating_system",
-              "required": true,
-              "virtual": true,
-              "type": "string",
-              "default_value": "RHCOS",
-              "description": "Provide the operating system for the worker nodes in the default worker pool. OpenShift Virtualization installation is supported only on RHCOS operating system. Refer [here](https://cloud.ibm.com/docs/openshift?topic=openshift-openshift_versions) for supported Operating Systems.",
-              "options": [
-                {
-                  "displayname": "Red Hat CoreOS",
-                  "value": "RHCOS"
-                }
-              ]
             },
             {
               "key": "addons",

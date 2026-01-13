@@ -119,9 +119,6 @@ module "ocp_base" {
   disable_outbound_traffic_protection = true # set as True to enable outbound traffic; required for accessing Operator Hub in the OpenShift console.
 }
 
-#######################################################################################################################
-# Virtualization
-#######################################################################################################################
 
 # Retrieve information about an existing VPC cluster
 data "ibm_container_cluster_config" "cluster_config" {

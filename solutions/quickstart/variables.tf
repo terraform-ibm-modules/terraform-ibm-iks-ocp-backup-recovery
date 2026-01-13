@@ -101,8 +101,8 @@ variable "openshift_version" {
   default     = "4.19"
 
   validation {
-    condition     = tonumber(var.openshift_version) >= 4.17
-    error_message = "To install Red Hat OpenShift Virtualization, `openshift_version` should be equal to or higher than `4.17`."
+    condition     = tonumber(var.openshift_version) >= 4.16
+    error_message = "Minimum supported OpenShift version is 4.16."
   }
 }
 
@@ -131,13 +131,13 @@ variable "workers_per_zone" {
 
 variable "machine_type" {
   type        = string
-  description = "Specifies the machine type for the default worker pool. This determines the CPU, memory, and disk resources available to each worker node. For OpenShift Virtualization installation, machines should be VPC bare metal servers. Refer [IBM Cloud documentation for available machine types](https://cloud.ibm.com/docs/vpc?topic=vpc-bare-metal-servers-profile&interface=ui#bare-metal-profile-availability-by-region)."
+  description = "Specifies the machine type for the default worker pool. This determines the CPU, memory, and disk resources available to each worker node."
   default     = "cx2d.metal.96x192"
 }
 
 variable "operating_system" {
   type        = string
-  description = "Provide the operating system for the worker nodes in the default worker pool. OpenShift Virtualization installation is supported only on RHCOS operating system. Refer [here](https://cloud.ibm.com/docs/openshift?topic=openshift-openshift_versions) for supported Operating Systems."
+  description = "Provide the operating system for the worker nodes in the default worker pool."
   default     = "RHCOS"
 
   validation {
@@ -185,7 +185,7 @@ variable "addons" {
       parameters_json = optional(string)
     }))
   })
-  description = "Map of OCP cluster add-on versions to install (NOTE: The 'vpc-block-csi-driver' add-on is installed by default for VPC clusters and 'ibm-storage-operator' is installed by default in OCP 4.15 and later, however you can explicitly specify it here if you wish to choose a later version than the default one). For full list of all supported add-ons and versions, see https://cloud.ibm.com/docs/containers?topic=containers-supported-cluster-addon-versions. [Learn more](https://github.com/terraform-ibm-modules/terraform-ibm-ocp-virtualization/blob/main/solutions/quickstart/DA_docs.md#options-with-addons)"
+  description = "Map of OCP cluster add-on versions to install (NOTE: The 'vpc-block-csi-driver' add-on is installed by default for VPC clusters and 'ibm-storage-operator' is installed by default in OCP 4.15 and later, however you can explicitly specify it here if you wish to choose a later version than the default one). For full list of all supported add-ons and versions, see https://cloud.ibm.com/docs/containers?topic=containers-supported-cluster-addon-versions."
   nullable    = false
   # See, https://github.com/IBM-Cloud/terraform-provider-ibm/issues/6290
   default = {

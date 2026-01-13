@@ -13,13 +13,13 @@ variable "region" {
 variable "prefix" {
   type        = string
   description = "Prefix to append to all resources created by this example."
-  default     = "virt-da"
+  default     = "brs-da"
 }
 
 variable "resource_tags" {
   type        = list(string)
   description = "Optional list of tags to be added to created resources."
-  default     = ["virtualization-ocp"]
+  default     = ["brs-ocp"]
 }
 
 variable "resource_group" {
