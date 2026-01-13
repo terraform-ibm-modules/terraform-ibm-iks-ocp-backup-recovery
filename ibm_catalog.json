@@ -222,7 +222,7 @@
               {
                 "diagram": {
                   "caption": "Red Hat OpenShift cluster with Backup and Recovery for IBM Cloud",
-                  "url": "https://raw.githubusercontent.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery/main/reference-architectures/architecture_diagram.png",
+                  "url": "https://raw.githubusercontent.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery/main/reference-architectures/architecture_diagram.svg",
                   "type": "image/svg+xml"
                 },
                 "description": "This architecture integrates an existing <b>Red Hat OpenShift (ROKS) cluster</b> with <b>IBM Backup & Recovery Service</b>. The solution deploys the <b>Data Source Connector (DSC)</b> via Helm, creates necessary Kubernetes resources, optionally configures outbound security group rules, registers the cluster, and applies a fully customizable protection policy.<br><br>Backups are stored in IBM Cloud Object Storage (managed by the Backup & Recovery instance) with options for immutable storage (WORM) to meet compliance requirements. This enables reliable point-in-time recovery of applications, data, and cluster configurations."
@@ -400,14 +400,6 @@
             {
               "key": "addons",
               "type": "object",
-              "default_value": {
-                "openshift-data-foundation": {
-                  "parameters_json": "{\"osdStorageClassName\":\"localblock\",\"odfDeploy\":\"true\",\"autoDiscoverDevices\":\"true\"}"
-                },
-                "vpc-file-csi-driver": {
-                  "version": "2.0"
-                }
-              },
               "description": "Map of OpenShift cluster add-on versions to install (NOTE: The 'vpc-block-csi-driver' add-on is installed by default for VPC clusters and 'ibm-storage-operator' is installed by default in OCP 4.15 and later, however you can explicitly specify it here if you wish to choose a later version than the default one). For full list of all supported add-ons and versions, see https://cloud.ibm.com/docs/containers?topic=containers-supported-cluster-addon-versions. [Learn more](https://github.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery/blob/main/solutions/fully-configurable/DA_docs.md#options-with-addons)",
               "display_name": "addons",
               "required": false,
@@ -554,14 +546,105 @@
             },
             {
               "key": "brs_instance_name",
-              "required": true
+              "required": true,
+              "type": "string",
+              "default_value": "brs-instance",
+              "description": "The name of the Backup and Recovery Service instance to create or use."
+            },
+            {
+              "key": "create_new_brs_instance",
+              "required": false,
+              "type": "boolean",
+              "default_value": true,
+              "description": "Flag to create a new Backup and Recovery Service instance. If set to false, an existing instance will be used."
             },
             {
               "key": "brs_connection_name",
-              "required": true
+              "required": true,
+              "type": "string",
+              "default_value": "brs-connection",
+              "description": "The name of the Backup and Recovery Service connection to create or use."
             },
             {
-              "key": "policy"
+              "key": "create_new_brs_connection",
+              "required": false,
+              "type": "boolean",
+              "default_value": true,
+              "description": "Flag to create a new Backup and Recovery Service connection. If set to false, an existing connection will be used."
+            },
+            {
+              "key": "policy",
+              "required": false
+            },
+            {
+              "key": "dsc_chart_uri",
+              "required": false,
+              "type": "string",
+              "default_value": "oci://icr.io/ext/brs/cohesity-dsc-chart:7.2.16-release-20251014-fbc7ff85@sha256:69114edaeb80198684040ca9c014b57fd2993f45e07dfeffd64fd5ee28165cd2",
+              "description": "The OCI URI of the Data Source Connector Helm chart to deploy."
+            },
+            {
+              "key": "data_mover_image_uri",
+              "required": false,
+              "type": "string",
+              "default_value": "icr.io/ext/brs/cohesity-datamover:7.2.16@sha256:f7fa1cfbb74e469117d553c02deedf6f4a35b3a61647028a9424be346fc3eb09",
+              "description": "The image URI for the Data Mover container."
+            },
+            {
+              "key": "velero_image_uri",
+              "required": false,
+              "type": "string",
+              "default_value": "icr.io/ext/brs/velero:7.2.16@sha256:1a5ee2393f0b1063ef095246d304c1ec4648c3af6a47261325ef039256a4a041",
+              "description": "The image URI for the Velero container."
+            },
+            {
+              "key": "velero_aws_plugin_image_uri",
+              "required": false,
+              "type": "string",
+              "default_value": "icr.io/ext/brs/velero-plugin-for-aws:7.2.16@sha256:dbcd35bcbf0d4c7deeae67b7dfd55c4fa51880b61307d71eeea3e9e84a370e13",
+              "description": "The image URI for the Velero AWS plugin container."
+            },
+            {
+              "key": "velero_openshift_plugin_image_uri",
+              "required": false,
+              "type": "string",
+              "default_value": "icr.io/ext/brs/velero-plugin-for-openshift:7.2.16@sha256:6b643edcb920ad379c9ef1e2cca112a2ad0a1d55987f9c27af4022f7e3b19552",
+              "description": "The image URI for the Velero OpenShift plugin container."
+            },
+            {
+              "key": "enable_auto_protect",
+              "type": "boolean",
+              "default_value": false,
+              "description": "When set to `true`, newly created namespaces in the OpenShift cluster will be automatically protected according to the defined backup policy.",
+              "required": false
+            },
+            {
+              "key": "dsc_namespace",
+              "type": "string",
+              "default_value": "ibm-brs-data-source-connector",
+              "description": "The Kubernetes namespace in which to deploy the Data Source Connector.",
+              "required": false
+            },
+            {
+              "key": "dsc_name",
+              "type": "string",
+              "default_value": "dsc",
+              "description": "The name to assign to the Data Source Connector deployment.",
+              "required": false
+            },
+            {
+              "key": "dsc_replicas",
+              "type": "number",
+              "default_value": 1,
+              "description": "The number of replicas for the Data Source Connector deployment.",
+              "required": false
+            },
+            {
+              "key": "dsc_image_version",
+              "type": "string",
+              "default_value": "icr.io/ext/brs/cohesity-data-source-connector:7.2.16@sha256:2674c764ca46310aef3adb733d950f7786d9bf560bf72c22cff52370e77e29b5",
+              "description": "The container image for the Data Source Connector.",
+              "required": false
             }
           ],
           "dependencies": [
@@ -732,7 +815,7 @@
               {
                 "diagram": {
                   "caption": "Red Hat OpenShift cluster with Backup and Recovery for IBM Cloud",
-                  "url": "https://raw.githubusercontent.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery/main/reference-architectures/architecture_diagram.png",
+                  "url": "https://raw.githubusercontent.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery/main/reference-architectures/architecture_diagram.svg",
                   "type": "image/svg+xml"
                 },
                 "description": "This architecture integrates creates <b>Red Hat OpenShift (ROKS) cluster</b> with <b>IBM Backup & Recovery Service</b>. The solution deploys the <b>Data Source Connector (DSC)</b> via Helm, creates necessary Kubernetes resources, optionally configures outbound security group rules, registers the cluster, and applies a fully customizable protection policy.<br><br>Backups are stored in IBM Cloud Object Storage (managed by the Backup & Recovery instance) with options for immutable storage (WORM) to meet compliance requirements. This enables reliable point-in-time recovery of applications, data, and cluster configurations."

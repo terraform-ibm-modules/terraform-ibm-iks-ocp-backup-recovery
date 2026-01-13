@@ -57,13 +57,22 @@ module "dsc_sg_rule" {
   ]
 }
 
+locals {
+  uri_no_digest      = split("@", var.dsc_chart_uri)[0]
+  chart_with_version = element(split("/", local.uri_no_digest), -1)
+
+  dsc_chart          = split(":", local.chart_with_version)[0]
+  dsc_chart_version  = replace(local.chart_with_version, "${local.dsc_chart}:", "")
+  dsc_chart_location = replace(local.uri_no_digest, "/${local.chart_with_version}", "")
+}
+
 resource "helm_release" "data_source_connector" {
   depends_on       = [module.dsc_sg_rule]
   name             = var.dsc_name
-  chart            = var.dsc_chart
-  repository       = var.dsc_chart_location
+  chart            = local.dsc_chart
+  repository       = local.dsc_chart_location
   namespace        = var.dsc_namespace
-  version          = var.dsc_chart_version
+  version          = local.dsc_chart_version
   create_namespace = true
   timeout          = 1500
   wait             = true

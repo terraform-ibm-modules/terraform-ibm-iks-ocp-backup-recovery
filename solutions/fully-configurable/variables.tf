@@ -120,3 +120,85 @@ variable "policy" {
   }
   description = "The backup schedule and retentions of a Protection Policy."
 }
+
+variable "create_new_brs_instance" {
+  type        = bool
+  description = "Whether to create a new Backup and Recovery Service instance. If false, an existing instance must be used."
+  default     = true
+}
+
+variable "create_new_brs_connection" {
+  type        = bool
+  description = "Whether to create a new Backup and Recovery Service connection. If false, an existing connection must be used."
+  default     = true
+}
+
+variable "dsc_chart_uri" {
+  description = "The full OCI registry URI for the Data Source Connector Helm chart, including the digest."
+  type        = string
+  default     = "oci://icr.io/ext/brs/cohesity-dsc-chart:7.2.16-release-20251014-fbc7ff85@sha256:69114edaeb80198684040ca9c014b57fd2993f45e07dfeffd64fd5ee28165cd2"
+  nullable    = false
+}
+variable "data_mover_image_uri" {
+  description = "The OCI registry URI for the Data Mover image version to deploy."
+  type        = string
+  default     = "icr.io/ext/brs/cohesity-datamover:7.2.16@sha256:f7fa1cfbb74e469117d553c02deedf6f4a35b3a61647028a9424be346fc3eb09"
+  nullable    = false
+}
+variable "velero_image_uri" {
+  description = "The OCI registry URI for the Velero image version to deploy."
+  type        = string
+  default     = "icr.io/ext/brs/velero:7.2.16@sha256:1a5ee2393f0b1063ef095246d304c1ec4648c3af6a47261325ef039256a4a041"
+  nullable    = false
+}
+variable "velero_aws_plugin_image_uri" {
+  description = "The OCI registry URI for the Velero AWS plugin image version to deploy."
+  type        = string
+  default     = "icr.io/ext/brs/velero-plugin-for-aws:7.2.16@sha256:dbcd35bcbf0d4c7deeae67b7dfd55c4fa51880b61307d71eeea3e9e84a370e13"
+  nullable    = false
+}
+variable "velero_openshift_plugin_image_uri" {
+  description = "The OCI registry URI for the Velero OpenShift plugin image version to deploy."
+  type        = string
+  default     = "icr.io/ext/brs/velero-plugin-for-openshift:7.2.16@sha256:6b643edcb920ad379c9ef1e2cca112a2ad0a1d55987f9c27af4022f7e3b19552"
+  nullable    = false
+}
+
+variable "enable_auto_protect" {
+  description = "Flag to enable auto-protect for the cluster."
+  type        = bool
+  default     = false
+}
+variable "dsc_namespace" {
+  description = "The namespace in the cluster where the Data Source Connector will be deployed."
+  type        = string
+  default     = "ibm-brs-data-source-connector"
+  nullable    = false
+}
+variable "dsc_name" {
+  description = "Release name for the Data Source Connector Helm deployment."
+  type        = string
+  default     = "dsc"
+  nullable    = false
+}
+variable "dsc_replicas" {
+  description = <<-EOT
+  Number of Data Source Connector podsto run.
+  Recommended values:
+    • 3 – for high availability across multiple nodes/zones (strongly recommended in production)
+    • 1 – only for dev/test or single-node clusters
+  EOT
+  type        = number
+  default     = 1
+  nullable    = false
+}
+variable "dsc_image_version" {
+  description = "Container image for the Data Source Connector."
+  type        = string
+  default     = "icr.io/ext/brs/cohesity-data-source-connector:7.2.16@sha256:2674c764ca46310aef3adb733d950f7786d9bf560bf72c22cff52370e77e29b5"
+  nullable    = false
+  validation {
+    condition     = length(split("@", var.dsc_image_version)[0]) > 0
+    error_message = "The image version must be in the format '<registry>/<namespace>/<repository>:<semver-tag>@sha256:<64-hex-digest>'."
+  }
+}

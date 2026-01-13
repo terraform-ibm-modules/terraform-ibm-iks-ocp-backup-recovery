@@ -238,7 +238,7 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 	require.NoError(t, recurseErr, "Schematic Test had unexpected error traversing directory tree")
 
 	// Provision resources first
-	prefix := fmt.Sprintf("ocp-vi-%s", strings.ToLower(random.UniqueId()))
+	prefix := fmt.Sprintf("ocp-brs-%s", strings.ToLower(random.UniqueId()))
 	existingTerraformOptions := setupTerraform(t, prefix, "./resources")
 
 	options := testschematic.TestSchematicOptionsDefault(&testschematic.TestSchematicOptions{

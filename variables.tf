@@ -69,24 +69,31 @@ variable "add_dsc_rules_to_cluster_sg" {
   default     = true
 }
 
-variable "dsc_chart" {
-  description = "Name of the Data Source connector Helm chart."
-  type        = string
-  default     = "cohesity-dsc-chart"
-  nullable    = false
-}
+# variable "dsc_chart" {
+#   description = "Name of the Data Source connector Helm chart."
+#   type        = string
+#   default     = "cohesity-dsc-chart"
+#   nullable    = false
+# }
 
-variable "dsc_chart_location" {
-  description = "OCI registry location of the Data Source Connector Helm chart."
-  type        = string
-  default     = "oci://icr.io/ext/brs"
-  nullable    = false
-}
+# variable "dsc_chart_location" {
+#   description = "OCI registry location of the Data Source Connector Helm chart."
+#   type        = string
+#   default     = "oci://icr.io/ext/brs"
+#   nullable    = false
+# }
 
-variable "dsc_chart_version" {
-  description = "Version of the Data Source Connector Helm chart to deploy."
+# variable "dsc_chart_version" {
+#   description = "Version of the Data Source Connector Helm chart to deploy."
+#   type        = string
+#   default     = "7.2.16-release-20251014-fbc7ff85"
+#   nullable    = false
+# }
+
+variable "dsc_chart_uri" {
+  description = "The full OCI registry URI for the Data Source Connector Helm chart, including the digest."
   type        = string
-  default     = "7.2.16-release-20251014-fbc7ff85"
+  default     = "oci://icr.io/ext/brs/cohesity-dsc-chart:7.2.16-release-20251014-fbc7ff85@sha256:69114edaeb80198684040ca9c014b57fd2993f45e07dfeffd64fd5ee28165cd2"
   nullable    = false
 }
 
