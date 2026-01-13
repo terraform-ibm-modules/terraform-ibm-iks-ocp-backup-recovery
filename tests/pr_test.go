@@ -17,7 +17,6 @@ import (
 	"github.com/gruntwork-io/terratest/modules/logger"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/terraform-ibm-modules/ibmcloud-terratest-wrapper/cloudinfo"
 	"github.com/terraform-ibm-modules/ibmcloud-terratest-wrapper/common"
@@ -28,7 +27,6 @@ import (
 
 // Use existing resource group
 const resourceGroup = "geretain-test-resources"
-const quickStartTerraformDir = "solutions/quickstart"
 const fullyConfigurableTerraformDir = "solutions/fully-configurable"
 
 var excludeDirs = []string{".terraform", ".docs", ".github", ".git", ".idea", "common-dev-assets", "examples", "tests", "reference-architectures"}
@@ -114,77 +112,6 @@ func TestMain(m *testing.M) {
 	}
 
 	os.Exit(m.Run())
-}
-
-/*******************************************************************
-* TESTS FOR THE TERRAFORM BASED QUICKSTART DEPLOYABLE ARCHITECTURE *
-********************************************************************/
-func TestRunQuickstartDASchematics(t *testing.T) {
-	t.Parallel()
-
-	tarIncludePatterns, recurseErr := getTarIncludePatternsRecursively("..", excludeDirs, includeFiletypes)
-	// if error producing tar patterns (very unexpected) fail test immediately
-	require.NoError(t, recurseErr, "Schematic Test had unexpected error traversing directory tree")
-
-	// Set up a schematics test
-	options := testschematic.TestSchematicOptionsDefault(&testschematic.TestSchematicOptions{
-		Testing:            t,
-		TarIncludePatterns: tarIncludePatterns,
-		TemplateFolder:     quickStartTerraformDir,
-		// This is the resource group that the workspace will be created in
-		ResourceGroup:          resourceGroup,
-		Prefix:                 "brs-qs",
-		Tags:                   []string{"test-schematic"},
-		DeleteWorkspaceOnFail:  false,
-		WaitJobCompleteMinutes: 180,
-	})
-
-	// Pass required variables
-	options.TerraformVars = []testschematic.TestSchematicTerraformVar{
-		{Name: "ibmcloud_api_key", Value: options.RequiredEnvironmentVars["TF_VAR_ibmcloud_api_key"], DataType: "string", Secure: true},
-		// use options.Prefix here to generate a unique prefix every time so resource group name is unique for every test
-		{Name: "prefix", Value: options.Prefix, DataType: "string"},
-		{Name: "existing_resource_group_name", Value: resourceGroup, DataType: "string"},
-		{Name: "machine_type", Value: "bx2.4x16", DataType: "string"},
-		{Name: "openshift_entitlement", Value: "cloud_pak", DataType: "string"},
-	}
-
-	err := options.RunSchematicTest()
-	assert.NoError(t, err, "Schematic Test had unexpected error")
-}
-
-func TestRunQuickstartDAUpgrade(t *testing.T) {
-	t.Parallel()
-
-	tarIncludePatterns, recurseErr := getTarIncludePatternsRecursively("..", excludeDirs, includeFiletypes)
-	// if error producing tar patterns (very unexpected) fail test immediately
-	require.NoError(t, recurseErr, "Schematic Test had unexpected error traversing directory tree")
-
-	// Set up a schematics test
-	options := testschematic.TestSchematicOptionsDefault(&testschematic.TestSchematicOptions{
-		Testing:            t,
-		TarIncludePatterns: tarIncludePatterns,
-		TemplateFolder:     quickStartTerraformDir,
-		// This is the resource group that the workspace will be created in
-		ResourceGroup:          resourceGroup,
-		Prefix:                 "brs-qs-upg",
-		Tags:                   []string{"test-schematic"},
-		DeleteWorkspaceOnFail:  false,
-		WaitJobCompleteMinutes: 180,
-	})
-
-	// Pass required variables
-	options.TerraformVars = []testschematic.TestSchematicTerraformVar{
-		{Name: "ibmcloud_api_key", Value: options.RequiredEnvironmentVars["TF_VAR_ibmcloud_api_key"], DataType: "string", Secure: true},
-		// use options.Prefix here to generate a unique prefix every time so resource group name is unique for every test
-		{Name: "prefix", Value: options.Prefix, DataType: "string"},
-		{Name: "existing_resource_group_name", Value: resourceGroup, DataType: "string"},
-		{Name: "machine_type", Value: "bx2.4x16", DataType: "string"},
-		{Name: "openshift_entitlement", Value: "cloud_pak", DataType: "string"},
-	}
-
-	err := options.RunSchematicUpgradeTest()
-	assert.NoError(t, err, "Schematic Test had unexpected error")
 }
 
 func validateEnvVariable(t *testing.T, varName string) string {

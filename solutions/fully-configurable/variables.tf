@@ -47,22 +47,6 @@ variable "region" {
   description = "The region where the cluster is located."
   default     = "us-east"
 }
-variable "resource_tags" {
-  type        = list(string)
-  description = "A list of tags to apply to the resources created by the module."
-  default     = []
-}
-variable "brs_instance_name" {
-  type        = string
-  description = "The name of the Backup and Recovery Service instance to create."
-  default     = null
-}
-
-variable "brs_connection_name" {
-  type        = string
-  description = "The name of the Backup and Recovery Service connection to create."
-  default     = null
-}
 
 variable "policy" {
   type = object({
@@ -121,18 +105,6 @@ variable "policy" {
   description = "The backup schedule and retentions of a Protection Policy."
 }
 
-variable "create_new_brs_instance" {
-  type        = bool
-  description = "Whether to create a new Backup and Recovery Service instance. If false, an existing instance must be used."
-  default     = true
-}
-
-variable "create_new_brs_connection" {
-  type        = bool
-  description = "Whether to create a new Backup and Recovery Service connection. If false, an existing connection must be used."
-  default     = true
-}
-
 variable "dsc_chart_uri" {
   description = "The full OCI registry URI for the Data Source Connector Helm chart, including the digest."
   type        = string
@@ -168,6 +140,7 @@ variable "enable_auto_protect" {
   description = "Flag to enable auto-protect for the cluster."
   type        = bool
   default     = false
+  nullable    = false
 }
 variable "dsc_namespace" {
   description = "The namespace in the cluster where the Data Source Connector will be deployed."
@@ -201,4 +174,25 @@ variable "dsc_image_version" {
     condition     = length(split("@", var.dsc_image_version)[0]) > 0
     error_message = "The image version must be in the format '<registry>/<namespace>/<repository>:<semver-tag>@sha256:<64-hex-digest>'."
   }
+}
+
+variable "brs_connection_id" {
+  type        = string
+  description = "The ID of an existing Backup and Recovery Service connection to use."
+  nullable    = false
+}
+variable "brs_instance_guid" {
+  type        = string
+  description = "The GUID of an existing Backup and Recovery Service instance to use."
+  nullable    = false
+}
+variable "brs_tenant_id" {
+  type        = string
+  description = "The tenant ID of an existing Backup and Recovery Service instance to use."
+  nullable    = false
+}
+variable "dsc_registration_token" {
+  type        = string
+  description = "Registration token generated in the Backup & Recovery Service UI when adding a cluster data source."
+  sensitive   = true
 }
