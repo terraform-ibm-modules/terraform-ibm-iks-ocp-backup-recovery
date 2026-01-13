@@ -81,23 +81,6 @@ resource "time_sleep" "wait_operators" {
   create_duration = "60s"
 }
 
-########################################################################################################################
-# Backup & Recovery Service (BRS)
-########################################################################################################################
-
-module "backup_recovery_instance" {
-  source                = "terraform-ibm-modules/backup-recovery/ibm"
-  version               = "v1.1.10"
-  region                = var.region
-  resource_group_id     = module.resource_group.resource_group_id
-  ibmcloud_api_key      = var.ibmcloud_api_key
-  tags                  = var.resource_tags
-  instance_name         = "${var.prefix}-brs-instance"
-  connection_name       = "${var.prefix}-brs-connection"
-  create_new_connection = true
-  create_new_instance   = true
-}
-
 
 ########################################################################################################################
 # Backup & Recovery for IKS/ROKS with Data Source Connector
@@ -110,16 +93,15 @@ module "protect_cluster" {
   cluster_resource_group_id    = module.resource_group.resource_group_id
   cluster_config_endpoint_type = "private"
   add_dsc_rules_to_cluster_sg  = false
-  dsc_registration_token       = module.backup_recovery_instance.registration_token
   kube_type                    = "kubernetes"
-  connection_id                = module.backup_recovery_instance.connection_id
   ibmcloud_api_key             = var.ibmcloud_api_key
   # --- B&R Instance ---
-  brs_instance_guid   = module.backup_recovery_instance.brs_instance_guid
-  brs_instance_region = var.region
-  brs_endpoint_type   = "public"
-  brs_tenant_id       = module.backup_recovery_instance.tenant_id
-  registration_name   = data.ibm_container_vpc_cluster.cluster.name
+  brs_instance_region              = var.region
+  brs_endpoint_type                = "public"
+  brs_instance_resource_group_name = module.resource_group.resource_group_name
+  brs_instance_name                = "${var.prefix}-brs-instance"
+  brs_connection_name              = "${var.prefix}-brs-connection"
+  registration_name                = data.ibm_container_vpc_cluster.cluster.name
   # --- Backup Policy ---
   policy = {
     name = "${var.prefix}-retention"

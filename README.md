@@ -117,8 +117,9 @@ You need the following permissions to run this module:
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.9.0 |
 | <a name="requirement_helm"></a> [helm](#requirement\_helm) | >=3.1.0, <4.0.0 |
-| <a name="requirement_ibm"></a> [ibm](#requirement\_ibm) | >= 1.85.0, < 2.0.0 |
+| <a name="requirement_ibm"></a> [ibm](#requirement\_ibm) | >= 1.87.0, < 2.0.0 |
 | <a name="requirement_kubernetes"></a> [kubernetes](#requirement\_kubernetes) | >=3.0.1, <4.0.0 |
+| <a name="requirement_time"></a> [time](#requirement\_time) | >= 0.12.1, < 1.0.0 |
 
 ### Modules
 
@@ -131,35 +132,39 @@ You need the following permissions to run this module:
 | Name | Type |
 |------|------|
 | [helm_release.data_source_connector](https://registry.terraform.io/providers/hashicorp/helm/latest/docs/resources/release) | resource |
+| [ibm_backup_recovery_connection_registration_token.registration_token](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery_connection_registration_token) | resource |
 | [ibm_backup_recovery_protection_policy.protection_policy](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery_protection_policy) | resource |
 | [ibm_backup_recovery_source_registration.source_registration](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery_source_registration) | resource |
 | [kubernetes_cluster_role_binding_v1.brsagent_admin](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/cluster_role_binding_v1) | resource |
 | [kubernetes_secret_v1.brsagent_token](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/secret_v1) | resource |
 | [kubernetes_service_account_v1.brsagent](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/service_account_v1) | resource |
 | [terraform_data.delete_auto_protect_pg](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
+| [time_rotating.token_rotation](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/rotating) | resource |
+| [ibm_backup_recovery_data_source_connections.connections](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/data-sources/backup_recovery_data_source_connections) | data source |
 | [ibm_backup_recovery_protection_groups.protection_groups](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/data-sources/backup_recovery_protection_groups) | data source |
 | [ibm_backup_recovery_protection_policies.existing_policies](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/data-sources/backup_recovery_protection_policies) | data source |
 | [ibm_container_vpc_cluster.cluster](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/data-sources/container_vpc_cluster) | data source |
 | [ibm_is_security_group.clustersg](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/data-sources/is_security_group) | data source |
+| [ibm_resource_group.brs_instance_rg](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/data-sources/resource_group) | data source |
+| [ibm_resource_instance.backup_recovery_instance](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/data-sources/resource_instance) | data source |
 
 ### Inputs
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | <a name="input_add_dsc_rules_to_cluster_sg"></a> [add\_dsc\_rules\_to\_cluster\_sg](#input\_add\_dsc\_rules\_to\_cluster\_sg) | Set to `true` to automatically add required security group rules for the Data Source Connector and set to `false` to only register the cluster and create the policy. | `bool` | `true` | no |
+| <a name="input_brs_connection_name"></a> [brs\_connection\_name](#input\_brs\_connection\_name) | Name of the connection from the Backup & Recovery Service instance. | `string` | n/a | yes |
 | <a name="input_brs_endpoint_type"></a> [brs\_endpoint\_type](#input\_brs\_endpoint\_type) | The endpoint type to use when connecting to the Backup and Recovery service for creating a data source connection. Allowed values are 'public' or 'private'. | `string` | `"private"` | no |
-| <a name="input_brs_instance_guid"></a> [brs\_instance\_guid](#input\_brs\_instance\_guid) | GUID of the Backup & Recovery Service instance. | `string` | n/a | yes |
+| <a name="input_brs_instance_name"></a> [brs\_instance\_name](#input\_brs\_instance\_name) | Name of the Backup & Recovery Service instance. | `string` | n/a | yes |
 | <a name="input_brs_instance_region"></a> [brs\_instance\_region](#input\_brs\_instance\_region) | Region of the Backup & Recovery Service instance. | `string` | n/a | yes |
-| <a name="input_brs_tenant_id"></a> [brs\_tenant\_id](#input\_brs\_tenant\_id) | BRS tenant ID in the format `<tenant-guid>/`. Required for API calls and agent configuration. | `string` | n/a | yes |
+| <a name="input_brs_instance_resource_group_name"></a> [brs\_instance\_resource\_group\_name](#input\_brs\_instance\_resource\_group\_name) | Resource group name of the Backup & Recovery Service instance. | `string` | n/a | yes |
 | <a name="input_cluster_config_endpoint_type"></a> [cluster\_config\_endpoint\_type](#input\_cluster\_config\_endpoint\_type) | The type of endpoint to use for the cluster config access: `default`, `private`, `vpe`, or `link`. The `default` value uses the default endpoint of the cluster. | `string` | `"default"` | no |
 | <a name="input_cluster_id"></a> [cluster\_id](#input\_cluster\_id) | The ID of the cluster designated for backup and recovery. | `string` | n/a | yes |
 | <a name="input_cluster_resource_group_id"></a> [cluster\_resource\_group\_id](#input\_cluster\_resource\_group\_id) | Resource group ID the cluster is deployed in. | `string` | n/a | yes |
-| <a name="input_connection_id"></a> [connection\_id](#input\_connection\_id) | Connection ID for the backup service | `string` | n/a | yes |
 | <a name="input_dsc_chart_uri"></a> [dsc\_chart\_uri](#input\_dsc\_chart\_uri) | The full OCI registry URI for the Data Source Connector Helm chart, including the digest. | `string` | `"oci://icr.io/ext/brs/cohesity-dsc-chart:7.2.16-release-20251014-fbc7ff85@sha256:69114edaeb80198684040ca9c014b57fd2993f45e07dfeffd64fd5ee28165cd2"` | no |
 | <a name="input_dsc_image_version"></a> [dsc\_image\_version](#input\_dsc\_image\_version) | Container image for the Data Source Connector. | `string` | `"icr.io/ext/brs/cohesity-data-source-connector:7.2.16@sha256:2674c764ca46310aef3adb733d950f7786d9bf560bf72c22cff52370e77e29b5"` | no |
 | <a name="input_dsc_name"></a> [dsc\_name](#input\_dsc\_name) | Release name for the Data Source Connector Helm deployment. | `string` | `"dsc"` | no |
 | <a name="input_dsc_namespace"></a> [dsc\_namespace](#input\_dsc\_namespace) | The cluster namespace where the Data Source Connector will be installed. Will be created if it does not exist. | `string` | `"ibm-brs-data-source-connector"` | no |
-| <a name="input_dsc_registration_token"></a> [dsc\_registration\_token](#input\_dsc\_registration\_token) | Registration token generated in the Backup & Recovery Service UI when adding a cluster data source. | `string` | n/a | yes |
 | <a name="input_dsc_replicas"></a> [dsc\_replicas](#input\_dsc\_replicas) | Number of Data Source Connector podsto run.<br/>Recommended values:<br/>  • 3 – for high availability across multiple nodes/zones (strongly recommended in production)<br/>  • 1 – only for dev/test or single-node clusters | `number` | `1` | no |
 | <a name="input_enable_auto_protect"></a> [enable\_auto\_protect](#input\_enable\_auto\_protect) | Set to `true` to enable auto-protect on the registered cluster with the specified protection policy. | `bool` | `false` | no |
 | <a name="input_ibmcloud_api_key"></a> [ibmcloud\_api\_key](#input\_ibmcloud\_api\_key) | The IBM Cloud api key to generate an IAM token. | `string` | n/a | yes |

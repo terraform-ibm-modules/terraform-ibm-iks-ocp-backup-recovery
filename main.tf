@@ -81,7 +81,7 @@ resource "helm_release" "data_source_connector" {
   values = [
     yamlencode({
       secrets = {
-        registrationToken = var.dsc_registration_token
+        registrationToken = local.registration_token
       }
       image = {
         namespace  = element(split("/", var.dsc_image_version), 1)
@@ -140,15 +140,59 @@ locals {
     local.use_existing_policy ? (
       data.ibm_backup_recovery_protection_policies.existing_policies[0].policies[0].id
       ) : (
-      replace(ibm_backup_recovery_protection_policy.protection_policy[0].id, "${var.brs_tenant_id}::", "")
+      replace(ibm_backup_recovery_protection_policy.protection_policy[0].id, "${local.brs_tenant_id}::", "")
     )
   ) : null
 }
 
+# brs instance can be in a different resource group than the cluster
+data "ibm_resource_group" "brs_instance_rg" {
+  name = var.brs_instance_resource_group_name
+}
+
+data "ibm_resource_instance" "backup_recovery_instance" {
+  name              = var.brs_instance_name
+  location          = var.brs_instance_region
+  resource_group_id = data.ibm_resource_group.brs_instance_rg.id
+  service           = "backup-recovery"
+}
+data "ibm_backup_recovery_data_source_connections" "connections" {
+  x_ibm_tenant_id  = local.brs_tenant_id
+  connection_names = [var.brs_connection_name]
+  endpoint_type    = var.brs_endpoint_type
+  instance_id      = local.brs_instance_guid
+  region           = var.brs_instance_region
+}
+locals {
+  brs_tenant_id                        = "${data.ibm_resource_instance.backup_recovery_instance.extensions.tenant-id}/"
+  brs_instance_guid                    = data.ibm_resource_instance.backup_recovery_instance.guid
+  connection_id                        = data.ibm_backup_recovery_data_source_connections.connections.connections[0].connection_id
+  registration_token                   = ibm_backup_recovery_connection_registration_token.registration_token.registration_token
+  backup_recovery_instance_public_url  = data.ibm_resource_instance.backup_recovery_instance.extensions["endpoints.public"]
+  backup_recovery_instance_private_url = data.ibm_resource_instance.backup_recovery_instance.extensions["endpoints.private"]
+}
+resource "time_rotating" "token_rotation" {
+  rotation_days = 1
+}
+
+resource "ibm_backup_recovery_connection_registration_token" "registration_token" {
+  connection_id   = local.connection_id
+  x_ibm_tenant_id = local.brs_tenant_id
+  endpoint_type   = var.brs_endpoint_type
+  instance_id     = local.brs_instance_guid
+  region          = var.brs_instance_region
+
+  # This forces a replacement every time the time_rotating resource rotates
+  lifecycle {
+    replace_triggered_by = [
+      time_rotating.token_rotation
+    ]
+  }
+}
 data "ibm_backup_recovery_protection_policies" "existing_policies" {
   count           = local.use_existing_policy ? 1 : 0
-  x_ibm_tenant_id = var.brs_tenant_id
-  instance_id     = var.brs_instance_guid
+  x_ibm_tenant_id = local.brs_tenant_id
+  instance_id     = local.brs_instance_guid
   region          = var.brs_instance_region
   endpoint_type   = var.brs_endpoint_type
   policy_names    = [var.policy.name]
@@ -156,9 +200,9 @@ data "ibm_backup_recovery_protection_policies" "existing_policies" {
 
 resource "ibm_backup_recovery_source_registration" "source_registration" {
   depends_on      = [kubernetes_secret_v1.brsagent_token]
-  x_ibm_tenant_id = var.brs_tenant_id
+  x_ibm_tenant_id = local.brs_tenant_id
   environment     = "kKubernetes"
-  connection_id   = var.connection_id
+  connection_id   = local.connection_id
   name            = var.registration_name
   kubernetes_params {
     endpoint                = var.cluster_config_endpoint_type == "private" && data.ibm_container_vpc_cluster.cluster.private_service_endpoint ? data.ibm_container_vpc_cluster.cluster.private_service_endpoint_url : data.ibm_container_vpc_cluster.cluster.public_service_endpoint_url
@@ -179,21 +223,21 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
     client_private_key                     = chomp(kubernetes_secret_v1.brsagent_token.data["token"])
   }
   endpoint_type = var.brs_endpoint_type
-  instance_id   = var.brs_instance_guid
+  instance_id   = local.brs_instance_guid
   region        = var.brs_instance_region
 }
 
 # get protection groups for the registered source
 data "ibm_backup_recovery_protection_groups" "protection_groups" {
-  x_ibm_tenant_id = var.brs_tenant_id
-  instance_id     = var.brs_instance_guid
+  x_ibm_tenant_id = local.brs_tenant_id
+  instance_id     = local.brs_instance_guid
   region          = var.brs_instance_region
   endpoint_type   = var.brs_endpoint_type
-  source_ids      = [replace(ibm_backup_recovery_source_registration.source_registration.id, "${var.brs_tenant_id}::", "")]
+  source_ids      = [replace(ibm_backup_recovery_source_registration.source_registration.id, "${local.brs_tenant_id}::", "")]
 }
 
 locals {
-  backup_recovery_instance_url = var.brs_endpoint_type == "public" ? "https://${var.brs_instance_guid}.${var.brs_instance_region}.backup-recovery.cloud.ibm.com" : "https://${var.brs_instance_guid}.${var.brs_endpoint_type}.${var.brs_instance_region}.backup-recovery.cloud.ibm.com"
+  backup_recovery_instance_url = var.brs_endpoint_type == "public" ? local.backup_recovery_instance_public_url : local.backup_recovery_instance_private_url
 
   # Safely find the ID of the protection group whose name starts with "AutoProtectK8s-"
   # - Filters the list of protection groups
@@ -213,12 +257,12 @@ resource "terraform_data" "delete_auto_protect_pg" {
   count = var.enable_auto_protect ? 1 : 0
   input = {
     url                 = local.backup_recovery_instance_url
-    tenant              = var.brs_tenant_id
+    tenant              = local.brs_tenant_id
     endpoint_type       = var.brs_endpoint_type
     protection_group_id = local.protection_group_id
     # post releasing https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6607 protection_group_id can be fetched directly from the resource
-    # protection_group_id = replace(ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id, "${var.brs_tenant_id}::", "")
-    registration_id = replace(ibm_backup_recovery_source_registration.source_registration.id, "${var.brs_tenant_id}::", "")
+    # protection_group_id = replace(ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id, "${local.brs_tenant_id}::", "")
+    registration_id = replace(ibm_backup_recovery_source_registration.source_registration.id, "${local.brs_tenant_id}::", "")
   }
   triggers_replace = {
     api_key = var.ibmcloud_api_key
@@ -229,16 +273,22 @@ resource "terraform_data" "delete_auto_protect_pg" {
     interpreter = ["/bin/bash", "-c"]
 
     environment = {
-      API_KEY = self.triggers_replace.api_key
+      API_KEY = sensitive(self.triggers_replace.api_key)
     }
   }
 }
+
+moved {
+  from = ibm_backup_recovery_protection_policy.protection_policy
+  to   = ibm_backup_recovery_protection_policy.protection_policy[0]
+}
+
 resource "ibm_backup_recovery_protection_policy" "protection_policy" {
   count           = local.use_existing_policy ? 0 : 1
-  x_ibm_tenant_id = var.brs_tenant_id
+  x_ibm_tenant_id = local.brs_tenant_id
   name            = var.policy.name
   endpoint_type   = var.brs_endpoint_type
-  instance_id     = var.brs_instance_guid
+  instance_id     = local.brs_instance_guid
   region          = var.brs_instance_region
   backup_policy {
     regular {
