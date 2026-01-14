@@ -104,6 +104,23 @@ resource "time_sleep" "wait_operators" {
   create_duration = "60s"
 }
 
+########################################################################################################################
+# Backup & Recovery Service (BRS)
+########################################################################################################################
+
+module "backup_recovery_instance" {
+  source                = "terraform-ibm-modules/backup-recovery/ibm"
+  version               = "v1.1.10"
+  region                = var.region
+  resource_group_id     = module.resource_group.resource_group_id
+  ibmcloud_api_key      = var.ibmcloud_api_key
+  tags                  = var.resource_tags
+  instance_name         = "${var.prefix}-brs-instance"
+  connection_name       = "${var.prefix}-brs-connection"
+  create_new_connection = true
+  create_new_instance   = true
+}
+
 
 ########################################################################################################################
 # Backup & Recovery for IKS/ROKS with Data Source Connector
