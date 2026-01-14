@@ -103,7 +103,7 @@ module "backup_recovery_instance" {
 ########################################################################################################################
 
 
-module "protect_cluster" {
+module "backup_recover_protect_ocp" {
   source                       = "../.."
   cluster_id                   = data.ibm_container_vpc_cluster.cluster.id
   cluster_resource_group_id    = module.resource_group.resource_group_id
@@ -116,6 +116,7 @@ module "protect_cluster" {
   brs_instance_crn    = module.backup_recovery_instance.brs_instance_crn
   brs_connection_name = "${var.prefix}-brs-connection"
   registration_name   = data.ibm_container_vpc_cluster.cluster.name
+  enable_auto_protect = true
   # --- Backup Policy ---
   policy = {
     name = "${var.prefix}-retention"

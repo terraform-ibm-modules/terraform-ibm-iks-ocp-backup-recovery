@@ -220,28 +220,9 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
   region        = local.brs_instance_region
 }
 
-# get protection groups for the registered source
-data "ibm_backup_recovery_protection_groups" "protection_groups" {
-  x_ibm_tenant_id = local.brs_tenant_id
-  instance_id     = local.brs_instance_guid
-  region          = local.brs_instance_region
-  endpoint_type   = var.brs_endpoint_type
-  source_ids      = [replace(ibm_backup_recovery_source_registration.source_registration.id, "${local.brs_tenant_id}::", "")]
-}
 
 locals {
   backup_recovery_instance_url = var.brs_endpoint_type == "public" ? local.backup_recovery_instance_public_url : local.backup_recovery_instance_private_url
-
-  # Safely find the ID of the protection group whose name starts with "AutoProtectK8s-"
-  # - Filters the list of protection groups
-  # - Returns the .id of the first match (or null if none)
-  # - If no match or list empty, results in ""
-  protection_group_id = var.enable_auto_protect ? (
-    try(
-      [for pg in data.ibm_backup_recovery_protection_groups.protection_groups.protection_groups : pg.id if startswith(pg.name, "AutoProtectK8s-")][0],
-      ""
-    )
-  ) : ""
 }
 
 # when auto-protect is enabled for the registration, it created a protection group that is currently not deletable via terraform
@@ -252,10 +233,8 @@ resource "terraform_data" "delete_auto_protect_pg" {
     url                 = local.backup_recovery_instance_url
     tenant              = local.brs_tenant_id
     endpoint_type       = var.brs_endpoint_type
-    protection_group_id = local.protection_group_id
-    # post releasing https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6607 protection_group_id can be fetched directly from the resource
-    # protection_group_id = replace(ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id, "${local.brs_tenant_id}::", "")
-    registration_id = replace(ibm_backup_recovery_source_registration.source_registration.id, "${local.brs_tenant_id}::", "")
+    protection_group_id = ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id
+    registration_id     = replace(ibm_backup_recovery_source_registration.source_registration.id, "${local.brs_tenant_id}::", "")
   }
   triggers_replace = {
     api_key = var.ibmcloud_api_key
