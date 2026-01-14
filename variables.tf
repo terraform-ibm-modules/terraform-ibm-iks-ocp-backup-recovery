@@ -119,16 +119,6 @@ variable "dsc_namespace" {
 # Backup Recovery Service Instance
 ##############################################################################
 
-variable "brs_instance_region" {
-  type        = string
-  description = "Region of the Backup & Recovery Service instance."
-  nullable    = false
-  validation {
-    condition     = contains(["us-east"], var.brs_instance_region)
-    error_message = "Kubernetes & Opernshift backup recovery is only supported in these regions: \"us-east\"."
-  }
-}
-
 variable "brs_endpoint_type" {
   type        = string
   description = "The endpoint type to use when connecting to the Backup and Recovery service for creating a data source connection. Allowed values are 'public' or 'private'."
@@ -233,38 +223,14 @@ variable "ibmcloud_api_key" {
   sensitive   = true
 }
 
-variable "brs_instance_resource_group_name" {
-  type        = string
-  description = "Resource group name of the Backup & Recovery Service instance."
-  nullable    = false
-}
-variable "brs_instance_name" {
-  type        = string
-  description = "Name of the Backup & Recovery Service instance."
-  nullable    = false
-}
 variable "brs_connection_name" {
   type        = string
   description = "Name of the connection from the Backup & Recovery Service instance."
   nullable    = false
 }
-# variable "dsc_registration_token" {
-#   type        = string
-#   description = "Registration token generated in the Backup & Recovery Service UI when adding a cluster data source."
-#   sensitive   = true
-#   nullable    = false
-# }
-# variable "brs_tenant_id" {
-#   type        = string
-#   description = "BRS tenant ID in the format `<tenant-guid>/`. Required for API calls and agent configuration."
-#   nullable    = false
-# }
-# variable "connection_id" {
-#   type        = string
-#   description = "Connection ID for the backup service"
-# }
-# variable "brs_instance_guid" {
-#   type        = string
-#   description = "GUID of the Backup & Recovery Service instance."
-#   nullable    = false
-# }
+
+variable "brs_instance_guid" {
+  type        = string
+  description = "GUID of the Backup & Recovery Service instance."
+  nullable    = false
+}

@@ -136,12 +136,10 @@ module "protect_cluster" {
   kube_type                    = "openshift"
   ibmcloud_api_key             = var.ibmcloud_api_key
   # --- B&R Instance ---
-  brs_instance_region              = var.region
-  brs_endpoint_type                = "public"
-  brs_instance_resource_group_name = module.resource_group.resource_group_name
-  brs_instance_name                = "${var.prefix}-brs-instance"
-  brs_connection_name              = "${var.prefix}-brs-connection"
-  registration_name                = var.cluster_name_id == null ? module.ocp_base[0].cluster_name : data.ibm_container_vpc_cluster.cluster[0].name
+  brs_endpoint_type   = "public"
+  brs_instance_guid   = module.backup_recovery_instance.brs_instance_guid
+  brs_connection_name = "${var.prefix}-brs-connection"
+  registration_name   = var.cluster_name_id == null ? module.ocp_base[0].cluster_name : data.ibm_container_vpc_cluster.cluster[0].name
   # --- Backup Policy ---
   policy = {
     name = "${var.prefix}-retention"
