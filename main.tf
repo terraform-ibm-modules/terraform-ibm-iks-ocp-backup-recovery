@@ -146,13 +146,13 @@ locals {
 }
 
 data "ibm_resource_instance" "backup_recovery_instance" {
-  identifier = var.brs_instance_guid
+  identifier = local.brs_instance_guid
 }
 data "ibm_backup_recovery_data_source_connections" "connections" {
   x_ibm_tenant_id  = local.brs_tenant_id
   connection_names = [var.brs_connection_name]
   endpoint_type    = var.brs_endpoint_type
-  instance_id      = var.brs_instance_guid
+  instance_id      = local.brs_instance_guid
   region           = local.brs_instance_region
 }
 locals {
@@ -161,7 +161,8 @@ locals {
   registration_token                   = ibm_backup_recovery_connection_registration_token.registration_token.registration_token
   backup_recovery_instance_public_url  = data.ibm_resource_instance.backup_recovery_instance.extensions["endpoints.public"]
   backup_recovery_instance_private_url = data.ibm_resource_instance.backup_recovery_instance.extensions["endpoints.private"]
-  brs_instance_region                  = data.ibm_resource_instance.backup_recovery_instance.location
+  brs_instance_guid                    = element(split(":", var.brs_instance_crn), 7)
+  brs_instance_region                  = element(split(":", var.brs_instance_crn), 5)
 }
 resource "time_rotating" "token_rotation" {
   rotation_days = 1
@@ -171,7 +172,7 @@ resource "ibm_backup_recovery_connection_registration_token" "registration_token
   connection_id   = local.connection_id
   x_ibm_tenant_id = local.brs_tenant_id
   endpoint_type   = var.brs_endpoint_type
-  instance_id     = var.brs_instance_guid
+  instance_id     = local.brs_instance_guid
   region          = local.brs_instance_region
 
   # This forces a replacement every time the time_rotating resource rotates
@@ -184,7 +185,7 @@ resource "ibm_backup_recovery_connection_registration_token" "registration_token
 data "ibm_backup_recovery_protection_policies" "existing_policies" {
   count           = local.use_existing_policy ? 1 : 0
   x_ibm_tenant_id = local.brs_tenant_id
-  instance_id     = var.brs_instance_guid
+  instance_id     = local.brs_instance_guid
   region          = local.brs_instance_region
   endpoint_type   = var.brs_endpoint_type
   policy_names    = [var.policy.name]
@@ -215,14 +216,14 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
     client_private_key                     = chomp(kubernetes_secret_v1.brsagent_token.data["token"])
   }
   endpoint_type = var.brs_endpoint_type
-  instance_id   = var.brs_instance_guid
+  instance_id   = local.brs_instance_guid
   region        = local.brs_instance_region
 }
 
 # get protection groups for the registered source
 data "ibm_backup_recovery_protection_groups" "protection_groups" {
   x_ibm_tenant_id = local.brs_tenant_id
-  instance_id     = var.brs_instance_guid
+  instance_id     = local.brs_instance_guid
   region          = local.brs_instance_region
   endpoint_type   = var.brs_endpoint_type
   source_ids      = [replace(ibm_backup_recovery_source_registration.source_registration.id, "${local.brs_tenant_id}::", "")]
@@ -280,7 +281,7 @@ resource "ibm_backup_recovery_protection_policy" "protection_policy" {
   x_ibm_tenant_id = local.brs_tenant_id
   name            = var.policy.name
   endpoint_type   = var.brs_endpoint_type
-  instance_id     = var.brs_instance_guid
+  instance_id     = local.brs_instance_guid
   region          = local.brs_instance_region
   backup_policy {
     regular {

@@ -87,7 +87,7 @@ resource "time_sleep" "wait_operators" {
 
 module "backup_recovery_instance" {
   source                = "terraform-ibm-modules/backup-recovery/ibm"
-  version               = "v1.1.10"
+  version               = "v1.2.0"
   region                = var.region
   resource_group_id     = module.resource_group.resource_group_id
   ibmcloud_api_key      = var.ibmcloud_api_key
@@ -113,7 +113,7 @@ module "protect_cluster" {
   ibmcloud_api_key             = var.ibmcloud_api_key
   # --- B&R Instance ---
   brs_endpoint_type   = "public"
-  brs_instance_guid   = module.backup_recovery_instance.brs_instance_guid
+  brs_instance_crn    = module.backup_recovery_instance.brs_instance_crn
   brs_connection_name = "${var.prefix}-brs-connection"
   registration_name   = data.ibm_container_vpc_cluster.cluster.name
   # --- Backup Policy ---
