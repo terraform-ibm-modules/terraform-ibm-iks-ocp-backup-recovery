@@ -76,7 +76,7 @@ resource "helm_release" "data_source_connector" {
   create_namespace = true
   timeout          = 1500
   wait             = true
-  atomic           = true
+  atomic           = false
   upgrade_install  = true
   values = [
     yamlencode({
@@ -229,23 +229,26 @@ locals {
 # this resource uses a local-exec provisioner to call a script that deletes the protection group
 resource "terraform_data" "delete_auto_protect_pg" {
   count = var.enable_auto_protect ? 1 : 0
+
   input = {
     url                 = local.backup_recovery_instance_url
     tenant              = local.brs_tenant_id
     endpoint_type       = var.brs_endpoint_type
     protection_group_id = ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id
     registration_id     = replace(ibm_backup_recovery_source_registration.source_registration.id, "${local.brs_tenant_id}::", "")
+    api_key             = sensitive(var.ibmcloud_api_key)
   }
+
   triggers_replace = {
-    api_key = var.ibmcloud_api_key
+    api_key = sensitive(var.ibmcloud_api_key)
   }
+
   provisioner "local-exec" {
     when        = destroy
-    command     = "${path.module}/scripts/delete_auto_protect_pg.sh ${self.input.url} ${self.input.tenant} ${self.input.endpoint_type} ${self.input.protection_group_id} ${self.input.registration_id}"
+    command     = "${path.module}/scripts/delete_auto_protect_pg.sh https://${self.input.url} ${self.input.tenant} ${self.input.endpoint_type} ${self.input.protection_group_id} ${self.input.registration_id}"
     interpreter = ["/bin/bash", "-c"]
-
     environment = {
-      API_KEY = sensitive(self.triggers_replace.api_key)
+      API_KEY = self.triggers_replace.api_key
     }
   }
 }

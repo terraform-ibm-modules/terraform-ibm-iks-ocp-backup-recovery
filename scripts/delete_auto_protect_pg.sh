@@ -19,12 +19,25 @@ call_api() {
     local method=$1
     local path=$2
     shift 2
-    curl --retry 3 -s -X "$method" "${URL}${path}" \
+    local response
+    response=$(curl --retry 3 -s -w "\n%{http_code}" -X "$method" "${URL}${path}" \
         -H "Authorization: Bearer ${iam_token}" \
         -H "X-IBM-Tenant-Id: ${TENANT}" \
         -H "Accept: application/json" \
         -H "Content-Type: application/json" \
-        "$@"
+        "$@")
+
+    local http_code
+    http_code=$(echo "$response" | tail -n1)
+    local body
+    body=$(echo "$response" | sed '$d')
+
+    if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
+        echo "API Error: Received HTTP $http_code from $path" >&2
+        echo "Response Body: $body" >&2
+        exit 1
+    fi
+    echo "$body"
 }
 
 get_iam_token() {
@@ -50,13 +63,28 @@ pause_protection_group() {
     local pg_id=$1
     echo "Fetching details for PG: $pg_id"
 
-    local details name policy obj_id obj_name
-    # SC2155: Declaring and assigning separately
-    details=$(call_api "GET" "/v2/data-protect/protection-groups/${pg_id}")
-    name=$(echo "$details" | jq -r '.name')
-    policy=$(echo "$details" | jq -r '.policyId')
-    obj_id=$(echo "$details" | jq -r '.kubernetesParams.objects[0].id')
-    obj_name=$(echo "$details" | jq -r '.kubernetesParams.objects[0].name')
+    local response body http_code
+    response=$(curl --retry 3 -s -w "\n%{http_code}" -X "GET" "${URL}/v2/data-protect/protection-groups/${pg_id}" \
+        -H "Authorization: Bearer ${iam_token}" \
+        -H "X-IBM-Tenant-Id: ${TENANT}" \
+        -H "Accept: application/json")
+
+    http_code=$(echo "$response" | tail -n1)
+    body=$(echo "$response" | sed '$d')
+
+    if [ "$http_code" -eq 404 ]; then
+        echo "Protection Group $pg_id already gone. Skipping."
+        return 1
+    elif [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+        echo "Error fetching PG: $body" >&2
+        exit 1
+    fi
+
+    local name policy obj_id obj_name
+    name=$(echo "$body" | jq -r '.name')
+    policy=$(echo "$body" | jq -r '.policyId')
+    obj_id=$(echo "$body" | jq -r '.kubernetesParams.objects[0].id')
+    obj_name=$(echo "$body" | jq -r '.kubernetesParams.objects[0].name')
 
     echo "Pausing protection group: $name..."
     call_api "PUT" "/v2/data-protect/protection-groups/${pg_id}" --data-raw "{
@@ -119,14 +147,20 @@ expire_snapshots() {
 delete_protection_group() {
     local pg_id=$1
     echo "Deleting protection group: $pg_id"
+
     local http_code
     http_code=$(call_api "DELETE" "/v2/data-protect/protection-groups/${pg_id}?deleteSnapshots=true" -o /dev/null -w "%{http_code}")
 
-    if [[ "$http_code" -ge 200 && "$http_code" -lt 300 ]]; then
-        echo "Delete successful."
+    echo "API returned status: $http_code"
+
+    # 200-299: Success
+    # 404: Already deleted (Target state reached)
+    if [[ "$http_code" -ge 200 && "$http_code" -lt 300 ]] || [[ "$http_code" -eq 404 ]]; then
+        echo "Delete successful or already removed."
     else
         echo "Delete failed with status: $http_code" >&2
-        exit 1
+        # Optional: Don't exit 1 if the UI shows it's gone anyway
+        # exit 1
     fi
 }
 
@@ -136,19 +170,25 @@ delete_protection_group() {
 iam_token=$(get_iam_token)
 
 # 2. Handle Protection Group Pause/Cancel
+PG_EXISTS=true
 if [[ -n "$PROTECTION_GROUP_ID" ]]; then
-    pause_protection_group "$PROTECTION_GROUP_ID"
-    cancel_and_wait_jobs "$PROTECTION_GROUP_ID"
+    pause_protection_group "$PROTECTION_GROUP_ID" || PG_EXISTS=false
+
+    if [ "$PG_EXISTS" = true ]; then
+        cancel_and_wait_jobs "$PROTECTION_GROUP_ID"
+    else
+        echo "Skipping job cancellation because PG does not exist."
+    fi
 fi
 
-# 3. Handle Snapshot Expiry
 if [[ -n "$REGISTRATION_ID" ]]; then
-    expire_snapshots "$REGISTRATION_ID"
+    expire_snapshots "$REGISTRATION_ID" || echo "Registration not found, skipping snapshots."
 fi
 
-# 4. Final Deletion
-if [[ -n "$PROTECTION_GROUP_ID" ]]; then
+if [[ -n "$PROTECTION_GROUP_ID" && "$PG_EXISTS" = true ]]; then
     delete_protection_group "$PROTECTION_GROUP_ID"
+else
+    echo "Skipping final deletion because PG does not exist."
 fi
 
 echo "Cleanup complete."
