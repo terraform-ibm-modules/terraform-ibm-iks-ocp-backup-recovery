@@ -213,7 +213,7 @@ variable "policy" {
 
 variable "enable_auto_protect" {
   type        = bool
-  description = "Set to `true` to enable auto-protect on the registered cluster with the specified protection policy."
+  description = "Enable auto-protect during the initial cluster registration. This must be set to `true` on the first run; toggling it from `false` to `true` later is not supported by the underlying API and will not retroactively create the protection group."
   default     = true
 }
 
