@@ -76,7 +76,7 @@ resource "helm_release" "data_source_connector" {
   create_namespace = true
   timeout          = 1500
   wait             = true
-  atomic           = false
+  atomic           = true
   upgrade_install  = true
   values = [
     yamlencode({
