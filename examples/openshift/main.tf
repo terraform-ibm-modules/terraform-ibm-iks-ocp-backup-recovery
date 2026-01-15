@@ -135,6 +135,8 @@ module "backup_recover_protect_ocp" {
   add_dsc_rules_to_cluster_sg  = false
   kube_type                    = "openshift"
   ibmcloud_api_key             = var.ibmcloud_api_key
+  # enable_auto_protect is set to false to avoid issues when running terraform pipelines. in production, this should be set to true.
+  enable_auto_protect = false
   # --- B&R Instance ---
   brs_endpoint_type   = "public"
   brs_instance_crn    = module.backup_recovery_instance.brs_instance_crn
