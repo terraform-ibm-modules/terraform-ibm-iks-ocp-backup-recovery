@@ -86,3 +86,17 @@ module "ocp_base" {
   worker_pools         = local.worker_pools
   access_tags          = []
 }
+
+
+module "backup_recovery_instance" {
+  source                = "terraform-ibm-modules/backup-recovery/ibm"
+  version               = "v1.3.0"
+  region                = var.region
+  resource_group_id     = module.resource_group.resource_group_id
+  ibmcloud_api_key      = var.ibmcloud_api_key
+  tags                  = var.resource_tags
+  instance_name         = "${var.prefix}-brs-instance"
+  connection_name       = "${var.prefix}-brs-connection"
+  create_new_connection = true
+  create_new_instance   = true
+}

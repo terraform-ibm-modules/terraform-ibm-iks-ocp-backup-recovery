@@ -161,6 +161,19 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 		{Name: "ibmcloud_api_key", Value: options.RequiredEnvironmentVars["TF_VAR_ibmcloud_api_key"], DataType: "string", Secure: true},
 		{Name: "cluster_id", Value: terraform.Output(t, existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
 		{Name: "cluster_resource_group_id", Value: terraform.Output(t, existingTerraformOptions, "cluster_resource_group_id"), DataType: "string"},
+		// Control plane & cluster readiness tuning (optional but very useful in tests)
+		{Name: "cluster_config_endpoint_type", Value: "private", DataType: "string"},
+		{Name: "wait_till", Value: "OneWorkerNodeReady", DataType: "string"},
+		{Name: "wait_till_timeout", Value: "60", DataType: "number"},
+		// Backup & Recovery core settings
+		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
+		{Name: "brs_instance_crn", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_crn"), DataType: "string"},
+		{Name: "brs_connection_name", Value: terraform.Output(t, existingTerraformOptions, "brs_connection_name"), DataType: "string"},
+		// Optional: Override policy (use built-in tier for faster/simpler tests)
+		{Name: "policy", Value: `{
+			name = "Silver"
+		}`, DataType: "string"},
+
 		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
 	}
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
@@ -192,6 +205,19 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		{Name: "ibmcloud_api_key", Value: options.RequiredEnvironmentVars["TF_VAR_ibmcloud_api_key"], DataType: "string", Secure: true},
 		{Name: "cluster_id", Value: terraform.Output(t, existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
 		{Name: "cluster_resource_group_id", Value: terraform.Output(t, existingTerraformOptions, "cluster_resource_group_id"), DataType: "string"},
+		// Control plane & cluster readiness tuning (optional but very useful in tests)
+		{Name: "cluster_config_endpoint_type", Value: "private", DataType: "string"},
+		{Name: "wait_till", Value: "OneWorkerNodeReady", DataType: "string"},
+		{Name: "wait_till_timeout", Value: "60", DataType: "number"},
+		// Backup & Recovery core settings
+		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
+		{Name: "brs_instance_crn", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_crn"), DataType: "string"},
+		{Name: "brs_connection_name", Value: terraform.Output(t, existingTerraformOptions, "brs_connection_name"), DataType: "string"},
+		// Optional: Override policy (use built-in tier for faster/simpler tests)
+		{Name: "policy", Value: `{
+			name = "Silver"
+		}`, DataType: "string"},
+
 		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
 	}
 
@@ -199,10 +225,30 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 	cleanupTerraform(t, existingTerraformOptions, prefix)
 }
 
+var brsregion = "us-east"
+
+// ibm_backup_recovery_source_registration requires ignoring updates to kubernetes_params fields which will be fixed in future provider versions
+func setupIKSOptions(t *testing.T, prefix string, dir string) *testhelper.TestOptions {
+	options := testhelper.TestOptionsDefaultWithVars(&testhelper.TestOptions{
+		Testing:       t,
+		TerraformDir:  dir,
+		Prefix:        prefix,
+		ResourceGroup: resourceGroup,
+		Region:        brsregion,
+		IgnoreUpdates: testhelper.Exemptions{
+			List: []string{"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration",
+				"module.protect_cluster.kubernetes_service_account_v1.brsagent",
+				"module.protect_cluster.helm_release.data_source_connector",
+				"module.protect_cluster.terraform_data.delete_auto_protect_pg"},
+		},
+	})
+	return options
+}
+
 func TestRunIKSExample(t *testing.T) {
 	t.Parallel()
 
-	options := setupOptions(t, "brs-adv", iksExampleDir)
+	options := setupIKSOptions(t, "brs-adv", iksExampleDir)
 
 	output, err := options.RunTestConsistency()
 	assert.Nil(t, err, "This should not have errored")
