@@ -96,7 +96,7 @@ variable "policy" {
     )
     error_message = "If using built-in policies (Gold, Silver, Bronze), do not provide schedule or retention. For custom policies, both are required."
   }
-  description = "The backup schedule and retentions of a Protection Policy."
+  description = "The backup schedule and retentions of a Protection Policy. [Learn more](https://github.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery/blob/main/solutions/fully-configurable/DA_docs.md#protection-policy-variable)"
 }
 
 variable "dsc_chart_uri" {
