@@ -102,8 +102,6 @@ You need the following permissions to run this module:
 - **Backup & Recovery** service
   - `Editor` platform access
   - `Manager` service access
-- **Cloud Object Storage**
-  - `Writer` service access (if using COS as backup target)
 - **VPC Infrastructure**
   - `Editor` on security groups (for DSC outbound rules)
 - **Kubernetes Service**

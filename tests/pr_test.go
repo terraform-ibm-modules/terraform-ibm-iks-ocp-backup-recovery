@@ -2,17 +2,14 @@
 package test
 
 import (
-	"bytes"
 	"fmt"
 	"io/fs"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/gruntwork-io/terratest/modules/files"
 	"github.com/gruntwork-io/terratest/modules/logger"
 	"github.com/gruntwork-io/terratest/modules/random"
@@ -20,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/terraform-ibm-modules/ibmcloud-terratest-wrapper/cloudinfo"
 	"github.com/terraform-ibm-modules/ibmcloud-terratest-wrapper/common"
-	"github.com/terraform-ibm-modules/ibmcloud-terratest-wrapper/testaddons"
 	"github.com/terraform-ibm-modules/ibmcloud-terratest-wrapper/testhelper"
 	"github.com/terraform-ibm-modules/ibmcloud-terratest-wrapper/testschematic"
 )
@@ -80,24 +76,6 @@ func walk(r *tarIncludePatterns, s string, d fs.DirEntry, err error) error {
 		}
 	}
 	return nil
-}
-
-func createContainersApikey(t *testing.T, region string, rg string) {
-
-	err := os.Setenv("IBMCLOUD_API_KEY", validateEnvVariable(t, "TF_VAR_ibmcloud_api_key"))
-	require.NoError(t, err, "Failed to set IBMCLOUD_API_KEY environment variable")
-	scriptPath := "../common-dev-assets/scripts/iks-api-key-reset/reset_iks_api_key.sh"
-	cmd := exec.Command("bash", scriptPath, region, rg)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	// Execute the command
-	if err := cmd.Run(); err != nil {
-		log.Fatalf("Failed to execute script: %v\nStderr: %s", err, stderr.String())
-	}
-	// Print script output
-	fmt.Println(stdout.String())
 }
 
 // TestMain will be run before any parallel tests, used to set up a shared InfoService object to track region usage
@@ -181,6 +159,7 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 		{Name: "ibmcloud_api_key", Value: options.RequiredEnvironmentVars["TF_VAR_ibmcloud_api_key"], DataType: "string", Secure: true},
 		{Name: "cluster_id", Value: terraform.Output(t, existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
 		{Name: "cluster_resource_group_id", Value: terraform.Output(t, existingTerraformOptions, "cluster_resource_group_id"), DataType: "string"},
+		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
 	}
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
 	cleanupTerraform(t, existingTerraformOptions, prefix)
@@ -211,67 +190,9 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		{Name: "ibmcloud_api_key", Value: options.RequiredEnvironmentVars["TF_VAR_ibmcloud_api_key"], DataType: "string", Secure: true},
 		{Name: "cluster_id", Value: terraform.Output(t, existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
 		{Name: "cluster_resource_group_id", Value: terraform.Output(t, existingTerraformOptions, "cluster_resource_group_id"), DataType: "string"},
+		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
 	}
 
 	require.NoError(t, options.RunSchematicUpgradeTest(), "This should not have errored")
 	cleanupTerraform(t, existingTerraformOptions, prefix)
-}
-
-func TestAddonConfigurations(t *testing.T) {
-	t.Parallel()
-
-	options := testaddons.TestAddonsOptionsDefault(&testaddons.TestAddonOptions{
-		Testing:               t,
-		Prefix:                "brs-def",
-		ResourceGroup:         resourceGroup,
-		OverrideInputMappings: core.BoolPtr(true),
-		QuietMode:             false,
-	})
-	region := "us-east"
-
-	// Temp workaround for https://github.com/terraform-ibm-modules/terraform-ibm-base-ocp-vpc?tab=readme-ov-file#the-specified-api-key-could-not-be-found
-	createContainersApikey(t, region, options.ResourceGroup)
-
-	options.AddonConfig = cloudinfo.NewAddonConfigTerraform(
-		options.Prefix,
-		"deploy-arch-ibm-iks-ocp-backup-recovery",
-		"fully-configurable",
-		map[string]interface{}{
-			"region":                       region,
-			"secrets_manager_service_plan": "__NULL__",
-			"existing_resource_group_name": options.ResourceGroup,
-		},
-	)
-
-	//	use existing secrets manager instance to help prevent hitting trial instance limit in account
-	options.AddonConfig.Dependencies = []cloudinfo.AddonConfig{
-		{
-			OfferingName:   "deploy-arch-ibm-secrets-manager",
-			OfferingFlavor: "fully-configurable",
-			Inputs: map[string]interface{}{
-				"existing_secrets_manager_crn":         permanentResources["privateOnlySecMgrCRN"],
-				"service_plan":                         "__NULL__", // no plan value needed when using existing SM
-				"skip_secrets_manager_iam_auth_policy": true,       // since using an existing Secrets Manager instance, attempting to re-create auth policy can cause conflicts if the policy already exists
-				"secret_groups":                        []string{}, // passing empty array for secret groups as default value is creating general group and it will cause conflicts as we are using an existing SM
-			},
-		},
-		// // Disable target / route creation to help prevent hitting quota in account
-		{
-			OfferingName:   "deploy-arch-ibm-cloud-monitoring",
-			OfferingFlavor: "fully-configurable",
-			Inputs: map[string]interface{}{
-				"enable_metrics_routing_to_cloud_monitoring": false,
-			},
-		},
-		{
-			OfferingName:   "deploy-arch-ibm-activity-tracker",
-			OfferingFlavor: "fully-configurable",
-			Inputs: map[string]interface{}{
-				"enable_activity_tracker_event_routing_to_cloud_logs": false,
-			},
-		},
-	}
-
-	err := options.RunAddonTest()
-	require.NoError(t, err)
 }

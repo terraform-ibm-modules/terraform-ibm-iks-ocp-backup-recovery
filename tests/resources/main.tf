@@ -85,5 +85,5 @@ module "ocp_base" {
   vpc_subnets                         = local.cluster_vpc_subnets
   worker_pools                        = local.worker_pools
   access_tags                         = []
-  disable_outbound_traffic_protection = true # set as True to enable outbound traffic; required for accessing Operator Hub in the OpenShift console.
+  disable_outbound_traffic_protection = true
 }

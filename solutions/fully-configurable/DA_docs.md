@@ -25,7 +25,7 @@ variable "policy" {
 #### 1. Using Built-in Policy (Recommended for quick/standard protection)
 
 ```hcl
-policy = {
+ {
   name                      = "Gold"
   use_default_backup_target = true
   # schedule and retention must NOT be set
@@ -35,7 +35,7 @@ policy = {
 #### 2. Every 4 hours + keep 31 days
 
 ```hcl
-policy = {
+ {
   name = "frequent-daily"
 
   schedule = {
@@ -55,7 +55,7 @@ policy = {
 #### 3. Daily at 2:00 AM + keep for 12 weeks
 
 ```hcl
-policy = {
+ {
   name = "daily-backup-2am"
 
   schedule = {
@@ -78,7 +78,7 @@ policy = {
 #### 4. Weekly (every Sunday) + monthly retention + WORM/Compliance lock
 
 ```hcl
-policy = {
+ {
   name = "weekly-compliance-critical"
 
   schedule = {
@@ -105,7 +105,7 @@ policy = {
 #### 5. Monthly on last day of month + yearly last day
 
 ```hcl
-policy = {
+ {
   name = "end-of-month-critical"
 
   schedule = {

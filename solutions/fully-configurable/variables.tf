@@ -109,7 +109,7 @@ variable "dsc_chart_uri" {
 variable "enable_auto_protect" {
   description = "Flag to enable auto-protect for the cluster."
   type        = bool
-  default     = false
+  default     = true
   nullable    = false
 }
 variable "dsc_namespace" {
@@ -132,7 +132,7 @@ variable "dsc_replicas" {
     • 1 – only for dev/test or single-node clusters
   EOT
   type        = number
-  default     = 1
+  default     = 3
   nullable    = false
 }
 variable "dsc_image_version" {
