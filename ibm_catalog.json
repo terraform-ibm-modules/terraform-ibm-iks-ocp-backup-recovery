@@ -2,7 +2,7 @@
   "products": [
     {
       "name": "deploy-arch-ibm-iks-ocp-backup-recovery",
-      "label": "Cloud automation for Backup and Recovery if IKS & Red Hat OpenShift on IBM Cloud",
+      "label": "Cloud Automation for Backup & Recovery of IBM Kubernetes Service and Red Hat OpenShift Clusters",
       "product_kind": "solution",
       "tags": [
         "ibm_created",
@@ -96,6 +96,7 @@
             },
             {
               "key": "cluster_id",
+              "display_name": "cluster",
               "custom_config": {
                 "type": "cluster_var",
                 "grouping": "deployment",

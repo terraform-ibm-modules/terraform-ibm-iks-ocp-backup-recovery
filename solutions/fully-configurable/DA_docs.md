@@ -2,12 +2,6 @@
 
 The `policy` variable defines backup **schedule**, **retention**, and optional advanced settings for a protection policy.
 
-```hcl
-variable "policy" {
-  type = object({...})   # (see full schema in variables.tf)
-  ...
-}
-```
 
 ### Main Policy Types
 
@@ -24,7 +18,7 @@ variable "policy" {
 
 #### 1. Using Built-in Policy (Recommended for quick/standard protection)
 
-```hcl
+```
  {
   name                      = "Gold"
   use_default_backup_target = true
@@ -34,7 +28,7 @@ variable "policy" {
 
 #### 2. Every 4 hours + keep 31 days
 
-```hcl
+```
  {
   name = "frequent-daily"
 
@@ -54,7 +48,7 @@ variable "policy" {
 
 #### 3. Daily at 2:00 AM + keep for 12 weeks
 
-```hcl
+```
  {
   name = "daily-backup-2am"
 
@@ -77,7 +71,7 @@ variable "policy" {
 
 #### 4. Weekly (every Sunday) + monthly retention + WORM/Compliance lock
 
-```hcl
+```
  {
   name = "weekly-compliance-critical"
 
@@ -104,7 +98,7 @@ variable "policy" {
 
 #### 5. Monthly on last day of month + yearly last day
 
-```hcl
+```
  {
   name = "end-of-month-critical"
 
