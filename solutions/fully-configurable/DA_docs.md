@@ -131,9 +131,9 @@ The `policy` variable defines backup **schedule**, **retention**, and optional a
 | Months    | —                                   | month_schedule.{day_of_week, week_of_month, day_of_month} | Monthly/quarterly long-term     |
 | Years     | —                                   | year_schedule.day_of_year                       | Yearly archival                      |
 
-### Best Practices
+### Policy Best Practices
 
-- Use **built-in** policies (`Gold`, `Silver`, `Bronze`) whenever possible — less configuration, better vendor support & performance tuning
-- For custom policies always set **both** `schedule` and `retention`
-- Keep names descriptive: `daily-2am-30d`, `weekly-sunday-2y`, `hourly-critical-7d`, etc.
-- Use WORM/`data_lock_config` only for regulatory/compliance workloads
+- Start with built-in **Gold / Silver / Bronze** policies when suitable
+- Always set both **schedule** + **retention** for custom policies
+- Use descriptive names: `daily-2am-30d`, `weekly-2y`, `hourly-7d`
+- [Policy creation](https://cloud.ibm.com/docs/backup-recovery?topic=backup-recovery-baas-policy-creation)

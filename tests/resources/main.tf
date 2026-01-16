@@ -81,7 +81,7 @@ module "ocp_base" {
   cluster_name         = local.cluster_name
   force_delete_storage = true
   vpc_id               = ibm_is_vpc.vpc.id
-  ocp_version          = "4.19"
+  ocp_version          = null
   vpc_subnets          = local.cluster_vpc_subnets
   worker_pools         = local.worker_pools
   access_tags          = []
