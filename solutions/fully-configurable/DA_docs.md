@@ -13,7 +13,7 @@ variable "policy" {
 
 | Policy Style       | Name must be       | Schedule | Retention | Description                                  |
 |--------------------|--------------------|----------|-----------|----------------------------------------------|
-| **Built-in**       | Gold / Silver / Bronze | **not allowed** | **not allowed** | Use predefined vendor policy (fastest to deploy) |
+| **Built-in**       | Gold / Silver / Bronze | **not allowed** | **not allowed** | Use predefined vendor policy |
 | **Custom**         | anything else      | **required**    | **required**    | Fully customizable schedule + retention      |
 
 > **Validation rule** — enforced automatically:
