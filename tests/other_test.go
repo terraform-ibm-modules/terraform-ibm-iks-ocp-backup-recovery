@@ -10,7 +10,6 @@ import (
 
 // Ensure every example directory has a corresponding test
 const ocpExampleDir = "examples/openshift"
-const iksExampleDir = "examples/kubernetes"
 
 var region = "us-east"
 
@@ -52,14 +51,4 @@ func TestRunUpgradeExample(t *testing.T) {
 		assert.Nil(t, err, "This should not have errored")
 		assert.NotNil(t, output, "Expected some output")
 	}
-}
-
-func TestRunIKSExample(t *testing.T) {
-	t.Parallel()
-
-	options := setupOptions(t, "brs-adv", iksExampleDir)
-
-	output, err := options.RunTestConsistency()
-	assert.Nil(t, err, "This should not have errored")
-	assert.NotNil(t, output, "Expected some output")
 }
