@@ -173,8 +173,6 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 		{Name: "policy", Value: `{
 			name = "Silver"
 		}`, DataType: "string"},
-
-		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
 	}
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
 	cleanupTerraform(t, existingTerraformOptions, prefix)
@@ -217,8 +215,6 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		{Name: "policy", Value: `{
 			name = "Silver"
 		}`, DataType: "string"},
-
-		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
 	}
 
 	require.NoError(t, options.RunSchematicUpgradeTest(), "This should not have errored")
