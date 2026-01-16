@@ -51,11 +51,10 @@
           "iam_permissions": [
             {
               "role_crns": [
-                "crn:v1:bluemix:public:iam::::serviceRole:Manager",
-                "crn:v1:bluemix:public:iam::::role:Administrator"
+                "crn:v1:bluemix:public:iam::::role:Editor"
               ],
               "service_name": "containers-kubernetes",
-              "notes": "Required to create and edit the OpenShift cluster and the related resources."
+              "notes": "Required to deploy helm charts and manage Kubernetes resources on IKS and Red Hat OpenShift clusters."
             },
             {
               "role_crns": [
@@ -66,11 +65,10 @@
             },
             {
               "role_crns": [
-                "crn:v1:bluemix:public:iam::::serviceRole:Manager",
                 "crn:v1:bluemix:public:iam::::role:Editor"
               ],
               "service_name": "backup-recovery",
-              "notes": "Required to create and manage Backup and Recovery service instances and related resources."
+              "notes": "Required to create and manage Backup and Recovery policy, source registration and protection group."
             }
           ],
           "architecture": {

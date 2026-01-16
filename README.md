@@ -101,12 +101,10 @@ You need the following permissions to run this module:
 
 - **Backup & Recovery** service
   - `Editor` platform access
-  - `Manager` service access
 - **VPC Infrastructure**
   - `Editor` on security groups (for DSC outbound rules)
 - **Kubernetes Service**
-  - `Viewer` platform access
-  - `Administrator` service access
+  - `Editor` platform access
 
 <!-- BEGINNING OF PRE-COMMIT-TERRAFORM DOCS HOOK -->
 ### Requirements
