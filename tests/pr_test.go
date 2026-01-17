@@ -169,10 +169,6 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
 		{Name: "brs_instance_crn", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_crn"), DataType: "string"},
 		{Name: "brs_connection_name", Value: terraform.Output(t, existingTerraformOptions, "brs_connection_name"), DataType: "string"},
-		// Optional: Override policy (use built-in tier for faster/simpler tests)
-		{Name: "policy", Value: `{
-			name = "Silver"
-		}`, DataType: "string"},
 	}
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
 	cleanupTerraform(t, existingTerraformOptions, prefix)
@@ -211,10 +207,6 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
 		{Name: "brs_instance_crn", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_crn"), DataType: "string"},
 		{Name: "brs_connection_name", Value: terraform.Output(t, existingTerraformOptions, "brs_connection_name"), DataType: "string"},
-		// Optional: Override policy (use built-in tier for faster/simpler tests)
-		{Name: "policy", Value: `{
-			name = "Silver"
-		}`, DataType: "string"},
 	}
 
 	require.NoError(t, options.RunSchematicUpgradeTest(), "This should not have errored")
