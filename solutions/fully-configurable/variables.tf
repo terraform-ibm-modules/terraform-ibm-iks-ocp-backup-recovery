@@ -147,7 +147,7 @@ variable "dsc_image_version" {
 }
 variable "brs_connection_name" {
   type        = string
-  description = "Name of the connection from the Backup & Recovery Service instance."
+  description = "Name of the existing connection from the Backup & Recovery Service instance to be used for protecting the cluster."
   nullable    = false
 }
 variable "brs_instance_crn" {
@@ -172,7 +172,7 @@ variable "brs_endpoint_type" {
 }
 variable "registration_name" {
   type        = string
-  description = "Name of the registration."
+  description = "Name of the new registration for the cluster in Backup & Recovery Service. this must be unique within the Backup & Recovery Service instance. Usually set to the cluster name for easy identification."
   nullable    = false
 }
 variable "registration_images" {
