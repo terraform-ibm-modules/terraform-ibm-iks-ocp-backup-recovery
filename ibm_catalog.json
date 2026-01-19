@@ -2,7 +2,7 @@
   "products": [
     {
       "name": "deploy-arch-ibm-iks-ocp-backup-recovery",
-      "label": "Cloud automation for Backup & Recovery of IKS & OpenShift",
+      "label": "Backup and Recovery automation for IKS and OpenShift",
       "product_kind": "solution",
       "tags": [
         "ibm_created",
@@ -26,10 +26,9 @@
         "solution",
         "ibm backup and recovery"
       ],
-      "short_description": "Enables enterprise-grade backup and recovery for existing Red Hat OpenShift clusters using IBM Backup & Recovery Service with fully configurable and QuickStart options.",
-      "long_description": "This solution integrates IBM Backup & Recovery Service with existing Red Hat OpenShift on IBM Cloud clusters. It automates the deployment of the Data Source Connector (DSC), cluster registration, security group rules, and protection policies to protect namespaces, persistent volumes, and cluster resources.\n\nTwo variations are available: a fully configurable option for production-grade deployments with fine-grained control, and a QuickStart option for rapid setup with sensible defaults. Both leverage reusable Terraform IBM Modules for consistency and best practices.\n\nYou can extend this architecture using other [Terraform IBM Modules](https://github.com/terraform-ibm-modules) to incorporate additional observability, security, or compliance features as needed.",
+      "short_description": "Enables enterprise-grade backup and recovery for existing IKS and Red Hat OpenShift clusters on IBM Cloud using IBM Backup & Recovery Service with a fully configurable option.",
+      "long_description": "This solution integrates IBM Backup & Recovery Service with existing Red Hat OpenShift on IBM Cloud clusters. It automates the deployment of the Data Source Connector (DSC), cluster registration, security group rules, and protection policies to safeguard namespaces, persistent volumes, and other cluster resources.\n\nThe **fully configurable option** is available, designed for production-grade deployments that require fine-grained control and customization. It leverages reusable Terraform IBM Modules to ensure consistency, best practices, and maintainability.\n\nYou can further extend this architecture by incorporating additional Terraform IBM Modules (https://github.com/terraform-ibm-modules) to add observability, enhanced security, compliance features, or other capabilities as needed.",
       "offering_docs_url": "https://cloud.ibm.com/docs/backup-recovery?topic=backup-recovery-data-source-connector-iks-roks",
-      "release_notes_url": "https://github.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery/releases",
       "offering_icon_url": "https://raw.githubusercontent.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery/main/images/backup-recovery-icon.svg",
       "provider_name": "IBM",
       "features": [
