@@ -161,10 +161,6 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 		{Name: "ibmcloud_api_key", Value: options.RequiredEnvironmentVars["TF_VAR_ibmcloud_api_key"], DataType: "string", Secure: true},
 		{Name: "cluster_id", Value: terraform.Output(t, existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
 		{Name: "cluster_resource_group_id", Value: terraform.Output(t, existingTerraformOptions, "cluster_resource_group_id"), DataType: "string"},
-		// Control plane & cluster readiness tuning (optional but very useful in tests)
-		{Name: "cluster_config_endpoint_type", Value: "private", DataType: "string"},
-		{Name: "wait_till", Value: "OneWorkerNodeReady", DataType: "string"},
-		{Name: "wait_till_timeout", Value: "60", DataType: "number"},
 		// Backup & Recovery core settings
 		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
 		{Name: "brs_instance_crn", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_crn"), DataType: "string"},
@@ -199,11 +195,6 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		{Name: "ibmcloud_api_key", Value: options.RequiredEnvironmentVars["TF_VAR_ibmcloud_api_key"], DataType: "string", Secure: true},
 		{Name: "cluster_id", Value: terraform.Output(t, existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
 		{Name: "cluster_resource_group_id", Value: terraform.Output(t, existingTerraformOptions, "cluster_resource_group_id"), DataType: "string"},
-		// Control plane & cluster readiness tuning (optional but very useful in tests)
-		{Name: "cluster_config_endpoint_type", Value: "private", DataType: "string"},
-		{Name: "wait_till", Value: "OneWorkerNodeReady", DataType: "string"},
-		{Name: "wait_till_timeout", Value: "60", DataType: "number"},
-		// Backup & Recovery core settings
 		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
 		{Name: "brs_instance_crn", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_crn"), DataType: "string"},
 		{Name: "brs_connection_name", Value: terraform.Output(t, existingTerraformOptions, "brs_connection_name"), DataType: "string"},
