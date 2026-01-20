@@ -102,6 +102,8 @@ func validateEnvVariable(t *testing.T, varName string) string {
 }
 
 func setupTerraform(t *testing.T, prefix, realTerraformDir string) *terraform.Options {
+	// once the IKS/ROKS feature is GA, we can remove the forced region setting here to allow dynamic region selection
+	_ = os.Setenv("FORCE_TEST_REGION", "us-east")
 	tempTerraformDir, err := files.CopyTerraformFolderToTemp(realTerraformDir, prefix)
 	require.NoError(t, err, "Failed to create temporary Terraform folder")
 	apiKey := validateEnvVariable(t, "TF_VAR_ibmcloud_api_key") // pragma: allowlist secret
@@ -165,6 +167,7 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 		{Name: "brs_instance_crn", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_crn"), DataType: "string"},
 		{Name: "brs_connection_name", Value: terraform.Output(t, existingTerraformOptions, "brs_connection_name"), DataType: "string"},
 		{Name: "registration_name", Value: terraform.Output(t, existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
+		{Name: "dsc_replicas", Value: "1", DataType: "number"},
 	}
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
 	cleanupTerraform(t, existingTerraformOptions, prefix)
@@ -199,22 +202,26 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		{Name: "brs_instance_crn", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_crn"), DataType: "string"},
 		{Name: "brs_connection_name", Value: terraform.Output(t, existingTerraformOptions, "brs_connection_name"), DataType: "string"},
 		{Name: "registration_name", Value: terraform.Output(t, existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
+		{Name: "dsc_replicas", Value: "1", DataType: "number"},
 	}
 
 	require.NoError(t, options.RunSchematicUpgradeTest(), "This should not have errored")
 	cleanupTerraform(t, existingTerraformOptions, prefix)
 }
 
-var brsregion = "us-east"
-
 // ibm_backup_recovery_source_registration requires ignoring updates to kubernetes_params fields which will be fixed in future provider versions
 func setupIKSOptions(t *testing.T, prefix string, dir string) *testhelper.TestOptions {
+	// once the IKS/ROKS feature is GA, we can remove the forced region setting here to allow dynamic region selection
+	_ = os.Setenv("FORCE_TEST_REGION", "us-east")
+	apiKey := validateEnvVariable(t, "TF_VAR_ibmcloud_api_key") // pragma: allowlist secret
+	region, _ := testhelper.GetBestVpcRegion(apiKey, "../common-dev-assets/common-go-assets/cloudinfo-region-vpc-gen2-prefs.yaml", "us-east")
+
 	options := testhelper.TestOptionsDefaultWithVars(&testhelper.TestOptions{
 		Testing:       t,
 		TerraformDir:  dir,
 		Prefix:        prefix,
 		ResourceGroup: resourceGroup,
-		Region:        brsregion,
+		Region:        region,
 		IgnoreUpdates: testhelper.Exemptions{
 			List: []string{"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration",
 				"module.protect_cluster.kubernetes_service_account_v1.brsagent",
