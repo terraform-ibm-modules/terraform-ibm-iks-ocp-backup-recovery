@@ -94,21 +94,10 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func validateEnvVariable(t *testing.T, varName string) string {
-	val, present := os.LookupEnv(varName)
-	require.True(t, present, "%s environment variable not set", varName)
-	require.NotEqual(t, "", val, "%s environment variable is empty", varName)
-	return val
-}
-
 func setupTerraform(t *testing.T, prefix, realTerraformDir string) *terraform.Options {
-	// once the IKS/ROKS feature is GA, we can remove the forced region setting here to allow dynamic region selection
-	_ = os.Setenv("FORCE_TEST_REGION", "us-east")
 	tempTerraformDir, err := files.CopyTerraformFolderToTemp(realTerraformDir, prefix)
 	require.NoError(t, err, "Failed to create temporary Terraform folder")
-	apiKey := validateEnvVariable(t, "TF_VAR_ibmcloud_api_key") // pragma: allowlist secret
-	region, err := testhelper.GetBestVpcRegion(apiKey, "../common-dev-assets/common-go-assets/cloudinfo-region-vpc-gen2-prefs.yaml", "us-east")
-	require.NoError(t, err, "Failed to get best VPC region")
+	region := "us-east"
 
 	existingTerraformOptions := terraform.WithDefaultRetryableErrors(t, &terraform.Options{
 		TerraformDir: tempTerraformDir,
@@ -211,10 +200,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 
 // ibm_backup_recovery_source_registration requires ignoring updates to kubernetes_params fields which will be fixed in future provider versions
 func setupIKSOptions(t *testing.T, prefix string, dir string) *testhelper.TestOptions {
-	// once the IKS/ROKS feature is GA, we can remove the forced region setting here to allow dynamic region selection
-	_ = os.Setenv("FORCE_TEST_REGION", "us-east")
-	apiKey := validateEnvVariable(t, "TF_VAR_ibmcloud_api_key") // pragma: allowlist secret
-	region, _ := testhelper.GetBestVpcRegion(apiKey, "../common-dev-assets/common-go-assets/cloudinfo-region-vpc-gen2-prefs.yaml", "us-east")
+	region := "us-east"
 
 	options := testhelper.TestOptionsDefaultWithVars(&testhelper.TestOptions{
 		Testing:       t,
