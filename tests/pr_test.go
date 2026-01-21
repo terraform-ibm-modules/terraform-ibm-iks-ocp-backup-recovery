@@ -146,12 +146,6 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 		TemplateFolder:        fullyConfigurableTerraformDir,
 		Tags:                  []string{"test-schematic"},
 		DeleteWorkspaceOnFail: false,
-		IgnoreUpdates: testhelper.Exemptions{
-			List: []string{"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration",
-				"module.protect_cluster.kubernetes_service_account_v1.brsagent",
-				"module.protect_cluster.helm_release.data_source_connector",
-				"module.protect_cluster.terraform_data.delete_auto_protect_pg"},
-		},
 	})
 
 	options.TerraformVars = []testschematic.TestSchematicTerraformVar{
@@ -187,12 +181,6 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		TemplateFolder:        fullyConfigurableTerraformDir,
 		Tags:                  []string{"test-schematic"},
 		DeleteWorkspaceOnFail: false,
-		IgnoreUpdates: testhelper.Exemptions{
-			List: []string{"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration",
-				"module.protect_cluster.kubernetes_service_account_v1.brsagent",
-				"module.protect_cluster.helm_release.data_source_connector",
-				"module.protect_cluster.terraform_data.delete_auto_protect_pg"},
-		},
 	})
 
 	options.TerraformVars = []testschematic.TestSchematicTerraformVar{
@@ -220,12 +208,6 @@ func setupIKSOptions(t *testing.T, prefix string, dir string) *testhelper.TestOp
 		Prefix:        prefix,
 		ResourceGroup: resourceGroup,
 		Region:        region,
-		IgnoreUpdates: testhelper.Exemptions{
-			List: []string{"module.backup_recover_protect_ocp.ibm_backup_recovery_source_registration.source_registration",
-				"module.backup_recover_protect_ocp.kubernetes_service_account_v1.brsagent",
-				"module.backup_recover_protect_ocp.helm_release.data_source_connector",
-				"module.backup_recover_protect_ocp.terraform_data.delete_auto_protect_pg"},
-		},
 	})
 	return options
 }

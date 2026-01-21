@@ -95,10 +95,9 @@ resource "helm_release" "data_source_connector" {
 }
 
 resource "kubernetes_service_account_v1" "brsagent" {
-  depends_on = [helm_release.data_source_connector]
   metadata {
     name      = "brsagent"
-    namespace = var.dsc_namespace
+    namespace = helm_release.data_source_connector.metadata.namespace
   }
 }
 
@@ -115,7 +114,7 @@ resource "kubernetes_cluster_role_binding_v1" "brsagent_admin" {
   subject {
     kind      = "ServiceAccount"
     name      = kubernetes_service_account_v1.brsagent.metadata[0].name
-    namespace = var.dsc_namespace
+    namespace = kubernetes_service_account_v1.brsagent.metadata[0].namespace
   }
 }
 
@@ -123,7 +122,7 @@ resource "kubernetes_cluster_role_binding_v1" "brsagent_admin" {
 resource "kubernetes_secret_v1" "brsagent_token" {
   metadata {
     name      = "brsagent-token"
-    namespace = var.dsc_namespace
+    namespace = kubernetes_service_account_v1.brsagent.metadata[0].namespace
     annotations = {
       "kubernetes.io/service-account.name" = kubernetes_service_account_v1.brsagent.metadata[0].name
     }
@@ -192,7 +191,6 @@ data "ibm_backup_recovery_protection_policies" "existing_policies" {
 }
 
 resource "ibm_backup_recovery_source_registration" "source_registration" {
-  depends_on      = [kubernetes_secret_v1.brsagent_token]
   x_ibm_tenant_id = local.brs_tenant_id
   environment     = "kKubernetes"
   connection_id   = local.connection_id
