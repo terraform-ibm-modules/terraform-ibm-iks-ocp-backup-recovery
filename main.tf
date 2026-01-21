@@ -94,10 +94,19 @@ resource "helm_release" "data_source_connector" {
   ]
 }
 
+# Ignore changes to image_pull_secret, secret, and annotations as they are updated by the cluster outside of terraform
+# This is required to prevent terraform from recreating/updating the service account on every apply
 resource "kubernetes_service_account_v1" "brsagent" {
   metadata {
     name      = "brsagent"
     namespace = helm_release.data_source_connector.metadata.namespace
+  }
+  lifecycle {
+    ignore_changes = [
+      image_pull_secret,
+      secret,
+      metadata[0].annotations,
+    ]
   }
 }
 
