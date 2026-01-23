@@ -130,12 +130,6 @@ variable "brs_endpoint_type" {
   }
 }
 
-variable "registration_name" {
-  type        = string
-  description = "Name of the new registration for the cluster in Backup & Recovery Service. this must be unique within the Backup & Recovery Service instance. Usually set to the cluster name for easy identification."
-  nullable    = false
-}
-
 variable "registration_images" {
   type = object({
     data_mover              = string

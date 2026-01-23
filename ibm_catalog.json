@@ -213,10 +213,17 @@
               "key": "add_dsc_rules_to_cluster_sg"
             },
             {
-              "key": "brs_endpoint_type"
-            },
-            {
-              "key": "registration_name"
+              "key": "brs_endpoint_type",
+              "options": [
+                {
+                  "displayname": "Private",
+                  "value": "private"
+                },
+                {
+                  "displayname": "Public",
+                  "value": "public"
+                }
+              ]
             },
             {
               "key": "registration_images",

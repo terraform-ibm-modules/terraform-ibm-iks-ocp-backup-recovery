@@ -24,8 +24,6 @@ module "protect_cluster" {
   brs_endpoint_type   = var.brs_endpoint_type
   brs_instance_crn    = var.brs_instance_crn
   brs_connection_name = var.brs_connection_name
-  # --- Registration Details ---
-  registration_name = var.registration_name
   # --- Backup Policy ---
   policy            = var.policy
   wait_till         = var.wait_till
