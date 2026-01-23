@@ -16,9 +16,9 @@ module "protect_cluster" {
   source                       = "../.."
   cluster_id                   = var.cluster_id
   cluster_resource_group_id    = var.cluster_resource_group_id
-  cluster_config_endpoint_type = "private"
+  cluster_config_endpoint_type = var.cluster_config_endpoint_type
   add_dsc_rules_to_cluster_sg  = var.add_dsc_rules_to_cluster_sg
-  kube_type                    = "openshift"
+  kube_type                    = var.kube_type
   ibmcloud_api_key             = var.ibmcloud_api_key
   # --- BRS Instance Details---
   brs_endpoint_type   = var.brs_endpoint_type

@@ -226,6 +226,19 @@
               ]
             },
             {
+              "key": "kube_type",
+              "options": [
+                {
+                  "displayname": "Kubernetes",
+                  "value": "kubernetes"
+                },
+                {
+                  "displayname": "OpenShift",
+                  "value": "openshift"
+                }
+              ]
+            },
+            {
               "key": "registration_images",
               "custom_config": {
                 "type": "code_editor",

@@ -213,13 +213,14 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
         policy_id                 = local.policy_id
       }
     }
-    data_mover_image_location              = var.registration_images.data_mover
-    velero_image_location                  = var.registration_images.velero
-    velero_aws_plugin_image_location       = var.registration_images.velero_aws_plugin
-    velero_openshift_plugin_image_location = var.registration_images.velero_openshift_plugin
-    init_container_image_location          = var.registration_images.init_container
-    kubernetes_type                        = "kCluster"
-    client_private_key                     = chomp(kubernetes_secret_v1.brsagent_token.data["token"])
+    data_mover_image_location                  = var.registration_images.data_mover
+    velero_image_location                      = var.registration_images.velero
+    velero_aws_plugin_image_location           = var.registration_images.velero_aws_plugin
+    velero_openshift_plugin_image_location     = var.registration_images.velero_openshift_plugin
+    init_container_image_location              = var.registration_images.init_container
+    cohesity_dataprotect_plugin_image_location = var.registration_images.cohesity_dataprotect_plugin
+    kubernetes_type                            = "kCluster"
+    client_private_key                         = chomp(kubernetes_secret_v1.brsagent_token.data["token"])
   }
   endpoint_type = var.brs_endpoint_type
   instance_id   = local.brs_instance_guid
