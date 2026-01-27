@@ -126,7 +126,7 @@ variable "dsc_name" {
 }
 variable "dsc_replicas" {
   description = <<-EOT
-  Number of Data Source Connector podsto run.
+  Number of Data Source Connector pods to run.
   Recommended values:
     • 3 – for high availability across multiple nodes/zones (strongly recommended in production)
     • 1 – only for dev/test or single-node clusters
