@@ -135,6 +135,12 @@ variable "dsc_replicas" {
   default     = 3
   nullable    = false
 }
+variable "dsc_helm_timeout" {
+  description = "Timeout in seconds for the Data Source Connector Helm deployment."
+  type        = number
+  default     = 1500
+  nullable    = false
+}
 variable "dsc_image_version" {
   description = "Container image for the Data Source Connector."
   type        = string

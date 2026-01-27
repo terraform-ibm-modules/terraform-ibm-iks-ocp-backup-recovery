@@ -250,6 +250,9 @@
                   ]
                 }
               }
+            },
+            {
+              "key": "dsc_helm_timeout"
             }
           ],
           "dependencies": [],
