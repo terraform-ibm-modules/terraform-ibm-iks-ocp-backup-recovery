@@ -74,7 +74,7 @@ resource "helm_release" "data_source_connector" {
   namespace        = var.dsc_namespace
   version          = local.dsc_chart_version
   create_namespace = true
-  timeout          = 1500
+  timeout          = var.dsc_helm_timeout
   wait             = true
   atomic           = true
   upgrade_install  = true

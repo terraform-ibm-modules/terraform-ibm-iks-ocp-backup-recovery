@@ -104,6 +104,18 @@ variable "dsc_replicas" {
   type        = number
   default     = 1
   nullable    = false
+
+  validation {
+    condition     = var.dsc_replicas >= 1
+    error_message = "Replicas must be at least 1."
+  }
+}
+
+variable "dsc_helm_timeout" {
+  description = "Timeout in seconds for the Data Source Connector Helm deployment."
+  type        = number
+  default     = 1500
+  nullable    = false
 }
 
 variable "dsc_namespace" {
