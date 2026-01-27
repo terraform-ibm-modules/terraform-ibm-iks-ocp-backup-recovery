@@ -78,7 +78,6 @@ module "backup_recovery" {
   brs_instance_region = var.region
   brs_endpoint_type   = "public"
   brs_tenant_id       = "xxxxxxx" # replace with tenant ID of the BRS instance
-  registration_name   = "ocp-dsc"
   # --- Backup Policy ---
   policy = {
     name = "daily-with-monthly-retention"
