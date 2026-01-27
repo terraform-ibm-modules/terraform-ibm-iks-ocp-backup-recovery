@@ -155,7 +155,6 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
 		{Name: "brs_instance_crn", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_crn"), DataType: "string"},
 		{Name: "brs_connection_name", Value: terraform.Output(t, existingTerraformOptions, "brs_connection_name"), DataType: "string"},
-		{Name: "registration_name", Value: terraform.Output(t, existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
 		{Name: "dsc_replicas", Value: "1", DataType: "number"},
 	}
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
@@ -190,7 +189,6 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
 		{Name: "brs_instance_crn", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_crn"), DataType: "string"},
 		{Name: "brs_connection_name", Value: terraform.Output(t, existingTerraformOptions, "brs_connection_name"), DataType: "string"},
-		{Name: "registration_name", Value: terraform.Output(t, existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
 		{Name: "dsc_replicas", Value: "1", DataType: "number"},
 	}
 
