@@ -239,6 +239,7 @@
             },
             {
               "key": "kube_type",
+              "required": true,
               "display_name": "Cluster Type",
               "options": [
                 {
