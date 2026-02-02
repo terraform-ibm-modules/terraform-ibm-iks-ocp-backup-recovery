@@ -86,7 +86,6 @@ module "ocp_base" {
   worker_pools                        = local.worker_pools
   access_tags                         = []
   disable_outbound_traffic_protection = true
-  cluster_ready_when                  = "IngressReady"
 }
 
 
