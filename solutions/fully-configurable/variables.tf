@@ -23,11 +23,16 @@ variable "cluster_resource_group_id" {
 }
 
 variable "cluster_config_endpoint_type" {
-  description = "Specify the type of endpoint to use to access the cluster configuration. Possible values: `default`, `private`, `vpe`, `link`. The `default` value uses the default endpoint of the cluster."
+  description = "The type of endpoint to use for the cluster config access: `default`, `private`, `vpe`, or `link`. The `default` value uses the default endpoint of the cluster."
   type        = string
-  default     = "default"
+  default     = "private"
   nullable    = false # use default if null is passed in
+  validation {
+    error_message = "Invalid endpoint type. Valid values are `default`, `private`, `vpe`, or `link`."
+    condition     = contains(["default", "private", "vpe", "link"], var.cluster_config_endpoint_type)
+  }
 }
+
 variable "wait_till" {
   description = "To avoid long wait times when you run your Terraform code, you can specify the stage when you want Terraform to mark the cluster resource creation as completed. Depending on what stage you choose, the cluster creation might not be fully completed and continues to run in the background. However, your Terraform code can continue to run without waiting for the cluster to be fully created. Supported args are `MasterNodeReady`, `OneWorkerNodeReady`, `IngressReady` and `Normal`."
   type        = string
