@@ -72,14 +72,14 @@ variable "add_dsc_rules_to_cluster_sg" {
 variable "dsc_chart_uri" {
   description = "The full OCI registry URI for the Data Source Connector Helm chart, including the digest."
   type        = string
-  default     = "oci://icr.io/ext/brs/cohesity-dsc-chart:7.2.16-release-20251014-fbc7ff85@sha256:69114edaeb80198684040ca9c014b57fd2993f45e07dfeffd64fd5ee28165cd2"
+  default     = "oci://icr.io/ext/brs/brs-ds-connector-chart:7.2.17-release-20260108-ed857f1c@sha256:0b3e84175cb8c1b2608e99e65fc72f2d5c4264dc0a0939ad98e089cc2bb7288e"
   nullable    = false
 }
 
 variable "dsc_image_version" {
   description = "Container image for the Data Source Connector."
   type        = string
-  default     = "icr.io/ext/brs/cohesity-data-source-connector:7.2.16@sha256:2674c764ca46310aef3adb733d950f7786d9bf560bf72c22cff52370e77e29b5"
+  default     = "icr.io/ext/brs/brs-ds-connector:7.2.17-release-20260108-ed857f1c@sha256:560ff2170c880dc19712e0f37ba1575240e462f5e2a2ecbc4ecb791aa471f2d0"
   nullable    = false
   validation {
     condition     = length(split("@", var.dsc_image_version)[0]) > 0
@@ -152,11 +152,11 @@ variable "registration_images" {
     init_container              = optional(string, null)
   })
   default = {
-    data_mover                  = "icr.io/ext/brs/cohesity-datamover:7.2.16@sha256:f7fa1cfbb74e469117d553c02deedf6f4a35b3a61647028a9424be346fc3eb09"
-    velero                      = "icr.io/ext/brs/velero:7.2.16@sha256:1a5ee2393f0b1063ef095246d304c1ec4648c3af6a47261325ef039256a4a041"
-    velero_aws_plugin           = "icr.io/ext/brs/velero-plugin-for-aws:7.2.16@sha256:dbcd35bcbf0d4c7deeae67b7dfd55c4fa51880b61307d71eeea3e9e84a370e13"
-    velero_openshift_plugin     = "icr.io/ext/brs/velero-plugin-for-openshift:7.2.16@sha256:6b643edcb920ad379c9ef1e2cca112a2ad0a1d55987f9c27af4022f7e3b19552"
-    cohesity_dataprotect_plugin = "icr.io/ext/brs/cohesity-dataprotect-plugin:7.2.16@sha256:f57561dee550437bc657ede289ecf9882b5fe58cb01c4403b4bd116681b5e3d6"
+    data_mover                  = "icr.io/ext/brs/cohesity-datamover:7.2.17@sha256:2b9e69f37752c6f8758b8de61b4c4ec6ccc60083d23211f59b07780069e9ddf8"
+    velero                      = "icr.io/ext/brs/oadp-velero:1.3.8@sha256:2d0014471b5c0e46cf96ac452069b9fa1ebbffd1d50a8ffecb2b443dbfbd4b00"
+    velero_aws_plugin           = "icr.io/ext/brs/oadp-velero-plugin-for-aws:1.3.8@sha256:3adcd0bfa963f980ad41dbff05c44c4b11d6b07e493a9c53a0ee3483a905039d"
+    velero_openshift_plugin     = "icr.io/ext/brs/oadp-velero-plugin-for-openshift:1.4.7@sha256:8b5dcea0fc837e5547c253f355d71b19f825eed6fac1e19c40af44b19fd7259a"
+    cohesity_dataprotect_plugin = "icr.io/ext/brs/cohesity-dataprotect-plugin:7.2.17@sha256:d7b0e02b267f27aa41c2879bb5c8dcafe9e2e6e0a825fa9e4116a7cd41403983"
   }
   description = "The images required for backup and recovery registration."
   nullable    = false
@@ -209,12 +209,10 @@ variable "policy" {
     use_default_backup_target = true
   }
   validation {
-    condition = contains(["Gold", "Silver", "Bronze"], var.policy.name) ? (
-      var.policy.schedule == null && var.policy.retention == null
-      ) : (
-      var.policy.schedule != null && var.policy.retention != null
+    condition = (var.policy.schedule == null && var.policy.retention == null) || (
+      var.policy.schedule != null && var.policy.retention != null && !contains(["Gold", "Silver", "Bronze"], var.policy.name)
     )
-    error_message = "If using built-in policies (Gold, Silver, Bronze), do not provide schedule or retention. For custom policies, both are required."
+    error_message = "If schedule and retention are not provided, an existing policy is assumed (valid for any policy name). If schedule and retention are provided, a new custom policy is created (name must not be 'Gold', 'Silver', or 'Bronze')."
   }
   description = "The backup schedule and retentions of a Protection Policy."
 }
@@ -233,7 +231,7 @@ variable "ibmcloud_api_key" {
 
 variable "brs_connection_name" {
   type        = string
-  description = "Name of the existing connection from the Backup & Recovery Service instance to be used for protecting the cluster."
+  description = "Name of the connection from the Backup & Recovery Service instance to be used for protecting the cluster."
   nullable    = false
 }
 
@@ -241,4 +239,39 @@ variable "brs_instance_crn" {
   type        = string
   description = "CRN of the Backup & Recovery Service instance."
   nullable    = false
+  default     = ""
+}
+
+variable "brs_instance_name" {
+  type        = string
+  description = "Name of the Backup & Recovery Service instance."
+  nullable    = false
+
+  validation {
+    condition     = var.brs_instance_name != "" || var.brs_instance_crn != ""
+    error_message = "Either 'brs_instance_name' or 'brs_instance_crn' must be provided."
+  }
+}
+
+variable "brs_create_new_connection" {
+  type        = bool
+  description = "Flag to create a new connection from the Backup & Recovery Service instance to the cluster."
+  default     = true
+}
+
+variable "region" {
+  type        = string
+  description = "Region where the Backup & Recovery Service instance needs to be created."
+  nullable    = false
+}
+variable "resource_tags" {
+  type        = list(string)
+  description = "Add user resource tags to the Backup Recovery instance to organize, track, and manage costs."
+  default     = []
+}
+
+variable "access_tags" {
+  type        = list(string)
+  description = "Add existing access management tags to the Backup Recovery instance to manage access."
+  default     = []
 }
