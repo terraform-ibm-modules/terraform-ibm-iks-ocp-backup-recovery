@@ -172,6 +172,7 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 		{Name: "brs_instance_name", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_name"), DataType: "string"},
 		{Name: "region", Value: terraform.Output(t, existingTerraformOptions, "region"), DataType: "string"},
 		{Name: "connection_env_type", Value: "kRoksVpc", DataType: "string"},
+		{Name: "kube_type", Value: "openshift", DataType: "string"},
 	}
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
 	cleanupTerraform(t, existingTerraformOptions, prefix)
@@ -213,6 +214,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		{Name: "brs_instance_name", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_name"), DataType: "string"},
 		{Name: "region", Value: terraform.Output(t, existingTerraformOptions, "region"), DataType: "string"},
 		{Name: "connection_env_type", Value: "kRoksVpc", DataType: "string"},
+		{Name: "kube_type", Value: "openshift", DataType: "string"},
 	}
 
 	// Exempt expected resource changes from image version update (7.2.16 -> 7.2.17)

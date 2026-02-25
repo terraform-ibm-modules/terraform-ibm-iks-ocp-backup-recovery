@@ -384,21 +384,21 @@ resource "ibm_backup_recovery_protection_policy" "protection_policy" {
             }
           }
 
-          # --- Optional extra layers ---
+          # --- Optional extra layers (only when unit does not already cover them) ---
           dynamic "minute_schedule" {
-            for_each = var.policy.schedule.minute_schedule != null ? [var.policy.schedule.minute_schedule] : []
+            for_each = var.policy.schedule.minute_schedule != null && var.policy.schedule.unit != "Minutes" ? [var.policy.schedule.minute_schedule] : []
             content {
               frequency = minute_schedule.value.frequency
             }
           }
           dynamic "hour_schedule" {
-            for_each = var.policy.schedule.hour_schedule != null ? [var.policy.schedule.hour_schedule] : []
+            for_each = var.policy.schedule.hour_schedule != null && var.policy.schedule.unit != "Hours" ? [var.policy.schedule.hour_schedule] : []
             content {
               frequency = hour_schedule.value.frequency
             }
           }
           dynamic "day_schedule" {
-            for_each = var.policy.schedule.day_schedule != null ? [var.policy.schedule.day_schedule] : []
+            for_each = var.policy.schedule.day_schedule != null && var.policy.schedule.unit != "Days" ? [var.policy.schedule.day_schedule] : []
             content {
               frequency = day_schedule.value.frequency
             }
@@ -450,6 +450,120 @@ resource "ibm_backup_recovery_protection_policy" "protection_policy" {
       primary_backup_target {
         use_default_backup_target = var.policy.use_default_backup_target
       }
+
+      # ================================
+      # FULL BACKUP SCHEDULE (optional)
+      # ================================
+      dynamic "full_backups" {
+        for_each = var.policy.full_schedule != null ? [var.policy.full_schedule] : []
+        content {
+          schedule {
+            unit = full_backups.value.unit
+
+            dynamic "day_schedule" {
+              for_each = full_backups.value.day_schedule != null ? [full_backups.value.day_schedule] : []
+              content {
+                frequency = day_schedule.value.frequency
+              }
+            }
+            dynamic "week_schedule" {
+              for_each = full_backups.value.week_schedule != null ? [full_backups.value.week_schedule] : []
+              content {
+                day_of_week = week_schedule.value.day_of_week
+              }
+            }
+            dynamic "month_schedule" {
+              for_each = full_backups.value.month_schedule != null ? [full_backups.value.month_schedule] : []
+              content {
+                day_of_week   = try(month_schedule.value.day_of_week, null)
+                week_of_month = try(month_schedule.value.week_of_month, null)
+                day_of_month  = try(month_schedule.value.day_of_month, null)
+              }
+            }
+            dynamic "year_schedule" {
+              for_each = full_backups.value.year_schedule != null ? [full_backups.value.year_schedule] : []
+              content {
+                day_of_year = year_schedule.value.day_of_year
+              }
+            }
+          }
+
+          retention {
+            duration = full_backups.value.retention.duration
+            unit     = full_backups.value.retention.unit
+
+            dynamic "data_lock_config" {
+              for_each = full_backups.value.retention.data_lock_config != null ? [full_backups.value.retention.data_lock_config] : []
+              content {
+                mode                           = data_lock_config.value.mode
+                unit                           = data_lock_config.value.unit
+                duration                       = data_lock_config.value.duration
+                enable_worm_on_external_target = data_lock_config.value.enable_worm_on_external_target
+              }
+            }
+          }
+        }
+      }
+    }
+
+    # ================================
+    # RUN TIMEOUTS (optional)
+    # ================================
+    dynamic "run_timeouts" {
+      for_each = var.policy.run_timeouts != null ? var.policy.run_timeouts : []
+      content {
+        timeout_mins = run_timeouts.value.timeout_mins
+        backup_type  = run_timeouts.value.backup_type
+      }
+    }
+  }
+
+  # ================================
+  # BLACKOUT WINDOWS (optional)
+  # ================================
+  dynamic "blackout_window" {
+    for_each = var.policy.blackout_window != null ? var.policy.blackout_window : []
+    content {
+      day = blackout_window.value.day
+      start_time {
+        hour      = blackout_window.value.start_time.hour
+        minute    = blackout_window.value.start_time.minute
+        time_zone = blackout_window.value.start_time.time_zone
+      }
+      end_time {
+        hour      = blackout_window.value.end_time.hour
+        minute    = blackout_window.value.end_time.minute
+        time_zone = blackout_window.value.end_time.time_zone
+      }
+    }
+  }
+
+  # ================================
+  # EXTENDED RETENTION (optional)
+  # ================================
+  dynamic "extended_retention" {
+    for_each = var.policy.extended_retention != null ? var.policy.extended_retention : []
+    content {
+      schedule {
+        unit      = extended_retention.value.schedule.unit
+        frequency = extended_retention.value.schedule.frequency
+      }
+      retention {
+        duration = extended_retention.value.retention.duration
+        unit     = extended_retention.value.retention.unit
+
+        dynamic "data_lock_config" {
+          for_each = extended_retention.value.retention.data_lock_config != null ? [extended_retention.value.retention.data_lock_config] : []
+          content {
+            mode                           = data_lock_config.value.mode
+            unit                           = data_lock_config.value.unit
+            duration                       = data_lock_config.value.duration
+            enable_worm_on_external_target = data_lock_config.value.enable_worm_on_external_target
+          }
+        }
+      }
+      run_type  = extended_retention.value.run_type
+      config_id = extended_retention.value.config_id
     }
   }
 

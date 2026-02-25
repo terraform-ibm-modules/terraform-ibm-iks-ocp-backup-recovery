@@ -195,6 +195,71 @@ variable "policy" {
     }))
 
     use_default_backup_target = optional(bool, true)
+
+    # --- Full backup schedule (periodic full backups on top of incrementals) ---
+    full_schedule = optional(object({
+      unit          = string # Days, Weeks, Months, Years, ProtectOnce
+      day_schedule  = optional(object({ frequency = number }))
+      week_schedule = optional(object({ day_of_week = list(string) }))
+      month_schedule = optional(object({
+        day_of_week   = optional(list(string))
+        week_of_month = optional(string)
+        day_of_month  = optional(number)
+      }))
+      year_schedule = optional(object({ day_of_year = string }))
+
+      retention = object({
+        duration = number
+        unit     = string # Days, Weeks, Months, Years
+        data_lock_config = optional(object({
+          mode                           = string
+          unit                           = string
+          duration                       = number
+          enable_worm_on_external_target = optional(bool, false)
+        }))
+      })
+    }))
+
+    # --- Blackout windows (time windows when backups should not run) ---
+    blackout_window = optional(list(object({
+      day = string # Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday
+      start_time = object({
+        hour      = number
+        minute    = number
+        time_zone = optional(string, "America/New_York")
+      })
+      end_time = object({
+        hour      = number
+        minute    = number
+        time_zone = optional(string, "America/New_York")
+      })
+    })))
+
+    # --- Run timeouts (prevent hung backup jobs) ---
+    run_timeouts = optional(list(object({
+      timeout_mins = number
+      backup_type  = optional(string, "kRegular") # kRegular, kFull, kLog, kSystem, kHydrateCDP, kStorageArraySnapshot
+    })))
+
+    # --- Extended retention (keep certain snapshots longer) ---
+    extended_retention = optional(list(object({
+      schedule = object({
+        unit      = string # Runs, Days, Weeks, Months, Years
+        frequency = number
+      })
+      retention = object({
+        duration = number
+        unit     = string # Days, Weeks, Months, Years
+        data_lock_config = optional(object({
+          mode                           = string
+          unit                           = string
+          duration                       = number
+          enable_worm_on_external_target = optional(bool, false)
+        }))
+      })
+      run_type  = optional(string, "Regular")
+      config_id = optional(string)
+    })))
   })
   default = {
     name = "default-policy"
