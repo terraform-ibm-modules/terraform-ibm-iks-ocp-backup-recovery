@@ -82,8 +82,8 @@ variable "dsc_image_version" {
   default     = "icr.io/ext/brs/brs-ds-connector:7.2.17-release-20260108-ed857f1c@sha256:560ff2170c880dc19712e0f37ba1575240e462f5e2a2ecbc4ecb791aa471f2d0"
   nullable    = false
   validation {
-    condition     = length(split("@", var.dsc_image_version)[0]) > 0
-    error_message = "The image version must be in the format '<registry>/<namespace>/<repository>:<semver-tag>@sha256:<64-hex-digest>'."
+    condition     = can(regex("^[a-z0-9.-]+(/[a-z0-9._-]+)+:[a-zA-Z0-9._-]+@sha256:[a-f0-9]{64}$", var.dsc_image_version))
+    error_message = "The image version must be in the format '<registry>/<namespace>/<repository>:<tag>@sha256:<64-hex-digest>'."
   }
 }
 
