@@ -39,6 +39,7 @@ module "protect_cluster" {
   dsc_replicas      = var.dsc_replicas
   dsc_namespace     = var.dsc_namespace
   dsc_helm_timeout  = var.dsc_helm_timeout
+  dsc_storage_class = var.dsc_storage_class
   # --- Registration Settings ---
   registration_images = var.registration_images
   enable_auto_protect = var.enable_auto_protect

@@ -125,6 +125,12 @@ variable "dsc_namespace" {
   nullable    = false
 }
 
+variable "dsc_storage_class" {
+  type        = string
+  description = "Storage class to use for the Data Source Connector persistent volume. By default, it uses 'ibmc-vpc-block-metro-5iops-tier' for VPC clusters and 'ibmc-block-silver' for Classic clusters."
+  default     = null
+}
+
 
 
 ##############################################################################

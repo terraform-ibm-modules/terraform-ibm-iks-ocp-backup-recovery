@@ -170,6 +170,9 @@ resource "helm_release" "data_source_connector" {
       nodeSelector = local.is_vpc ? {
         "dedicated" = "data-source-connector"
       } : {}
+      volumeClaimTemplate = {
+        storageClass = var.dsc_storage_class != null ? var.dsc_storage_class : (local.is_vpc ? "ibmc-vpc-block-metro-5iops-tier" : "ibmc-block-silver")
+      }
     })
   ]
 }

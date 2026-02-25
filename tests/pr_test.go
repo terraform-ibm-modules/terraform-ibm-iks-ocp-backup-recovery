@@ -230,6 +230,8 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		List: []string{
 			"module.protect_cluster.kubernetes_secret_v1.brsagent_token",
 			"module.protect_cluster.kubernetes_service_account_v1.brsagent",
+			"module.protect_cluster.time_rotating.token_rotation",
+			"module.protect_cluster.ibm_backup_recovery_connection_registration_token.registration_token",
 		},
 	}
 

@@ -271,6 +271,10 @@
               "display_name": "Helm Timeout (Seconds)"
             },
             {
+              "key": "dsc_storage_class",
+              "display_name": "Data Source Connector Storage Class"
+            },
+            {
               "key": "brs_create_new_connection",
               "display_name": "Create New Connection"
             },

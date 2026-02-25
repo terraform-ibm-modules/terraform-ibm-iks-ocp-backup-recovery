@@ -99,6 +99,7 @@ module "backup_recover_protect_ocp" {
   brs_create_new_connection = true
   region                    = var.region
   connection_env_type       = "kIksVpc"
+  dsc_storage_class         = var.dsc_storage_class
   # --- Backup Policy ---
   policy = {
     name = "${var.prefix}-retention"

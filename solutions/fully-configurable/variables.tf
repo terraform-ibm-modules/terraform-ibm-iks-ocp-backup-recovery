@@ -210,6 +210,11 @@ variable "dsc_helm_timeout" {
   default     = 1500
   nullable    = false
 }
+variable "dsc_storage_class" {
+  type        = string
+  description = "Storage class to use for the Data Source Connector persistent volume. By default, it uses 'ibmc-vpc-block-metro-5iops-tier' for VPC clusters and 'ibmc-block-silver' for Classic clusters."
+  default     = "ibmc-vpc-block-metro-5iops-tier"
+}
 variable "dsc_image_version" {
   description = "Container image for the Data Source Connector."
   type        = string
