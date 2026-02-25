@@ -32,8 +32,14 @@ var excludeDirs = []string{".terraform", ".docs", ".github", ".git", ".idea", "c
 
 var includeFiletypes = []string{".tf", ".yaml", ".py", ".tpl", ".md", ".sh"}
 
-// Define a struct with fields that match the structure of the YAML data
 const yamlLocation = "../common-dev-assets/common-go-assets/common-permanent-resources.yaml"
+
+// Current supported regions
+var validRegions = []string{
+	"us-south",
+	// "us-east", // ignore until issues in this regions are resolved
+	"eu-es",
+}
 
 var (
 	sharedInfoSvc      *cloudinfo.CloudInfoService
@@ -98,7 +104,8 @@ func TestMain(m *testing.M) {
 func setupTerraform(t *testing.T, prefix, realTerraformDir string) *terraform.Options {
 	tempTerraformDir, err := files.CopyTerraformFolderToTemp(realTerraformDir, prefix)
 	require.NoError(t, err, "Failed to create temporary Terraform folder")
-	region := "us-east"
+
+	region := validRegions[common.CryptoIntn(len(validRegions))]
 
 	existingTerraformOptions := terraform.WithDefaultRetryableErrors(t, &terraform.Options{
 		TerraformDir: tempTerraformDir,
@@ -230,7 +237,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 
 // ibm_backup_recovery_source_registration requires ignoring updates to kubernetes_params fields which will be fixed in future provider versions
 func setupIKSOptions(t *testing.T, prefix string, dir string) *testhelper.TestOptions {
-	region := "us-east"
+	region := validRegions[common.CryptoIntn(len(validRegions))]
 
 	options := testhelper.TestOptionsDefaultWithVars(&testhelper.TestOptions{
 		Testing:       t,

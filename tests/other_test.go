@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/terraform-ibm-modules/ibmcloud-terratest-wrapper/common"
 	"github.com/terraform-ibm-modules/ibmcloud-terratest-wrapper/testhelper"
 )
 
@@ -14,7 +15,7 @@ const ocpClassicExampleDir = "examples/openshift-classic"
 
 // ibm_backup_recovery_source_registration requires ignoring updates to kubernetes_params fields which will be fixed in future provider versions
 func setupOcpOptions(t *testing.T, prefix string, dir string) *testhelper.TestOptions {
-	region := "us-east"
+	region := validRegions[common.CryptoIntn(len(validRegions))]
 	options := testhelper.TestOptionsDefaultWithVars(&testhelper.TestOptions{
 		Testing:       t,
 		TerraformDir:  dir,
