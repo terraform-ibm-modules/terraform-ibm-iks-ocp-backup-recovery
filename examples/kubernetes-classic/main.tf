@@ -44,7 +44,7 @@ resource "ibm_container_cluster" "cluster" {
   count                = var.cluster_name_id == null ? 1 : 0
   name                 = "${var.prefix}-cluster"
   datacenter           = var.datacenter
-  default_pool_size    = 2
+  default_pool_size    = 3
   hardware             = "shared"
   kube_version         = local.default_version
   force_delete_storage = true
