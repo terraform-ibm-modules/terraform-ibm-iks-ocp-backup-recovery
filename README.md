@@ -120,7 +120,6 @@ You need the following permissions to run this module:
 | <a name="requirement_helm"></a> [helm](#requirement\_helm) | >=3.1.0, <4.0.0 |
 | <a name="requirement_ibm"></a> [ibm](#requirement\_ibm) | >= 1.88.3, < 2.0.0 |
 | <a name="requirement_kubernetes"></a> [kubernetes](#requirement\_kubernetes) | >=3.0.1, <4.0.0 |
-| <a name="requirement_time"></a> [time](#requirement\_time) | >= 0.13.1, < 1.0.0 |
 
 ### Modules
 
@@ -134,7 +133,6 @@ You need the following permissions to run this module:
 | Name | Type |
 |------|------|
 | [helm_release.data_source_connector](https://registry.terraform.io/providers/hashicorp/helm/latest/docs/resources/release) | resource |
-| [ibm_backup_recovery_connection_registration_token.registration_token](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery_connection_registration_token) | resource |
 | [ibm_backup_recovery_protection_policy.protection_policy](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery_protection_policy) | resource |
 | [ibm_backup_recovery_source_registration.source_registration](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery_source_registration) | resource |
 | [ibm_container_vpc_worker_pool.data_source_connector](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/container_vpc_worker_pool) | resource |
@@ -143,13 +141,10 @@ You need the following permissions to run this module:
 | [kubernetes_secret_v1.brsagent_token](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/secret_v1) | resource |
 | [kubernetes_service_account_v1.brsagent](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/service_account_v1) | resource |
 | [terraform_data.delete_auto_protect_pg](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
-| [time_rotating.token_rotation](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/rotating) | resource |
-| [ibm_backup_recovery_data_source_connections.connections](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/data-sources/backup_recovery_data_source_connections) | data source |
 | [ibm_backup_recovery_protection_policies.existing_policies](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/data-sources/backup_recovery_protection_policies) | data source |
 | [ibm_container_vpc_cluster.cluster](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/data-sources/container_vpc_cluster) | data source |
 | [ibm_container_vpc_worker_pool.pool](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/data-sources/container_vpc_worker_pool) | data source |
 | [ibm_is_security_group.clustersg](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/data-sources/is_security_group) | data source |
-| [ibm_resource_instance.backup_recovery_instance](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/data-sources/resource_instance) | data source |
 
 ### Inputs
 

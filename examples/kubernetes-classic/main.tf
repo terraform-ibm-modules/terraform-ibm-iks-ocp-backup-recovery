@@ -22,9 +22,10 @@ resource "ibm_network_vlan" "public_vlan" {
 }
 
 resource "ibm_network_vlan" "private_vlan" {
-  count      = var.cluster_name_id == null ? 1 : 0
-  datacenter = var.datacenter
-  type       = "PRIVATE"
+  count           = var.cluster_name_id == null ? 1 : 0
+  datacenter      = var.datacenter
+  type            = "PRIVATE"
+  router_hostname = ibm_network_vlan.public_vlan[0].router_hostname
 }
 
 ##############################################################################

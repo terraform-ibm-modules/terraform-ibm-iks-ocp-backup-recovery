@@ -213,45 +213,14 @@ locals {
   ) : null
 }
 
-data "ibm_resource_instance" "backup_recovery_instance" {
-  identifier = local.brs_instance_guid
-}
-
-data "ibm_backup_recovery_data_source_connections" "connections" {
-  x_ibm_tenant_id  = local.brs_tenant_id
-  connection_names = [var.brs_connection_name]
-  endpoint_type    = var.brs_endpoint_type
-  instance_id      = local.brs_instance_guid
-  region           = local.brs_instance_region
-}
-
 locals {
-  brs_tenant_id                        = "${data.ibm_resource_instance.backup_recovery_instance.extensions.tenant-id}/"
-  connection_id                        = data.ibm_backup_recovery_data_source_connections.connections.connections[0].connection_id
-  registration_token                   = ibm_backup_recovery_connection_registration_token.registration_token.registration_token
-  backup_recovery_instance_public_url  = data.ibm_resource_instance.backup_recovery_instance.extensions["endpoints.public"]
-  backup_recovery_instance_private_url = data.ibm_resource_instance.backup_recovery_instance.extensions["endpoints.private"]
-  brs_instance_crn                     = module.backup_recovery_instance.brs_instance_crn
-  brs_instance_guid                    = element(split(":", local.brs_instance_crn), 7)
-  brs_instance_region                  = element(split(":", local.brs_instance_crn), 5)
-}
-
-resource "time_rotating" "token_rotation" {
-  rotation_days = 1
-}
-
-resource "ibm_backup_recovery_connection_registration_token" "registration_token" {
-  connection_id   = local.connection_id
-  x_ibm_tenant_id = local.brs_tenant_id
-  endpoint_type   = var.brs_endpoint_type
-  instance_id     = local.brs_instance_guid
-  region          = local.brs_instance_region
-
-  lifecycle {
-    replace_triggered_by = [
-      time_rotating.token_rotation
-    ]
-  }
+  brs_tenant_id                        = module.backup_recovery_instance.tenant_id
+  connection_id                        = module.backup_recovery_instance.connection_id
+  registration_token                   = module.backup_recovery_instance.registration_token
+  backup_recovery_instance_public_url  = module.backup_recovery_instance.brs_instance.extensions["endpoints.public"]
+  backup_recovery_instance_private_url = module.backup_recovery_instance.brs_instance.extensions["endpoints.private"]
+  brs_instance_guid                    = module.backup_recovery_instance.brs_instance_guid
+  brs_instance_region                  = element(split(":", module.backup_recovery_instance.brs_instance_crn), 5)
 }
 
 data "ibm_backup_recovery_protection_policies" "existing_policies" {
