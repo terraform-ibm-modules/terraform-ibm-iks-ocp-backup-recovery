@@ -94,6 +94,24 @@
               "required": true
             },
             {
+              "key": "provider_visibility",
+              "display_name": "Provider Visibility",
+              "options": [
+                {
+                  "displayname": "Public",
+                  "value": "public"
+                },
+                {
+                  "displayname": "Private",
+                  "value": "private"
+                },
+                {
+                  "displayname": "Public and Private",
+                  "value": "public-and-private"
+                }
+              ]
+            },
+            {
               "key": "cluster_id",
               "display_name": "cluster",
               "custom_config": {

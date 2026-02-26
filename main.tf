@@ -40,6 +40,8 @@ data "ibm_container_cluster" "classic_cluster" {
   count             = local.is_classic ? 1 : 0
   name              = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
+  wait_till         = var.wait_till
+  wait_till_timeout = var.wait_till_timeout
 }
 
 module "dsc_sg_rule" {
