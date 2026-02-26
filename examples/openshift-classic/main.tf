@@ -22,9 +22,10 @@ resource "ibm_network_vlan" "public_vlan" {
 }
 
 resource "ibm_network_vlan" "private_vlan" {
-  count      = var.cluster_name_id == null ? 1 : 0
-  datacenter = var.datacenter
-  type       = "PRIVATE"
+  count           = var.cluster_name_id == null ? 1 : 0
+  datacenter      = var.datacenter
+  type            = "PRIVATE"
+  router_hostname = replace(ibm_network_vlan.public_vlan[0].router_hostname, "fcr", "bcr")
 }
 
 ##############################################################################
@@ -43,7 +44,7 @@ resource "ibm_container_cluster" "cluster" {
   count                = var.cluster_name_id == null ? 1 : 0
   name                 = "${var.prefix}-cluster"
   datacenter           = var.datacenter
-  default_pool_size    = 2
+  default_pool_size    = 3
   hardware             = "shared"
   kube_version         = local.default_version
   force_delete_storage = true
