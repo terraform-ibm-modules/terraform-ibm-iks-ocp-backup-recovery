@@ -26,7 +26,7 @@ import (
 const resourceGroup = "geretain-test-resources"
 const fullyConfigurableTerraformDir = "solutions/fully-configurable"
 const iksExampleDir = "examples/kubernetes"
-const iksClassicExampleDir = "examples/kubernetes-classic"
+const ocpExampleDir = "examples/openshift"
 
 var excludeDirs = []string{".terraform", ".docs", ".github", ".git", ".idea", "common-dev-assets", "examples", "tests", "reference-architectures"}
 
@@ -239,16 +239,18 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 	cleanupTerraform(t, existingTerraformOptions, prefix)
 }
 
-// ibm_backup_recovery_source_registration requires ignoring updates to kubernetes_params fields which will be fixed in future provider versions
-func setupIKSOptions(t *testing.T, prefix string, dir string) *testhelper.TestOptions {
+// Shared setup function for all examples
+func setupOptions(t *testing.T, prefix string, dir string, exemptionList []string) *testhelper.TestOptions {
 	region := validRegions[common.CryptoIntn(len(validRegions))]
-
 	options := testhelper.TestOptionsDefaultWithVars(&testhelper.TestOptions{
 		Testing:       t,
 		TerraformDir:  dir,
 		Prefix:        prefix,
 		ResourceGroup: resourceGroup,
 		Region:        region,
+		IgnoreUpdates: testhelper.Exemptions{
+			List: exemptionList,
+		},
 	})
 	return options
 }
@@ -256,17 +258,25 @@ func setupIKSOptions(t *testing.T, prefix string, dir string) *testhelper.TestOp
 func TestRunIKSExample(t *testing.T) {
 	t.Parallel()
 
-	options := setupIKSOptions(t, "brs-adv", iksExampleDir)
+	options := setupOptions(t, "brs-adv", iksExampleDir, []string{
+		"module.backup_recover_protect_ocp.ibm_backup_recovery_source_registration.source_registration",
+		"ibm_container_vpc_cluster.cluster[0]",
+		"ibm_container_cluster.cluster[0]",
+	})
 
 	output, err := options.RunTestConsistency()
 	assert.Nil(t, err, "This should not have errored")
 	assert.NotNil(t, output, "Expected some output")
 }
 
-func TestRunIKSClassicExample(t *testing.T) {
+func TestRunOCPExample(t *testing.T) {
 	t.Parallel()
 
-	options := setupIKSOptions(t, "brs-iksc", iksClassicExampleDir)
+	options := setupOptions(t, "brs", ocpExampleDir, []string{
+		"module.backup_recover_protect_ocp.ibm_backup_recovery_source_registration.source_registration",
+		"module.ocp_base[0].ibm_container_vpc_cluster.cluster[0]",
+		"ibm_container_cluster.cluster[0]",
+	})
 
 	output, err := options.RunTestConsistency()
 	assert.Nil(t, err, "This should not have errored")

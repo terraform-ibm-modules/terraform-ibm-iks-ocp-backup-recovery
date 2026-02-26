@@ -48,12 +48,13 @@ resource "ibm_is_subnet" "subnet_zone_1" {
 ##############################################################################
 
 resource "ibm_container_vpc_cluster" "cluster" {
-  count             = var.cluster_name_id == null ? 1 : 0
-  name              = "${var.prefix}-cluster"
-  vpc_id            = ibm_is_vpc.vpc[0].id
-  flavor            = "bx2.4x16"
-  resource_group_id = module.resource_group.resource_group_id
-  worker_count      = 2
+  count                = var.cluster_name_id == null ? 1 : 0
+  name                 = "${var.prefix}-cluster"
+  vpc_id               = ibm_is_vpc.vpc[0].id
+  flavor               = "bx2.4x16"
+  force_delete_storage = true
+  resource_group_id    = module.resource_group.resource_group_id
+  worker_count         = 2
   zones {
     subnet_id = ibm_is_subnet.subnet_zone_1[0].id
     name      = "${var.region}-1"
@@ -64,8 +65,6 @@ resource "ibm_container_vpc_cluster" "cluster" {
 data "ibm_container_vpc_cluster" "cluster" {
   name              = var.cluster_name_id != null ? var.cluster_name_id : ibm_container_vpc_cluster.cluster[0].name
   resource_group_id = module.resource_group.resource_group_id
-  wait_till         = "Normal"
-  wait_till_timeout = 90
 }
 
 data "ibm_container_cluster_config" "cluster_config" {
@@ -95,6 +94,7 @@ module "backup_recover_protect_ocp" {
   ibmcloud_api_key             = var.ibmcloud_api_key
   enable_auto_protect          = false
   # --- B&R Instance ---
+  brs_instance_crn          = var.brs_instance_crn
   brs_endpoint_type         = "public"
   brs_instance_name         = "${var.prefix}-brs-instance"
   brs_connection_name       = "${var.prefix}-brs-connection-IksVpc"

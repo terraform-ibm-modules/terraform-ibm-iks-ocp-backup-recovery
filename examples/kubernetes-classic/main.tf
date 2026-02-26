@@ -65,8 +65,6 @@ data "ibm_container_cluster" "cluster" {
   count             = var.cluster_name_id != null ? 1 : 0
   name              = var.cluster_name_id
   resource_group_id = module.resource_group.resource_group_id
-  wait_till         = "Normal"
-  wait_till_timeout = 90
 }
 
 data "ibm_container_cluster_config" "cluster_config" {
@@ -96,6 +94,7 @@ module "backup_recover_protect_ocp" {
   ibmcloud_api_key             = var.ibmcloud_api_key
   enable_auto_protect          = false
   # --- B&R Instance ---
+  brs_instance_crn          = var.brs_instance_crn
   brs_endpoint_type         = "public"
   brs_instance_name         = "${var.prefix}-brs-instance"
   brs_connection_name       = "${var.prefix}-brs-connection-IksClassic"

@@ -90,8 +90,6 @@ data "ibm_container_vpc_cluster" "cluster" {
   count             = var.cluster_name_id == null ? 0 : 1
   name              = var.cluster_name_id != null ? var.cluster_name_id : module.ocp_base[0].cluster_name
   resource_group_id = module.resource_group.resource_group_id
-  wait_till         = "Normal"
-  wait_till_timeout = 90
 }
 
 data "ibm_container_cluster_config" "cluster_config" {
@@ -123,6 +121,7 @@ module "backup_recover_protect_ocp" {
   # enable_auto_protect is set to false to avoid issues when running terraform pipelines. in production, this should be set to true.
   enable_auto_protect = false
   # --- B&R Instance ---
+  brs_instance_crn          = var.brs_instance_crn
   brs_endpoint_type         = "public"
   brs_instance_name         = "${var.prefix}-brs-instance"
   brs_connection_name       = "${var.prefix}-brs-connection-RoksVpc"

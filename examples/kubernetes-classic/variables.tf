@@ -62,3 +62,9 @@ variable "dsc_storage_class" {
   description = "Storage class to use for the Data Source Connector persistent volume. By default, it uses 'ibmc-vpc-block-metro-5iops-tier' for VPC clusters and 'ibmc-block-silver' for Classic clusters."
   default     = "ibmc-block-silver"
 }
+
+variable "brs_instance_crn" {
+  type        = string
+  description = "CRN of an existing BRS instance to use. If not provided, a new instance will be created."
+  default     = ""
+}
