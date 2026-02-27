@@ -33,12 +33,6 @@ variable "access_tags" {
   default     = []
 }
 
-variable "access_tags" {
-  type        = list(string)
-  description = "A list of access tags to apply to the resources created by the module."
-  default     = []
-}
-
 variable "region" {
   type        = string
   description = "Region where resources are created."
@@ -62,7 +56,7 @@ variable "dsc_storage_class" {
   default     = "ibmc-vpc-block-metro-5iops-tier"
 }
 
-variable "brs_instance_crn" {
+variable "existing_brs_instance_crn" {
   type        = string
   description = "CRN of an existing BRS instance to use. If not provided, a new instance will be created."
   default     = ""

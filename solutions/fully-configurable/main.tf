@@ -23,7 +23,7 @@ module "protect_cluster" {
   ibmcloud_api_key             = var.ibmcloud_api_key
   # --- BRS Instance Details---
   brs_endpoint_type         = var.brs_endpoint_type
-  brs_instance_crn          = var.brs_instance_crn
+  existing_brs_instance_crn = var.existing_brs_instance_crn
   brs_connection_name       = var.brs_connection_name
   brs_create_new_connection = var.brs_create_new_connection
   brs_instance_name         = var.brs_instance_name

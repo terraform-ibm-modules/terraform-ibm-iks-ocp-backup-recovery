@@ -320,8 +320,8 @@ variable "brs_instance_name" {
   nullable    = false
 
   validation {
-    condition     = var.brs_instance_name != "" || var.brs_instance_crn != ""
-    error_message = "Either 'brs_instance_name' or 'brs_instance_crn' must be provided."
+    condition     = var.brs_instance_name != "" || var.existing_brs_instance_crn != ""
+    error_message = "Either 'brs_instance_name' or 'existing_brs_instance_crn' must be provided."
   }
 }
 

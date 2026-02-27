@@ -99,7 +99,7 @@ module "backup_recovery_instance" {
   connection_name           = "${var.prefix}-brs-connection-RoksVpc"
   create_new_connection     = true
   connection_env_type       = "kRoksVpc"
-  existing_brs_instance_crn = var.brs_instance_crn
+  existing_brs_instance_crn = var.existing_brs_instance_crn
 }
 
 resource "ibm_backup_recovery_protection_policy" "existing_policy" {

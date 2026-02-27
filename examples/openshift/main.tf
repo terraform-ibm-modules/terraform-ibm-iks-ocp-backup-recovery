@@ -121,7 +121,7 @@ module "backup_recover_protect_ocp" {
   # enable_auto_protect is set to false to avoid issues when running terraform pipelines. in production, this should be set to true.
   enable_auto_protect = false
   # --- B&R Instance ---
-  brs_instance_crn          = var.brs_instance_crn
+  existing_brs_instance_crn = var.existing_brs_instance_crn
   brs_endpoint_type         = "public"
   brs_instance_name         = "${var.prefix}-brs-instance"
   brs_connection_name       = "${var.prefix}-brs-connection-RoksVpc"
