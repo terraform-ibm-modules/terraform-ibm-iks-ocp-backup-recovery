@@ -94,9 +94,9 @@ module "backup_recovery_instance" {
   region                = var.region
   resource_group_id     = module.resource_group.resource_group_id
   ibmcloud_api_key      = var.ibmcloud_api_key
-  tags                  = var.resource_tags
+  resource_tags         = var.resource_tags
   instance_name         = "${var.prefix}-brs-instance"
   connection_name       = "${var.prefix}-brs-connection"
   create_new_connection = true
-  create_new_instance   = true
+  access_tags           = []
 }
