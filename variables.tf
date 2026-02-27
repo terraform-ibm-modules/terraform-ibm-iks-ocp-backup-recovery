@@ -310,8 +310,7 @@ variable "brs_connection_name" {
 variable "existing_brs_instance_crn" {
   type        = string
   description = "CRN of the Backup & Recovery Service instance."
-  nullable    = false
-  default     = ""
+  default     = null
 }
 
 variable "brs_instance_name" {
@@ -320,7 +319,7 @@ variable "brs_instance_name" {
   nullable    = false
 
   validation {
-    condition     = var.brs_instance_name != "" || var.existing_brs_instance_crn != ""
+    condition     = var.brs_instance_name != "" || var.existing_brs_instance_crn != null
     error_message = "Either 'brs_instance_name' or 'existing_brs_instance_crn' must be provided."
   }
 }

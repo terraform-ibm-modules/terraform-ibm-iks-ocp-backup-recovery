@@ -31,5 +31,5 @@ variable "resource_group" {
 variable "existing_brs_instance_crn" {
   type        = string
   description = "CRN of an existing BRS instance to use. If not provided, a new instance will be created."
-  default     = ""
+  default     = null
 }

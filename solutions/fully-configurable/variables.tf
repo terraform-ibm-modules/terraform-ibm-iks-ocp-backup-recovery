@@ -243,8 +243,7 @@ variable "brs_connection_name" {
 variable "existing_brs_instance_crn" {
   type        = string
   description = "CRN of the Backup & Recovery Service instance."
-  default     = ""
-  nullable    = false
+  default     = null
 }
 variable "add_dsc_rules_to_cluster_sg" {
   type        = bool
@@ -306,7 +305,7 @@ variable "brs_instance_name" {
   nullable    = false
 
   validation {
-    condition     = var.brs_instance_name != "" || var.existing_brs_instance_crn != ""
+    condition     = var.brs_instance_name != "" || var.existing_brs_instance_crn != null
     error_message = "Either 'brs_instance_name' or 'existing_brs_instance_crn' must be provided."
   }
 }
