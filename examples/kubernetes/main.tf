@@ -87,7 +87,7 @@ resource "time_sleep" "wait_operators" {
 
 module "backup_recovery_instance" {
   source                = "terraform-ibm-modules/backup-recovery/ibm"
-  version               = "v1.6.2"
+  version               = "v1.7.2"
   region                = var.region
   resource_group_id     = module.resource_group.resource_group_id
   ibmcloud_api_key      = var.ibmcloud_api_key
