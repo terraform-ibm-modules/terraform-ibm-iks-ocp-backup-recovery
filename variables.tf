@@ -16,11 +16,13 @@ variable "cluster_config_endpoint_type" {
   description = "The type of endpoint to use for the cluster config access: `default`, `private`, `vpe`, or `link`. The `default` value uses the default endpoint of the cluster."
   type        = string
   default     = "default"
-  nullable    = false # use default if null is passed in
+
   validation {
     error_message = "Invalid endpoint type. Valid values are `default`, `private`, `vpe`, or `link`."
     condition     = contains(["default", "private", "vpe", "link"], var.cluster_config_endpoint_type)
   }
+
+  nullable = false
 }
 
 variable "kube_type" {
@@ -80,11 +82,13 @@ variable "dsc_image_version" {
   description = "Container image for the Data Source Connector."
   type        = string
   default     = "icr.io/ext/brs/brs-ds-connector:7.2.17-release-20260108-ed857f1c@sha256:560ff2170c880dc19712e0f37ba1575240e462f5e2a2ecbc4ecb791aa471f2d0"
-  nullable    = false
+
   validation {
     condition     = can(regex("^[a-z0-9.-]+(/[a-z0-9._-]+)+:[a-zA-Z0-9._-]+@sha256:[a-f0-9]{64}$", var.dsc_image_version))
     error_message = "The image version must be in the format '<registry>/<namespace>/<repository>:<tag>@sha256:<64-hex-digest>'."
   }
+
+  nullable = false
 }
 
 variable "dsc_name" {
@@ -103,12 +107,13 @@ variable "dsc_replicas" {
   EOT
   type        = number
   default     = 1
-  nullable    = false
 
   validation {
     condition     = var.dsc_replicas >= 1
     error_message = "Replicas must be at least 1."
   }
+
+  nullable = false
 }
 
 variable "dsc_helm_timeout" {
@@ -316,12 +321,13 @@ variable "existing_brs_instance_crn" {
 variable "brs_instance_name" {
   type        = string
   description = "Name of the Backup & Recovery Service instance."
-  nullable    = false
 
   validation {
-    condition     = var.brs_instance_name != "" || var.existing_brs_instance_crn != null
-    error_message = "Either 'brs_instance_name' or 'existing_brs_instance_crn' must be provided."
+    condition     = var.brs_instance_name != ""
+    error_message = "The 'brs_instance_name' must not be an empty string."
   }
+
+  nullable = false
 }
 
 variable "brs_create_new_connection" {

@@ -8,10 +8,11 @@ data "ibm_container_cluster_config" "cluster_config" {
 }
 
 
-########################################################################################################################
-# Backup & Recovery for IKS/ROKS with Data Source Connector
-########################################################################################################################
-
+locals {
+  existing_brs_instance_crn = var.existing_brs_instance_crn == "" ? null : var.existing_brs_instance_crn
+  brs_instance_name         = var.brs_instance_name == "" ? null : var.brs_instance_name
+  brs_connection_name       = var.brs_connection_name == "" ? null : var.brs_connection_name
+}
 
 module "protect_cluster" {
   source                       = "../.."
@@ -23,10 +24,11 @@ module "protect_cluster" {
   ibmcloud_api_key             = var.ibmcloud_api_key
   # --- BRS Instance Details---
   brs_endpoint_type         = var.brs_endpoint_type
-  existing_brs_instance_crn = var.existing_brs_instance_crn
-  brs_connection_name       = var.brs_connection_name
+  existing_brs_instance_crn = local.existing_brs_instance_crn
+  brs_instance_name         = local.brs_instance_name
+  # --- BRS Connection Details---
+  brs_connection_name       = local.brs_connection_name
   brs_create_new_connection = var.brs_create_new_connection
-  brs_instance_name         = var.brs_instance_name
   region                    = var.region
   connection_env_type       = var.connection_env_type
   # --- Backup Policy ---

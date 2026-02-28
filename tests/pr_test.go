@@ -138,6 +138,25 @@ func cleanupTerraform(t *testing.T, options *terraform.Options, prefix string) {
 	logger.Log(t, "END: Destroy (existing resources)")
 }
 
+func getSchematicTerraformVars(t *testing.T, options *testschematic.TestSchematicOptions, existingTerraformOptions *terraform.Options) []testschematic.TestSchematicTerraformVar {
+	return []testschematic.TestSchematicTerraformVar{
+		{Name: "ibmcloud_api_key", Value: options.RequiredEnvironmentVars["TF_VAR_ibmcloud_api_key"], DataType: "string", Secure: true},
+		{Name: "cluster_id", Value: terraform.Output(t, existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
+		{Name: "cluster_resource_group_id", Value: terraform.Output(t, existingTerraformOptions, "cluster_resource_group_id"), DataType: "string"},
+		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
+		{Name: "existing_brs_instance_crn", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_crn"), DataType: "string"},
+		{Name: "brs_connection_name", Value: terraform.Output(t, existingTerraformOptions, "brs_connection_name"), DataType: "string"},
+		{Name: "brs_endpoint_type", Value: "private", DataType: "string"},
+		{Name: "cluster_config_endpoint_type", Value: "private", DataType: "string"},
+		{Name: "dsc_replicas", Value: "1", DataType: "number"},
+		{Name: "brs_create_new_connection", Value: "false", DataType: "bool"},
+		{Name: "brs_instance_name", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_name"), DataType: "string"},
+		{Name: "region", Value: terraform.Output(t, existingTerraformOptions, "region"), DataType: "string"},
+		{Name: "connection_env_type", Value: "kRoksVpc", DataType: "string"},
+		{Name: "kube_type", Value: "openshift", DataType: "string"},
+	}
+}
+
 func TestRunFullyConfigurableInSchematics(t *testing.T) {
 	t.Parallel()
 
@@ -148,6 +167,7 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 	// Provision resources first
 	prefix := fmt.Sprintf("ocp-brs-%s", strings.ToLower(random.UniqueId()))
 	existingTerraformOptions := setupTerraform(t, prefix, "./resources")
+	defer cleanupTerraform(t, existingTerraformOptions, prefix)
 
 	options := testschematic.TestSchematicOptionsDefault(&testschematic.TestSchematicOptions{
 		Testing:               t,
@@ -158,25 +178,8 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 		DeleteWorkspaceOnFail: false,
 	})
 
-	options.TerraformVars = []testschematic.TestSchematicTerraformVar{
-		{Name: "ibmcloud_api_key", Value: options.RequiredEnvironmentVars["TF_VAR_ibmcloud_api_key"], DataType: "string", Secure: true},
-		{Name: "cluster_id", Value: terraform.Output(t, existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
-		{Name: "cluster_resource_group_id", Value: terraform.Output(t, existingTerraformOptions, "cluster_resource_group_id"), DataType: "string"},
-		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
-		{Name: "existing_brs_instance_crn", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_crn"), DataType: "string"},
-		{Name: "brs_connection_name", Value: terraform.Output(t, existingTerraformOptions, "brs_connection_name"), DataType: "string"},
-		{Name: "brs_endpoint_type", Value: "private", DataType: "string"},
-		{Name: "cluster_config_endpoint_type", Value: "private", DataType: "string"},
-		{Name: "dsc_replicas", Value: "1", DataType: "number"},
-		// {Name: "policy", Value: fmt.Sprintf("{name = %q}", terraform.Output(t, existingTerraformOptions, "protection_policy_name")), DataType: "object"},
-		{Name: "brs_create_new_connection", Value: "false", DataType: "bool"},
-		{Name: "brs_instance_name", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_name"), DataType: "string"},
-		{Name: "region", Value: terraform.Output(t, existingTerraformOptions, "region"), DataType: "string"},
-		{Name: "connection_env_type", Value: "kRoksVpc", DataType: "string"},
-		{Name: "kube_type", Value: "openshift", DataType: "string"},
-	}
+	options.TerraformVars = getSchematicTerraformVars(t, options, existingTerraformOptions)
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
-	cleanupTerraform(t, existingTerraformOptions, prefix)
 }
 
 // Upgrade Test does not require KMS encryption
@@ -190,6 +193,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 	// Provision existing resources first
 	prefix := fmt.Sprintf("ocp-existing-%s", strings.ToLower(random.UniqueId()))
 	existingTerraformOptions := setupTerraform(t, prefix, "./resources")
+	defer cleanupTerraform(t, existingTerraformOptions, prefix)
 
 	options := testschematic.TestSchematicOptionsDefault(&testschematic.TestSchematicOptions{
 		Testing:               t,
@@ -200,23 +204,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		DeleteWorkspaceOnFail: false,
 	})
 
-	options.TerraformVars = []testschematic.TestSchematicTerraformVar{
-		{Name: "ibmcloud_api_key", Value: options.RequiredEnvironmentVars["TF_VAR_ibmcloud_api_key"], DataType: "string", Secure: true},
-		{Name: "cluster_id", Value: terraform.Output(t, existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
-		{Name: "cluster_resource_group_id", Value: terraform.Output(t, existingTerraformOptions, "cluster_resource_group_id"), DataType: "string"},
-		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
-		{Name: "existing_brs_instance_crn", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_crn"), DataType: "string"},
-		{Name: "brs_connection_name", Value: terraform.Output(t, existingTerraformOptions, "brs_connection_name"), DataType: "string"},
-		{Name: "brs_endpoint_type", Value: "private", DataType: "string"},
-		{Name: "cluster_config_endpoint_type", Value: "private", DataType: "string"},
-		{Name: "dsc_replicas", Value: "1", DataType: "number"},
-		// {Name: "policy", Value: fmt.Sprintf("{name = %q}", terraform.Output(t, existingTerraformOptions, "protection_policy_name")), DataType: "object"},
-		{Name: "brs_create_new_connection", Value: "false", DataType: "bool"},
-		{Name: "brs_instance_name", Value: terraform.Output(t, existingTerraformOptions, "brs_instance_name"), DataType: "string"},
-		{Name: "region", Value: terraform.Output(t, existingTerraformOptions, "region"), DataType: "string"},
-		{Name: "connection_env_type", Value: "kRoksVpc", DataType: "string"},
-		{Name: "kube_type", Value: "openshift", DataType: "string"},
-	}
+	options.TerraformVars = getSchematicTerraformVars(t, options, existingTerraformOptions)
 
 	// Exempt expected resource changes from image version update (7.2.16 -> 7.2.17)
 	// and chart rename (cohesity-dsc-chart -> brs-ds-connector-chart)
@@ -237,7 +225,6 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 	}
 
 	require.NoError(t, options.RunSchematicUpgradeTest(), "This should not have errored")
-	cleanupTerraform(t, existingTerraformOptions, prefix)
 }
 
 // Shared setup function for all examples
@@ -266,7 +253,7 @@ func TestRunIKSExample(t *testing.T) {
 	})
 
 	output, err := options.RunTestConsistency()
-	assert.Nil(t, err, "This should not have errored")
+	assert.NoError(t, err, "This should not have errored")
 	assert.NotNil(t, output, "Expected some output")
 }
 
@@ -280,6 +267,6 @@ func TestRunOCPExample(t *testing.T) {
 	})
 
 	output, err := options.RunTestConsistency()
-	assert.Nil(t, err, "This should not have errored")
+	assert.NoError(t, err, "This should not have errored")
 	assert.NotNil(t, output, "Expected some output")
 }

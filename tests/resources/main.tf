@@ -69,7 +69,11 @@ locals {
 }
 
 locals {
-  cluster_name = "${var.prefix}-cluster"
+  cluster_name              = "${var.prefix}-cluster"
+  existing_brs_instance_crn = var.existing_brs_instance_crn == "" ? null : var.existing_brs_instance_crn
+  # brs_region is set to cluster region when creating a new BRS instance
+  # otherwise it is set to the region of the existing BRS instance
+  brs_region = local.existing_brs_instance_crn != null ? module.crn_parser[0].region : var.region
 }
 
 module "ocp_base" {
@@ -87,11 +91,17 @@ module "ocp_base" {
   access_tags          = []
 }
 
+module "crn_parser" {
+  source  = "terraform-ibm-modules/common-utilities/ibm//modules/crn-parser"
+  version = "1.4.2"
+  count   = local.existing_brs_instance_crn == null ? 0 : 1
+  crn     = local.existing_brs_instance_crn
+}
 
 module "backup_recovery_instance" {
   source                    = "terraform-ibm-modules/backup-recovery/ibm"
   version                   = "v1.7.1"
-  region                    = var.region
+  region                    = local.brs_region
   resource_group_id         = module.resource_group.resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
   resource_tags             = var.resource_tags
@@ -99,36 +109,5 @@ module "backup_recovery_instance" {
   connection_name           = "${var.prefix}-brs-connection-RoksVpc"
   create_new_connection     = true
   connection_env_type       = "kRoksVpc"
-  existing_brs_instance_crn = var.existing_brs_instance_crn
-}
-
-resource "ibm_backup_recovery_protection_policy" "existing_policy" {
-  name            = "${var.prefix}-existing-policy"
-  x_ibm_tenant_id = module.backup_recovery_instance.tenant_id
-  endpoint_type   = "public"
-  instance_id     = module.backup_recovery_instance.brs_instance_guid
-  region          = var.region
-  backup_policy {
-    regular {
-      incremental {
-        schedule {
-          day_schedule {
-            frequency = 1
-          }
-          unit = "Days"
-        }
-      }
-      retention {
-        duration = 1
-        unit     = "Days"
-      }
-      primary_backup_target {
-        use_default_backup_target = true
-      }
-    }
-  }
-  retry_options {
-    retries             = 3
-    retry_interval_mins = 60
-  }
+  existing_brs_instance_crn = var.existing_brs_instance_crn == "" ? null : var.existing_brs_instance_crn
 }
