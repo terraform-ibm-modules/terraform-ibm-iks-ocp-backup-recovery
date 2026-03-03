@@ -2,7 +2,9 @@ locals {
   existing_brs_instance_crn = var.existing_brs_instance_crn == "" ? null : var.existing_brs_instance_crn
   brs_instance_name         = var.brs_instance_name == "" ? null : var.brs_instance_name
   brs_connection_name       = var.brs_connection_name == "" ? null : var.brs_connection_name
-  brs_region                = local.existing_brs_instance_crn != null ? module.crn_parser[0].region : var.region
+  # brs_region is set to cluster region when creating a new BRS instance
+  # otherwise it is set to the region of the existing BRS instance
+  brs_region = local.existing_brs_instance_crn != null ? module.crn_parser[0].region : var.region
 }
 
 module "crn_parser" {
@@ -12,9 +14,11 @@ module "crn_parser" {
   crn     = local.existing_brs_instance_crn
 }
 
+
+
 module "backup_recovery_instance" {
   source                    = "terraform-ibm-modules/backup-recovery/ibm"
-  version                   = "v1.7.1"
+  version                   = "v1.7.2"
   region                    = local.brs_region
   resource_group_id         = var.cluster_resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key

@@ -78,7 +78,7 @@ locals {
 
 module "ocp_base" {
   source               = "terraform-ibm-modules/base-ocp-vpc/ibm"
-  version              = "3.81.1"
+  version              = "3.81.6"
   resource_group_id    = module.resource_group.resource_group_id
   region               = var.region
   tags                 = var.resource_tags
@@ -100,7 +100,7 @@ module "crn_parser" {
 
 module "backup_recovery_instance" {
   source                    = "terraform-ibm-modules/backup-recovery/ibm"
-  version                   = "v1.7.1"
+  version                   = "v1.7.2"
   region                    = local.brs_region
   resource_group_id         = module.resource_group.resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key

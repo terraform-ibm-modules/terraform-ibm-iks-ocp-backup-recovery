@@ -295,12 +295,6 @@ variable "kube_type" {
   }
 }
 
-variable "brs_create_new_connection" {
-  type        = bool
-  description = "Flag to create a new connection from the Backup & Recovery Service instance to the cluster."
-  default     = true
-  nullable    = false
-}
 
 variable "brs_instance_name" {
   type        = string
@@ -312,6 +306,13 @@ variable "brs_instance_name" {
   }
 
   nullable = false
+}
+
+variable "brs_create_new_connection" {
+  type        = bool
+  description = "Flag to create a new connection from the Backup & Recovery Service instance to the cluster."
+  default     = true
+  nullable    = false
 }
 
 variable "region" {

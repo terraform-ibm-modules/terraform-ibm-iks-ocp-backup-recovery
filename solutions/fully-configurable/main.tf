@@ -9,9 +9,9 @@ data "ibm_container_cluster_config" "cluster_config" {
 
 
 locals {
-  existing_brs_instance_crn = var.existing_brs_instance_crn == "" ? null : var.existing_brs_instance_crn
-  brs_instance_name         = var.brs_instance_name == "" ? null : var.brs_instance_name
-  brs_connection_name       = var.brs_connection_name == "" ? null : var.brs_connection_name
+  existing_brs_instance_crn = var.existing_brs_instance_crn
+  brs_instance_name         = var.brs_instance_name
+  brs_connection_name       = var.brs_connection_name
 }
 
 module "protect_cluster" {

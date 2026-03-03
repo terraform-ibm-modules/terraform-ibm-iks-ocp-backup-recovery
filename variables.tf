@@ -336,6 +336,7 @@ variable "brs_create_new_connection" {
   default     = true
 }
 
+
 variable "connection_env_type" {
   type        = string
   default     = "kIksVpc"
