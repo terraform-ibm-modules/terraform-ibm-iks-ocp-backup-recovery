@@ -191,6 +191,11 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 	})
 
 	options.TerraformVars = getSchematicTerraformVars(t, prefix, options, existingTerraformOptions)
+	options.IgnoreUpdates = testhelper.Exemptions{
+		List: []string{
+			"module.protect_cluster.kubernetes_namespace_v1.dsc_namespace",
+		},
+	}
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
 }
 
@@ -225,6 +230,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			"module.protect_cluster.helm_release.data_source_connector",
 			"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration",
 			"module.protect_cluster.kubernetes_cluster_role_binding_v1.brsagent_admin",
+			"module.protect_cluster.kubernetes_namespace_v1.dsc_namespace",
 		},
 	}
 	options.IgnoreDestroys = testhelper.Exemptions{
