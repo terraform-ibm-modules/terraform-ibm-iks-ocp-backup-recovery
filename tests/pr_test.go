@@ -138,7 +138,7 @@ func cleanupTerraform(t *testing.T, options *terraform.Options, prefix string) {
 	logger.Log(t, "END: Destroy (existing resources)")
 }
 
-func getSchematicTerraformVars(t *testing.T, options *testschematic.TestSchematicOptions, existingTerraformOptions *terraform.Options) []testschematic.TestSchematicTerraformVar {
+func getSchematicTerraformVars(t *testing.T, prefix string, options *testschematic.TestSchematicOptions, existingTerraformOptions *terraform.Options) []testschematic.TestSchematicTerraformVar {
 	return []testschematic.TestSchematicTerraformVar{
 		{Name: "ibmcloud_api_key", Value: options.RequiredEnvironmentVars["TF_VAR_ibmcloud_api_key"], DataType: "string", Secure: true},
 		{Name: "cluster_id", Value: terraform.Output(t, existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
@@ -154,6 +154,18 @@ func getSchematicTerraformVars(t *testing.T, options *testschematic.TestSchemati
 		{Name: "region", Value: terraform.Output(t, existingTerraformOptions, "region"), DataType: "string"},
 		{Name: "connection_env_type", Value: "kRoksVpc", DataType: "string"},
 		{Name: "kube_type", Value: "openshift", DataType: "string"},
+		{Name: "policy", Value: map[string]interface{}{
+			"name": fmt.Sprintf("%s-policy", prefix),
+			"schedule": map[string]interface{}{
+				"unit":      "Hours",
+				"frequency": 6,
+			},
+			"retention": map[string]interface{}{
+				"duration": 4,
+				"unit":     "Weeks",
+			},
+			"use_default_backup_target": true,
+		}, DataType: "object"},
 	}
 }
 
@@ -178,7 +190,7 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 		DeleteWorkspaceOnFail: false,
 	})
 
-	options.TerraformVars = getSchematicTerraformVars(t, options, existingTerraformOptions)
+	options.TerraformVars = getSchematicTerraformVars(t, prefix, options, existingTerraformOptions)
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
 }
 
@@ -204,7 +216,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		DeleteWorkspaceOnFail: false,
 	})
 
-	options.TerraformVars = getSchematicTerraformVars(t, options, existingTerraformOptions)
+	options.TerraformVars = getSchematicTerraformVars(t, prefix, options, existingTerraformOptions)
 
 	// Exempt expected resource changes from image version update (7.2.16 -> 7.2.17)
 	// and chart rename (cohesity-dsc-chart -> brs-ds-connector-chart)
