@@ -80,6 +80,11 @@ resource "ibm_container_vpc_cluster" "vpc_cluster" {
     name      = "${var.region}-1"
   }
   disable_outbound_traffic_protection = true
+  tags                                = var.resource_tags
+
+  lifecycle {
+    ignore_changes = [tags]
+  }
 }
 
 resource "ibm_container_cluster" "classic_cluster" {
@@ -97,6 +102,10 @@ resource "ibm_container_cluster" "classic_cluster" {
   wait_till            = "Normal"
   resource_group_id    = module.resource_group.resource_group_id
   tags                 = var.resource_tags
+
+  lifecycle {
+    ignore_changes = [tags]
+  }
 
   timeouts {
     delete = "2h"

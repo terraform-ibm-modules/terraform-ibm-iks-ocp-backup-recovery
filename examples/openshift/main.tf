@@ -123,6 +123,10 @@ resource "ibm_container_cluster" "classic_cluster" {
   tags                 = var.resource_tags
   entitlement          = var.ocp_entitlement
 
+  lifecycle {
+    ignore_changes = [tags]
+  }
+
   timeouts {
     delete = "2h"
     create = "3h"

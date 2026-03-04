@@ -159,6 +159,13 @@ resource "kubernetes_namespace_v1" "dsc_namespace" {
   metadata {
     name = var.dsc_namespace
   }
+
+  lifecycle {
+    ignore_changes = [
+      metadata[0].annotations,
+      metadata[0].labels
+    ]
+  }
 }
 
 resource "helm_release" "data_source_connector" {
