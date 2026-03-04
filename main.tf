@@ -1,17 +1,66 @@
+##############################################################################
+# Locals
+##############################################################################
+
 locals {
-  # brs_region is set to cluster region when creating a new BRS instance
-  # otherwise it is set to the region of the existing BRS instance
+  # --- Environment type detection ---
+  is_vpc     = length(regexall("Vpc$", var.connection_env_type)) > 0
+  is_classic = length(regexall("Classic$", var.connection_env_type)) > 0
+
+  # --- BRS region: cluster region for new instances, existing instance region otherwise ---
   brs_region = var.existing_brs_instance_crn != null ? module.crn_parser[0].region : var.region
+
+  # --- Cluster attributes (resolved from VPC or Classic data sources) ---
+  cluster_crn                  = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].crn : data.ibm_container_cluster.classic_cluster[0].crn
+  cluster_private_endpoint_url = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].private_service_endpoint_url : data.ibm_container_cluster.classic_cluster[0].private_service_endpoint_url
+  cluster_public_endpoint_url  = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].public_service_endpoint_url : data.ibm_container_cluster.classic_cluster[0].public_service_endpoint_url
+  cluster_private_available    = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].private_service_endpoint : data.ibm_container_cluster.classic_cluster[0].private_service_endpoint
+
+  # --- Helm chart URI parsing ---
+  uri_no_digest      = split("@", var.dsc_chart_uri)[0]
+  chart_with_version = element(split("/", local.uri_no_digest), -1)
+  dsc_chart          = split(":", local.chart_with_version)[0]
+  dsc_chart_version  = replace(local.chart_with_version, "${local.dsc_chart}:", "")
+  dsc_chart_location = replace(local.uri_no_digest, "/${local.chart_with_version}", "")
+
+  # --- BRS instance attributes ---
+  brs_tenant_id                        = module.backup_recovery_instance.tenant_id
+  connection_id                        = module.backup_recovery_instance.connection_id
+  registration_token                   = module.backup_recovery_instance.registration_token
+  backup_recovery_instance_public_url  = module.backup_recovery_instance.brs_instance.extensions["endpoints.public"]
+  backup_recovery_instance_private_url = module.backup_recovery_instance.brs_instance.extensions["endpoints.private"]
+  brs_instance_guid                    = module.backup_recovery_instance.brs_instance_guid
+  brs_instance_region                  = element(split(":", module.backup_recovery_instance.brs_instance_crn), 5)
+  backup_recovery_instance_url         = var.brs_endpoint_type == "public" ? local.backup_recovery_instance_public_url : local.backup_recovery_instance_private_url
+
+  # --- Protection policy ---
+  use_existing_policy = var.policy.schedule == null && var.policy.retention == null
+
+  # Only resolve policy_id if auto-protect is enabled
+  policy_id = var.enable_auto_protect ? (
+    local.use_existing_policy ? (
+      data.ibm_backup_recovery_protection_policies.existing_policies[0].policies[0].id
+      ) : (
+      replace(ibm_backup_recovery_protection_policy.protection_policy[0].id, "${local.brs_tenant_id}::", "")
+    )
+  ) : null
 }
 
+##############################################################################
+# CRN Parser (for existing BRS instance)
+##############################################################################
+
 module "crn_parser" {
-  count   = var.existing_brs_instance_crn == null ? 0 : 1
+  count = var.existing_brs_instance_crn == null ? 0 : 1
+
   source  = "terraform-ibm-modules/common-utilities/ibm//modules/crn-parser"
   version = "1.4.2"
   crn     = var.existing_brs_instance_crn
 }
 
-
+##############################################################################
+# Backup Recovery Service Instance
+##############################################################################
 
 module "backup_recovery_instance" {
   source                    = "terraform-ibm-modules/backup-recovery/ibm"
@@ -35,23 +84,13 @@ check "brs_instance_name_required" {
   }
 }
 
-data "ibm_is_security_group" "clustersg" {
-  count = var.add_dsc_rules_to_cluster_sg && local.is_vpc ? 1 : 0
-  name  = "kube-${var.cluster_id}"
-}
-
-locals {
-  is_vpc     = length(regexall("Vpc$", var.connection_env_type)) > 0
-  is_classic = length(regexall("Classic$", var.connection_env_type)) > 0
-
-  cluster_crn                  = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].crn : data.ibm_container_cluster.classic_cluster[0].crn
-  cluster_private_endpoint_url = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].private_service_endpoint_url : data.ibm_container_cluster.classic_cluster[0].private_service_endpoint_url
-  cluster_public_endpoint_url  = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].public_service_endpoint_url : data.ibm_container_cluster.classic_cluster[0].public_service_endpoint_url
-  cluster_private_available    = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].private_service_endpoint : data.ibm_container_cluster.classic_cluster[0].private_service_endpoint
-}
+##############################################################################
+# Cluster Data Sources
+##############################################################################
 
 data "ibm_container_vpc_cluster" "vpc_cluster" {
-  count             = local.is_vpc ? 1 : 0
+  count = local.is_vpc ? 1 : 0
+
   name              = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
   wait_till         = var.wait_till
@@ -59,15 +98,34 @@ data "ibm_container_vpc_cluster" "vpc_cluster" {
 }
 
 data "ibm_container_cluster" "classic_cluster" {
-  count             = local.is_classic ? 1 : 0
+  count = local.is_classic ? 1 : 0
+
   name              = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
   wait_till         = var.wait_till
   wait_till_timeout = var.wait_till_timeout
 }
 
+data "ibm_is_security_group" "clustersg" {
+  count = var.add_dsc_rules_to_cluster_sg && local.is_vpc ? 1 : 0
+
+  name = "kube-${var.cluster_id}"
+}
+
+data "ibm_container_vpc_worker_pool" "pool" {
+  count = local.is_vpc ? 1 : 0
+
+  cluster          = data.ibm_container_vpc_cluster.vpc_cluster[0].id
+  worker_pool_name = data.ibm_container_vpc_cluster.vpc_cluster[0].worker_pools[0].name
+}
+
+##############################################################################
+# Security Group Rules for Data Source Connector
+##############################################################################
+
 module "dsc_sg_rule" {
-  count                        = var.add_dsc_rules_to_cluster_sg && local.is_vpc ? 1 : 0
+  count = var.add_dsc_rules_to_cluster_sg && local.is_vpc ? 1 : 0
+
   source                       = "terraform-ibm-modules/security-group/ibm"
   version                      = "v2.8.9"
   resource_group               = var.cluster_resource_group_id
@@ -113,22 +171,13 @@ module "dsc_sg_rule" {
   ]
 }
 
-locals {
-  uri_no_digest      = split("@", var.dsc_chart_uri)[0]
-  chart_with_version = element(split("/", local.uri_no_digest), -1)
-
-  dsc_chart          = split(":", local.chart_with_version)[0]
-  dsc_chart_version  = replace(local.chart_with_version, "${local.dsc_chart}:", "")
-  dsc_chart_location = replace(local.uri_no_digest, "/${local.chart_with_version}", "")
-}
-data "ibm_container_vpc_worker_pool" "pool" {
-  count            = local.is_vpc ? 1 : 0
-  cluster          = data.ibm_container_vpc_cluster.vpc_cluster[0].id
-  worker_pool_name = data.ibm_container_vpc_cluster.vpc_cluster[0].worker_pools[0].name
-}
+##############################################################################
+# Data Source Connector Worker Pool
+##############################################################################
 
 resource "ibm_container_vpc_worker_pool" "data_source_connector" {
-  count             = local.is_vpc ? 1 : 0
+  count = local.is_vpc ? 1 : 0
+
   cluster           = data.ibm_container_vpc_cluster.vpc_cluster[0].id
   worker_pool_name  = "data-source-connector-pool"
   flavor            = "bx2.4x16" # this flavor works for both IKS and OCP
@@ -147,13 +196,11 @@ resource "ibm_container_vpc_worker_pool" "data_source_connector" {
   labels = {
     "dedicated" = "data-source-connector"
   }
-
-  # taints {
-  #   key    = "dedicated"
-  #   value  = "data-source-connector"
-  #   effect = "NoSchedule"
-  # }
 }
+
+##############################################################################
+# Data Source Connector Namespace
+##############################################################################
 
 resource "kubernetes_namespace_v1" "dsc_namespace" {
   metadata {
@@ -168,12 +215,11 @@ resource "kubernetes_namespace_v1" "dsc_namespace" {
   }
 }
 
+##############################################################################
+# Data Source Connector Helm Release
+##############################################################################
+
 resource "helm_release" "data_source_connector" {
-  depends_on = [
-    module.dsc_sg_rule,
-    ibm_container_vpc_worker_pool.data_source_connector,
-    kubernetes_namespace_v1.dsc_namespace
-  ]
   name             = var.dsc_name
   chart            = local.dsc_chart
   repository       = local.dsc_chart_location
@@ -184,17 +230,6 @@ resource "helm_release" "data_source_connector" {
   wait             = true
   atomic           = true
   upgrade_install  = true
-
-  lifecycle {
-    precondition {
-      condition = (
-        var.kube_type == "kubernetes" ? contains(["kIksVpc", "kIksClassic"], var.connection_env_type) :
-        var.kube_type == "openshift" ? contains(["kRoksVpc", "kRoksClassic"], var.connection_env_type) :
-        false
-      )
-      error_message = "Invalid connection_env_type '${var.connection_env_type}' for kube_type '${var.kube_type}'. When kube_type is 'kubernetes', connection_env_type must be 'kIksVpc' or 'kIksClassic'. When kube_type is 'openshift', connection_env_type must be 'kRoksVpc' or 'kRoksClassic'."
-    }
-  }
   values = [
     yamlencode({
       secrets = {
@@ -208,14 +243,6 @@ resource "helm_release" "data_source_connector" {
       }
       replicaCount     = var.dsc_replicas
       fullnameOverride = var.dsc_name
-      # tolerations = [
-      #   {
-      #     key      = "dedicated"
-      #     operator = "Equal"
-      #     value    = "data-source-connector"
-      #     effect   = "NoSchedule"
-      #   }
-      # ]
       nodeSelector = local.is_vpc ? {
         "dedicated" = "data-source-connector"
       } : {}
@@ -224,15 +251,38 @@ resource "helm_release" "data_source_connector" {
       }
     })
   ]
+
+  depends_on = [
+    module.dsc_sg_rule,
+    ibm_container_vpc_worker_pool.data_source_connector,
+    kubernetes_namespace_v1.dsc_namespace
+  ]
+
+  lifecycle {
+    precondition {
+      condition = (
+        var.kube_type == "kubernetes" ? contains(["kIksVpc", "kIksClassic"], var.connection_env_type) :
+        var.kube_type == "openshift" ? contains(["kRoksVpc", "kRoksClassic"], var.connection_env_type) :
+        false
+      )
+      error_message = "Invalid connection_env_type '${var.connection_env_type}' for kube_type '${var.kube_type}'. When kube_type is 'kubernetes', connection_env_type must be 'kIksVpc' or 'kIksClassic'. When kube_type is 'openshift', connection_env_type must be 'kRoksVpc' or 'kRoksClassic'."
+    }
+  }
 }
 
-# Ignore changes to image_pull_secret, secret, and annotations as they are updated by the cluster outside of terraform
-# This is required to prevent terraform from recreating/updating the service account on every apply
+##############################################################################
+# BRS Agent Service Account & RBAC
+##############################################################################
+
+# Ignore changes to image_pull_secret, secret, and annotations as they are
+# updated by the cluster outside of terraform. This prevents terraform from
+# recreating/updating the service account on every apply.
 resource "kubernetes_service_account_v1" "brsagent" {
   metadata {
     name      = "brsagent"
     namespace = helm_release.data_source_connector.metadata.namespace
   }
+
   lifecycle {
     ignore_changes = [
       image_pull_secret,
@@ -242,7 +292,6 @@ resource "kubernetes_service_account_v1" "brsagent" {
   }
 }
 
-# Create a cluster role binding for the service account
 resource "kubernetes_cluster_role_binding_v1" "brsagent_admin" {
   metadata {
     name = "brsagent-admin"
@@ -259,7 +308,6 @@ resource "kubernetes_cluster_role_binding_v1" "brsagent_admin" {
   }
 }
 
-# Create a secret to store the service account token
 resource "kubernetes_secret_v1" "brsagent_token" {
   metadata {
     name      = "brsagent-token"
@@ -272,110 +320,18 @@ resource "kubernetes_secret_v1" "brsagent_token" {
   wait_for_service_account_token = true
 }
 
-locals {
-  use_existing_policy = var.policy.schedule == null && var.policy.retention == null
-
-  # Only resolve policy_id if auto-protect is enabled
-  policy_id = var.enable_auto_protect ? (
-    local.use_existing_policy ? (
-      data.ibm_backup_recovery_protection_policies.existing_policies[0].policies[0].id
-      ) : (
-      replace(ibm_backup_recovery_protection_policy.protection_policy[0].id, "${local.brs_tenant_id}::", "")
-    )
-  ) : null
-}
-
-locals {
-  brs_tenant_id                        = module.backup_recovery_instance.tenant_id
-  connection_id                        = module.backup_recovery_instance.connection_id
-  registration_token                   = module.backup_recovery_instance.registration_token
-  backup_recovery_instance_public_url  = module.backup_recovery_instance.brs_instance.extensions["endpoints.public"]
-  backup_recovery_instance_private_url = module.backup_recovery_instance.brs_instance.extensions["endpoints.private"]
-  brs_instance_guid                    = module.backup_recovery_instance.brs_instance_guid
-  brs_instance_region                  = element(split(":", module.backup_recovery_instance.brs_instance_crn), 5)
-}
+##############################################################################
+# Protection Policy
+##############################################################################
 
 data "ibm_backup_recovery_protection_policies" "existing_policies" {
-  count           = local.use_existing_policy ? 1 : 0
+  count = local.use_existing_policy ? 1 : 0
+
   x_ibm_tenant_id = local.brs_tenant_id
   instance_id     = local.brs_instance_guid
   region          = local.brs_instance_region
   endpoint_type   = var.brs_endpoint_type
   policy_names    = [var.policy.name]
-}
-
-resource "ibm_backup_recovery_source_registration" "source_registration" {
-  depends_on      = [helm_release.data_source_connector]
-  x_ibm_tenant_id = local.brs_tenant_id
-  environment     = "kKubernetes"
-  connection_id   = local.connection_id
-  kubernetes_params {
-    endpoint                = var.cluster_config_endpoint_type == "private" && local.cluster_private_available ? local.cluster_private_endpoint_url : local.cluster_public_endpoint_url
-    kubernetes_distribution = var.kube_type == "openshift" ? "kROKS" : "kIKS"
-    dynamic "auto_protect_config" {
-      for_each = var.enable_auto_protect ? [1] : []
-      content {
-        is_default_auto_protected = true
-        policy_id                 = local.policy_id
-      }
-    }
-    data_mover_image_location                  = var.registration_images.data_mover
-    velero_image_location                      = var.registration_images.velero
-    velero_aws_plugin_image_location           = var.registration_images.velero_aws_plugin
-    velero_openshift_plugin_image_location     = var.registration_images.velero_openshift_plugin
-    init_container_image_location              = var.registration_images.init_container
-    cohesity_dataprotect_plugin_image_location = var.registration_images.cohesity_dataprotect_plugin
-    kubernetes_type                            = "kCluster"
-    client_private_key                         = chomp(kubernetes_secret_v1.brsagent_token.data["token"])
-  }
-  endpoint_type = var.brs_endpoint_type
-  instance_id   = local.brs_instance_guid
-  region        = local.brs_instance_region
-
-
-}
-
-
-########################################################################################################################
-# Tag cluster with BRS instance CRN
-########################################################################################################################
-
-resource "ibm_resource_tag" "cluster_brs_tag" {
-  resource_id = local.cluster_crn
-  tag_type    = "user"
-  tags        = ["brs-region:${local.brs_instance_region}", "brs-guid:${local.brs_instance_guid}"]
-}
-
-locals {
-  backup_recovery_instance_url = var.brs_endpoint_type == "public" ? local.backup_recovery_instance_public_url : local.backup_recovery_instance_private_url
-}
-
-# when auto-protect is enabled for the registration, it created a protection group that is currently not deletable via terraform
-# this resource uses a local-exec provisioner to call a script that deletes the protection group
-resource "terraform_data" "delete_auto_protect_pg" {
-  count = var.enable_auto_protect ? 1 : 0
-
-  input = {
-    url                 = local.backup_recovery_instance_url
-    tenant              = local.brs_tenant_id
-    endpoint_type       = var.brs_endpoint_type
-    protection_group_id = ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id
-    registration_id     = replace(ibm_backup_recovery_source_registration.source_registration.id, "${local.brs_tenant_id}::", "")
-    api_key             = sensitive(var.ibmcloud_api_key)
-  }
-
-  triggers_replace = {
-    api_key = sensitive(var.ibmcloud_api_key)
-  }
-
-  provisioner "local-exec" {
-    when        = destroy
-    command     = "${path.module}/scripts/delete_auto_protect_pg.sh https://${self.input.url} ${self.input.tenant} ${self.input.endpoint_type} ${self.input.protection_group_id} ${self.input.registration_id}"
-    interpreter = ["/bin/bash", "-c"]
-    environment = {
-      API_KEY = self.triggers_replace.api_key
-    }
-  }
 }
 
 moved {
@@ -384,12 +340,14 @@ moved {
 }
 
 resource "ibm_backup_recovery_protection_policy" "protection_policy" {
-  count           = local.use_existing_policy ? 0 : 1
+  count = local.use_existing_policy ? 0 : 1
+
   x_ibm_tenant_id = local.brs_tenant_id
   name            = var.policy.name
   endpoint_type   = var.brs_endpoint_type
   instance_id     = local.brs_instance_guid
   region          = local.brs_instance_region
+
   backup_policy {
     regular {
       incremental {
@@ -452,15 +410,12 @@ resource "ibm_backup_recovery_protection_policy" "protection_policy" {
           dynamic "year_schedule" {
             for_each = var.policy.schedule.year_schedule != null ? [var.policy.schedule.year_schedule] : []
             content {
-              day_of_year = year_schedule.value.day_of_year # First or Last
+              day_of_year = year_schedule.value.day_of_year
             }
           }
         }
       }
 
-      # ================================
-      # RETENTION + DATA LOCK
-      # ================================
       retention {
         duration = var.policy.retention.duration
         unit     = var.policy.retention.unit
@@ -476,16 +431,10 @@ resource "ibm_backup_recovery_protection_policy" "protection_policy" {
         }
       }
 
-      # ================================
-      # PRIMARY TARGET
-      # ================================
       primary_backup_target {
         use_default_backup_target = var.policy.use_default_backup_target
       }
 
-      # ================================
-      # FULL BACKUP SCHEDULE (optional)
-      # ================================
       dynamic "full_backups" {
         for_each = var.policy.full_schedule != null ? [var.policy.full_schedule] : []
         content {
@@ -538,9 +487,6 @@ resource "ibm_backup_recovery_protection_policy" "protection_policy" {
       }
     }
 
-    # ================================
-    # RUN TIMEOUTS (optional)
-    # ================================
     dynamic "run_timeouts" {
       for_each = var.policy.run_timeouts != null ? var.policy.run_timeouts : []
       content {
@@ -550,9 +496,6 @@ resource "ibm_backup_recovery_protection_policy" "protection_policy" {
     }
   }
 
-  # ================================
-  # BLACKOUT WINDOWS (optional)
-  # ================================
   dynamic "blackout_window" {
     for_each = var.policy.blackout_window != null ? var.policy.blackout_window : []
     content {
@@ -570,9 +513,6 @@ resource "ibm_backup_recovery_protection_policy" "protection_policy" {
     }
   }
 
-  # ================================
-  # EXTENDED RETENTION (optional)
-  # ================================
   dynamic "extended_retention" {
     for_each = var.policy.extended_retention != null ? var.policy.extended_retention : []
     content {
@@ -599,11 +539,86 @@ resource "ibm_backup_recovery_protection_policy" "protection_policy" {
     }
   }
 
-  # ================================
-  # RETRY OPTIONS
-  # ================================
   retry_options {
     retries             = 3
     retry_interval_mins = 5
+  }
+}
+
+##############################################################################
+# Source Registration
+##############################################################################
+
+resource "ibm_backup_recovery_source_registration" "source_registration" {
+  x_ibm_tenant_id = local.brs_tenant_id
+  environment     = "kKubernetes"
+  connection_id   = local.connection_id
+  endpoint_type   = var.brs_endpoint_type
+  instance_id     = local.brs_instance_guid
+  region          = local.brs_instance_region
+
+  kubernetes_params {
+    endpoint                = var.cluster_config_endpoint_type == "private" && local.cluster_private_available ? local.cluster_private_endpoint_url : local.cluster_public_endpoint_url
+    kubernetes_distribution = var.kube_type == "openshift" ? "kROKS" : "kIKS"
+    dynamic "auto_protect_config" {
+      for_each = var.enable_auto_protect ? [1] : []
+      content {
+        is_default_auto_protected = true
+        policy_id                 = local.policy_id
+      }
+    }
+    data_mover_image_location                  = var.registration_images.data_mover
+    velero_image_location                      = var.registration_images.velero
+    velero_aws_plugin_image_location           = var.registration_images.velero_aws_plugin
+    velero_openshift_plugin_image_location     = var.registration_images.velero_openshift_plugin
+    init_container_image_location              = var.registration_images.init_container
+    cohesity_dataprotect_plugin_image_location = var.registration_images.cohesity_dataprotect_plugin
+    kubernetes_type                            = "kCluster"
+    client_private_key                         = chomp(kubernetes_secret_v1.brsagent_token.data["token"])
+  }
+
+  depends_on = [helm_release.data_source_connector]
+}
+
+##############################################################################
+# Tag cluster with BRS instance information
+##############################################################################
+
+resource "ibm_resource_tag" "cluster_brs_tag" {
+  resource_id = local.cluster_crn
+  tag_type    = "user"
+  tags        = ["brs-region:${local.brs_instance_region}", "brs-guid:${local.brs_instance_guid}"]
+}
+
+##############################################################################
+# Auto-protect cleanup (local-exec provisioner for destroy)
+##############################################################################
+
+# When auto-protect is enabled for the registration, it creates a protection
+# group that is not currently deletable via terraform. This resource uses a
+# local-exec provisioner to call a script that deletes the protection group.
+resource "terraform_data" "delete_auto_protect_pg" {
+  count = var.enable_auto_protect ? 1 : 0
+
+  input = {
+    url                 = local.backup_recovery_instance_url
+    tenant              = local.brs_tenant_id
+    endpoint_type       = var.brs_endpoint_type
+    protection_group_id = ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id
+    registration_id     = replace(ibm_backup_recovery_source_registration.source_registration.id, "${local.brs_tenant_id}::", "")
+    api_key             = sensitive(var.ibmcloud_api_key)
+  }
+
+  triggers_replace = {
+    api_key = sensitive(var.ibmcloud_api_key)
+  }
+
+  provisioner "local-exec" {
+    when        = destroy
+    command     = "${path.module}/scripts/delete_auto_protect_pg.sh https://${self.input.url} ${self.input.tenant} ${self.input.endpoint_type} ${self.input.protection_group_id} ${self.input.registration_id}"
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      API_KEY = self.triggers_replace.api_key
+    }
   }
 }

@@ -3,13 +3,13 @@
 ##############################################################################
 
 variable "cluster_id" {
-  type        = string
   description = "The ID of the cluster designated for backup and recovery."
+  type        = string
 }
 
 variable "cluster_resource_group_id" {
-  type        = string
   description = "Resource group ID the cluster is deployed in."
+  type        = string
 }
 
 variable "cluster_config_endpoint_type" {
@@ -18,8 +18,8 @@ variable "cluster_config_endpoint_type" {
   default     = "default"
 
   validation {
-    error_message = "Invalid endpoint type. Valid values are `default`, `private`, `vpe`, or `link`."
     condition     = contains(["default", "private", "vpe", "link"], var.cluster_config_endpoint_type)
+    error_message = "Invalid endpoint type. Valid values are `default`, `private`, `vpe`, or `link`."
   }
 
   nullable = false
@@ -45,13 +45,13 @@ variable "wait_till" {
   default     = "Normal"
 
   validation {
-    error_message = "`wait_till` value must be one of `MasterNodeReady`, `OneWorkerNodeReady`, `IngressReady` or `Normal`."
     condition = contains([
       "MasterNodeReady",
       "OneWorkerNodeReady",
       "IngressReady",
       "Normal"
     ], var.wait_till)
+    error_message = "`wait_till` value must be one of `MasterNodeReady`, `OneWorkerNodeReady`, `IngressReady` or `Normal`."
   }
 }
 
@@ -62,12 +62,12 @@ variable "wait_till_timeout" {
 }
 
 ##############################################################################
-# Data Source Connector (BRS)
+# Data Source Connector (DSC)
 ##############################################################################
 
 variable "add_dsc_rules_to_cluster_sg" {
-  type        = bool
   description = "Set to `true` to automatically add required security group rules for the Data Source Connector and set to `false` to only register the cluster and create the policy."
+  type        = bool
   default     = true
 }
 
@@ -100,7 +100,7 @@ variable "dsc_name" {
 
 variable "dsc_replicas" {
   description = <<-EOT
-  Number of Data Source Connector podsto run.
+  Number of Data Source Connector pods to run.
   Recommended values:
     • 3 – for high availability across multiple nodes/zones (strongly recommended in production)
     • 1 – only for dev/test or single-node clusters
@@ -124,27 +124,37 @@ variable "dsc_helm_timeout" {
 }
 
 variable "dsc_namespace" {
-  type        = string
   description = "The cluster namespace where the Data Source Connector will be installed. Will be created if it does not exist."
+  type        = string
   default     = "ibm-brs-data-source-connector"
   nullable    = false
 }
 
 variable "dsc_storage_class" {
-  type        = string
   description = "Storage class to use for the Data Source Connector persistent volume. By default, it uses 'ibmc-vpc-block-metro-5iops-tier' for VPC clusters and 'ibmc-block-silver' for Classic clusters."
+  type        = string
   default     = null
 }
-
-
 
 ##############################################################################
 # Backup Recovery Service Instance
 ##############################################################################
 
-variable "brs_endpoint_type" {
+variable "ibmcloud_api_key" {
+  description = "The IBM Cloud api key to generate an IAM token."
   type        = string
+  sensitive   = true
+}
+
+variable "region" {
+  description = "Region where the Backup & Recovery Service instance needs to be created."
+  type        = string
+  nullable    = false
+}
+
+variable "brs_endpoint_type" {
   description = "The endpoint type to use when connecting to the Backup and Recovery service for creating a data source connection. Allowed values are 'public' or 'private'."
+  type        = string
   default     = "private"
 
   validation {
@@ -153,27 +163,62 @@ variable "brs_endpoint_type" {
   }
 }
 
-variable "registration_images" {
-  type = object({
-    data_mover                  = string
-    velero                      = string
-    velero_aws_plugin           = string
-    velero_openshift_plugin     = string
-    cohesity_dataprotect_plugin = string
-    init_container              = optional(string, null)
-  })
-  default = {
-    data_mover                  = "icr.io/ext/brs/cohesity-datamover:7.2.17@sha256:2b9e69f37752c6f8758b8de61b4c4ec6ccc60083d23211f59b07780069e9ddf8"
-    velero                      = "icr.io/ext/brs/oadp-velero:1.3.8@sha256:2d0014471b5c0e46cf96ac452069b9fa1ebbffd1d50a8ffecb2b443dbfbd4b00"
-    velero_aws_plugin           = "icr.io/ext/brs/oadp-velero-plugin-for-aws:1.3.8@sha256:3adcd0bfa963f980ad41dbff05c44c4b11d6b07e493a9c53a0ee3483a905039d"
-    velero_openshift_plugin     = "icr.io/ext/brs/oadp-velero-plugin-for-openshift:1.4.7@sha256:8b5dcea0fc837e5547c253f355d71b19f825eed6fac1e19c40af44b19fd7259a"
-    cohesity_dataprotect_plugin = "icr.io/ext/brs/cohesity-dataprotect-plugin:7.2.17@sha256:d7b0e02b267f27aa41c2879bb5c8dcafe9e2e6e0a825fa9e4116a7cd41403983"
+variable "existing_brs_instance_crn" {
+  description = "CRN of the Backup & Recovery Service instance."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.existing_brs_instance_crn == null || can(regex("^crn:v1:[a-z0-9-]+:[a-z0-9-]*:[a-z0-9-]+:[a-z0-9-]*:a/[a-f0-9]+:[a-f0-9-]+::$", var.existing_brs_instance_crn))
+    error_message = "'existing_brs_instance_crn' must be a valid CRN. Example: crn:v1:bluemix:public:backup-recovery:<region>:a/<account-id>:<instance-guid>::"
   }
-  description = "The images required for backup and recovery registration."
-  nullable    = false
 }
 
+variable "brs_instance_name" {
+  description = "Name of the Backup & Recovery Service instance. Required only when `existing_brs_instance_crn` is not provided."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.brs_instance_name == null || var.brs_instance_name != ""
+    error_message = "'brs_instance_name' must not be an empty string. Either provide a valid name or leave it as null."
+  }
+}
+
+variable "brs_connection_name" {
+  description = "Name of the connection from the Backup & Recovery Service instance to be used for protecting the cluster."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = var.brs_connection_name != ""
+    error_message = "'brs_connection_name' must not be an empty string."
+  }
+}
+
+variable "brs_create_new_connection" {
+  description = "Flag to create a new connection from the Backup & Recovery Service instance to the cluster."
+  type        = bool
+  default     = true
+}
+
+variable "connection_env_type" {
+  description = "Connection environment type to determine the required parameters for creating a new connection. Allowed values are 'kIksVpc', 'kRoksVpc', 'kRoksClassic', and 'kIksClassic'."
+  type        = string
+  default     = "kIksVpc"
+
+  validation {
+    condition     = contains(["kIksVpc", "kRoksVpc", "kRoksClassic", "kIksClassic"], var.connection_env_type)
+    error_message = "`connection_env_type` must be one of 'kIksVpc', 'kRoksVpc', 'kRoksClassic', or 'kIksClassic'."
+  }
+}
+
+##############################################################################
+# Protection Policy
+##############################################################################
+
 variable "policy" {
+  description = "The backup schedule and retentions of a Protection Policy."
   type = object({
     name = string
     schedule = optional(object({
@@ -284,6 +329,7 @@ variable "policy" {
     }
     use_default_backup_target = true
   }
+
   validation {
     condition = (
       (var.policy.schedule == null && var.policy.retention == null) ||
@@ -291,84 +337,50 @@ variable "policy" {
     )
     error_message = "For existing policies, do not provide schedule or retention (both must be null). For custom policies, both schedule and retention are required."
   }
-  description = "The backup schedule and retentions of a Protection Policy."
 }
 
 variable "enable_auto_protect" {
-  type        = bool
   description = "Enable auto-protect during the initial cluster registration. This must be set to `true` on the first run; toggling it from `false` to `true` later is not supported by the underlying API and will not retroactively create the protection group."
-  default     = true
-}
-
-variable "ibmcloud_api_key" {
-  type        = string
-  description = "The IBM Cloud api key to generate an IAM token."
-  sensitive   = true
-}
-
-variable "brs_connection_name" {
-  type        = string
-  description = "Name of the connection from the Backup & Recovery Service instance to be used for protecting the cluster."
-  nullable    = false
-
-  validation {
-    condition     = var.brs_connection_name != ""
-    error_message = "'brs_connection_name' must not be an empty string."
-  }
-}
-
-variable "existing_brs_instance_crn" {
-  type        = string
-  description = "CRN of the Backup & Recovery Service instance."
-  default     = null
-
-  validation {
-    condition     = var.existing_brs_instance_crn == null || can(regex("^crn:v1:[a-z0-9-]+:[a-z0-9-]*:[a-z0-9-]+:[a-z0-9-]*:a/[a-f0-9]+:[a-f0-9-]+::$", var.existing_brs_instance_crn))
-    error_message = "'existing_brs_instance_crn' must be a valid CRN. Example: crn:v1:bluemix:public:backup-recovery:<region>:a/<account-id>:<instance-guid>::"
-  }
-}
-
-variable "brs_instance_name" {
-  type        = string
-  description = "Name of the Backup & Recovery Service instance. Required only when `existing_brs_instance_crn` is not provided."
-  default     = null
-
-  validation {
-    condition     = var.brs_instance_name == null || var.brs_instance_name != ""
-    error_message = "'brs_instance_name' must not be an empty string. Either provide a valid name or leave it as null."
-  }
-}
-
-variable "brs_create_new_connection" {
   type        = bool
-  description = "Flag to create a new connection from the Backup & Recovery Service instance to the cluster."
   default     = true
 }
 
+##############################################################################
+# Registration Images
+##############################################################################
 
-variable "connection_env_type" {
-  type        = string
-  default     = "kIksVpc"
-  description = "Connection environment type to determine the required parameters for creating a new connection. Allowed values are 'kIksVpc', 'kRoksVpc', 'kRoksClassic', and 'kIksClassic'."
-  validation {
-    condition     = contains(["kIksVpc", "kRoksVpc", "kRoksClassic", "kIksClassic"], var.connection_env_type)
-    error_message = "`connection_env_type` must be one of 'kIksVpc', 'kRoksVpc', 'kRoksClassic', or 'kIksClassic'."
+variable "registration_images" {
+  description = "The images required for backup and recovery registration."
+  type = object({
+    data_mover                  = string
+    velero                      = string
+    velero_aws_plugin           = string
+    velero_openshift_plugin     = string
+    cohesity_dataprotect_plugin = string
+    init_container              = optional(string, null)
+  })
+  default = {
+    data_mover                  = "icr.io/ext/brs/cohesity-datamover:7.2.17@sha256:2b9e69f37752c6f8758b8de61b4c4ec6ccc60083d23211f59b07780069e9ddf8"
+    velero                      = "icr.io/ext/brs/oadp-velero:1.3.8@sha256:2d0014471b5c0e46cf96ac452069b9fa1ebbffd1d50a8ffecb2b443dbfbd4b00"
+    velero_aws_plugin           = "icr.io/ext/brs/oadp-velero-plugin-for-aws:1.3.8@sha256:3adcd0bfa963f980ad41dbff05c44c4b11d6b07e493a9c53a0ee3483a905039d"
+    velero_openshift_plugin     = "icr.io/ext/brs/oadp-velero-plugin-for-openshift:1.4.7@sha256:8b5dcea0fc837e5547c253f355d71b19f825eed6fac1e19c40af44b19fd7259a"
+    cohesity_dataprotect_plugin = "icr.io/ext/brs/cohesity-dataprotect-plugin:7.2.17@sha256:d7b0e02b267f27aa41c2879bb5c8dcafe9e2e6e0a825fa9e4116a7cd41403983"
   }
+  nullable = false
 }
 
-variable "region" {
-  type        = string
-  description = "Region where the Backup & Recovery Service instance needs to be created."
-  nullable    = false
-}
+##############################################################################
+# Resource Tags
+##############################################################################
+
 variable "resource_tags" {
-  type        = list(string)
   description = "Add user resource tags to the Backup Recovery instance to organize, track, and manage costs."
+  type        = list(string)
   default     = []
 }
 
 variable "access_tags" {
-  type        = list(string)
   description = "Add existing access management tags to the Backup Recovery instance to manage access."
+  type        = list(string)
   default     = []
 }

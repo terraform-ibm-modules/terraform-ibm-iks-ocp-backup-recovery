@@ -146,7 +146,7 @@ resource "time_sleep" "wait_operators" {
 ########################################################################################################################
 
 
-module "backup_recover_protect_ocp" {
+module "backup_recover_protect_iks" {
   source                       = "../.."
   cluster_id                   = local.cluster_id
   cluster_resource_group_id    = module.resource_group.resource_group_id

@@ -166,7 +166,7 @@ You need the following permissions to run this module:
 | <a name="input_dsc_image_version"></a> [dsc\_image\_version](#input\_dsc\_image\_version) | Container image for the Data Source Connector. | `string` | `"icr.io/ext/brs/brs-ds-connector:7.2.17-release-20260108-ed857f1c@sha256:560ff2170c880dc19712e0f37ba1575240e462f5e2a2ecbc4ecb791aa471f2d0"` | no |
 | <a name="input_dsc_name"></a> [dsc\_name](#input\_dsc\_name) | Release name for the Data Source Connector Helm deployment. | `string` | `"dsc"` | no |
 | <a name="input_dsc_namespace"></a> [dsc\_namespace](#input\_dsc\_namespace) | The cluster namespace where the Data Source Connector will be installed. Will be created if it does not exist. | `string` | `"ibm-brs-data-source-connector"` | no |
-| <a name="input_dsc_replicas"></a> [dsc\_replicas](#input\_dsc\_replicas) | Number of Data Source Connector podsto run.<br/>Recommended values:<br/>  • 3 – for high availability across multiple nodes/zones (strongly recommended in production)<br/>  • 1 – only for dev/test or single-node clusters | `number` | `1` | no |
+| <a name="input_dsc_replicas"></a> [dsc\_replicas](#input\_dsc\_replicas) | Number of Data Source Connector pods to run.<br/>Recommended values:<br/>  • 3 – for high availability across multiple nodes/zones (strongly recommended in production)<br/>  • 1 – only for dev/test or single-node clusters | `number` | `1` | no |
 | <a name="input_dsc_storage_class"></a> [dsc\_storage\_class](#input\_dsc\_storage\_class) | Storage class to use for the Data Source Connector persistent volume. By default, it uses 'ibmc-vpc-block-metro-5iops-tier' for VPC clusters and 'ibmc-block-silver' for Classic clusters. | `string` | `null` | no |
 | <a name="input_enable_auto_protect"></a> [enable\_auto\_protect](#input\_enable\_auto\_protect) | Enable auto-protect during the initial cluster registration. This must be set to `true` on the first run; toggling it from `false` to `true` later is not supported by the underlying API and will not retroactively create the protection group. | `bool` | `true` | no |
 | <a name="input_existing_brs_instance_crn"></a> [existing\_brs\_instance\_crn](#input\_existing\_brs\_instance\_crn) | CRN of the Backup & Recovery Service instance. | `string` | `null` | no |
@@ -183,6 +183,11 @@ You need the following permissions to run this module:
 
 | Name | Description |
 |------|-------------|
+| <a name="output_brs_instance_crn"></a> [brs\_instance\_crn](#output\_brs\_instance\_crn) | CRN of the Backup & Recovery Service instance |
+| <a name="output_brs_instance_guid"></a> [brs\_instance\_guid](#output\_brs\_instance\_guid) | GUID of the Backup & Recovery Service instance |
+| <a name="output_brs_tenant_id"></a> [brs\_tenant\_id](#output\_brs\_tenant\_id) | Tenant ID of the Backup & Recovery Service instance |
+| <a name="output_connection_id"></a> [connection\_id](#output\_connection\_id) | ID of the data source connection to the Backup & Recovery Service instance |
+| <a name="output_protection_policy_id"></a> [protection\_policy\_id](#output\_protection\_policy\_id) | ID of the protection policy (null if using an existing policy) |
 | <a name="output_source_registration_id"></a> [source\_registration\_id](#output\_source\_registration\_id) | ID of the registered Kubernetes source |
 <!-- END OF PRE-COMMIT-TERRAFORM DOCS HOOK -->
 ## Contributing
