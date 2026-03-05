@@ -136,6 +136,12 @@ variable "dsc_storage_class" {
   default     = null
 }
 
+variable "create_dsc_worker_pool" {
+  description = "Set to `true` to create a dedicated worker pool for the Data Source Connector in VPC clusters. If set to `false`, the connector will be deployed on existing worker nodes."
+  type        = bool
+  default     = true
+}
+
 ##############################################################################
 # Backup Recovery Service Instance
 ##############################################################################
@@ -194,7 +200,7 @@ variable "brs_instance_name" {
 }
 
 variable "brs_connection_name" {
-  description = "Name of the connection from the Backup & Recovery Service instance to be used for protecting the cluster."
+  description = "Name of the connection from the Backup & Recovery Service instance to be used for protecting the cluster. If `brs_create_new_connection` is set to `true` (default), this will be the name of the new connection created. If set to `false`, this must be the name of an existing connection."
   type        = string
   nullable    = false
 
@@ -205,7 +211,7 @@ variable "brs_connection_name" {
 }
 
 variable "brs_create_new_connection" {
-  description = "Flag to create a new connection from the Backup & Recovery Service instance to the cluster."
+  description = "Flag to create a new connection from the Backup & Recovery Service instance to the cluster. When set to `true` (default), a new connection is created with the name specified in `brs_connection_name`. When `false`, it uses an existing connection matching `brs_connection_name`."
   type        = bool
   default     = true
 }

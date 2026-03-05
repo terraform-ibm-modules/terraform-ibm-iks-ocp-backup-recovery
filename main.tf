@@ -169,7 +169,7 @@ module "dsc_sg_rule" {
 ##############################################################################
 
 resource "ibm_container_vpc_worker_pool" "data_source_connector" {
-  count = local.is_vpc ? 1 : 0
+  count = local.is_vpc && var.create_dsc_worker_pool ? 1 : 0
 
   cluster           = data.ibm_container_vpc_cluster.vpc_cluster[0].id
   worker_pool_name  = "data-source-connector-pool"
@@ -236,7 +236,7 @@ resource "helm_release" "data_source_connector" {
       }
       replicaCount     = var.dsc_replicas
       fullnameOverride = var.dsc_name
-      nodeSelector = local.is_vpc ? {
+      nodeSelector = local.is_vpc && var.create_dsc_worker_pool ? {
         "dedicated" = "data-source-connector"
       } : {}
       volumeClaimTemplate = {
