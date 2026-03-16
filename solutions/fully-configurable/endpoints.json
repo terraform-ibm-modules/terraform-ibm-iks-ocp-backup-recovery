@@ -13,20 +13,6 @@
             "ca-tor": "https://iam.cloud.ibm.com",
             "br-sao": "https://iam.cloud.ibm.com",
             "in-che": "https://iam.cloud.ibm.com"
-        },
-        "private": {
-            "global": "https://private.iam.cloud.ibm.com",
-            "us-south": "https://private.us-south.iam.cloud.ibm.com",
-            "us-east": "https://private.us-east.iam.cloud.ibm.com",
-            "eu-gb": "https://private.eu-gb.iam.cloud.ibm.com",
-            "eu-de": "https://private.eu-de.iam.cloud.ibm.com",
-            "eu-es": "https://private.eu-es.iam.cloud.ibm.com",
-            "jp-tok": "https://private.jp-tok.iam.cloud.ibm.com",
-            "jp-osa": "https://private.jp-osa.iam.cloud.ibm.com",
-            "au-syd": "https://private.au-syd.iam.cloud.ibm.com",
-            "ca-tor": "https://private.ca-tor.iam.cloud.ibm.com",
-            "br-sao": "https://private.br-sao.iam.cloud.ibm.com",
-            "in-che": "https://private.in-che.iam.cloud.ibm.com"
         }
     }
 }
