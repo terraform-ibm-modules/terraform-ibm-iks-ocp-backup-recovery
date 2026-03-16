@@ -1,0 +1,8 @@
+{
+    "IBMCLOUD_IAM_API_ENDPOINT":{
+        "public":{
+            "us-south":"https://iam.test.cloud.ibm.com",
+            "global":"https://iam.test.cloud.ibm.com"
+        }
+    }
+}

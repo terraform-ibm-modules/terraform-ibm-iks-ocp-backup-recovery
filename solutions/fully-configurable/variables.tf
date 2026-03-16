@@ -18,6 +18,7 @@ variable "provider_visibility" {
     error_message = "Invalid visibility option. Allowed values are 'public', 'private', or 'public-and-private'."
   }
 }
+
 ##############################################################################
 # Cluster variables
 ##############################################################################
