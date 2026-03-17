@@ -557,7 +557,10 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
     client_private_key                         = chomp(kubernetes_secret_v1.brsagent_token.data["token"])
   }
 
-  depends_on = [helm_release.data_source_connector]
+  depends_on = [
+    helm_release.data_source_connector,
+    module.backup_recovery_instance
+  ]
 }
 
 ##############################################################################
