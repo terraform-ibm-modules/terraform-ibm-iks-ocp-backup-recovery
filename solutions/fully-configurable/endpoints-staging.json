@@ -14,17 +14,17 @@
             "in-che": "https://iam.test.cloud.ibm.com"
         },
         "private": {
-            "us-south": "https://private.test.iam.cloud.ibm.com",
-            "us-east": "https://private.test.iam.cloud.ibm.com",
-            "eu-gb": "https://private.test.iam.cloud.ibm.com",
-            "eu-de": "https://private.test.iam.cloud.ibm.com",
-            "eu-es": "https://private.test.iam.cloud.ibm.com",
-            "jp-tok": "https://private.test.iam.cloud.ibm.com",
-            "jp-osa": "https://private.test.iam.cloud.ibm.com",
-            "au-syd": "https://private.test.iam.cloud.ibm.com",
-            "ca-tor": "https://private.test.iam.cloud.ibm.com",
-            "br-sao": "https://private.test.iam.cloud.ibm.com",
-            "in-che": "https://private.test.iam.cloud.ibm.com"
+            "us-south": "https://private.iam.test.cloud.ibm.com",
+            "us-east": "https://private.iam.test.cloud.ibm.com",
+            "eu-gb": "https://private.iam.test.cloud.ibm.com",
+            "eu-de": "https://private.iam.test.cloud.ibm.com",
+            "eu-es": "https://private.iam.test.cloud.ibm.com",
+            "jp-tok": "https://private.iam.test.cloud.ibm.com",
+            "jp-osa": "https://private.iam.test.cloud.ibm.com",
+            "au-syd": "https://private.iam.test.cloud.ibm.com",
+            "ca-tor": "https://private.iam.test.cloud.ibm.com",
+            "br-sao": "https://private.iam.test.cloud.ibm.com",
+            "in-che": "https://private.iam.test.cloud.ibm.com"
         }
     },
     "IBMCLOUD_RESOURCE_CONTROLLER_API_ENDPOINT": {
