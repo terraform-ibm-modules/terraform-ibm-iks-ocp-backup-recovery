@@ -1,7 +1,6 @@
 {
     "IBMCLOUD_IAM_API_ENDPOINT": {
         "public": {
-            "global": "https://iam.test.cloud.ibm.com",
             "us-south": "https://iam.test.cloud.ibm.com",
             "us-east": "https://iam.test.cloud.ibm.com",
             "eu-gb": "https://iam.test.cloud.ibm.com",
@@ -15,18 +14,32 @@
             "in-che": "https://iam.test.cloud.ibm.com"
         },
         "private": {
-            "global": "https://private.iam.cloud.ibm.com",
-            "us-south": "https://private.iam.cloud.ibm.com",
-            "us-east": "https://private.iam.cloud.ibm.com",
-            "eu-gb": "https://private.iam.cloud.ibm.com",
-            "eu-de": "https://private.iam.cloud.ibm.com",
-            "eu-es": "https://private.iam.cloud.ibm.com",
-            "jp-tok": "https://private.iam.cloud.ibm.com",
-            "jp-osa": "https://private.iam.cloud.ibm.com",
-            "au-syd": "https://private.iam.cloud.ibm.com",
-            "ca-tor": "https://private.iam.cloud.ibm.com",
-            "br-sao": "https://private.iam.cloud.ibm.com",
-            "in-che": "https://private.iam.cloud.ibm.com"
+            "us-south": "https://private.test.iam.cloud.ibm.com",
+            "us-east": "https://private.test.iam.cloud.ibm.com",
+            "eu-gb": "https://private.test.iam.cloud.ibm.com",
+            "eu-de": "https://private.test.iam.cloud.ibm.com",
+            "eu-es": "https://private.test.iam.cloud.ibm.com",
+            "jp-tok": "https://private.test.iam.cloud.ibm.com",
+            "jp-osa": "https://private.test.iam.cloud.ibm.com",
+            "au-syd": "https://private.test.iam.cloud.ibm.com",
+            "ca-tor": "https://private.test.iam.cloud.ibm.com",
+            "br-sao": "https://private.test.iam.cloud.ibm.com",
+            "in-che": "https://private.test.iam.cloud.ibm.com"
+        }
+    },
+    "IBMCLOUD_RESOURCE_CONTROLLER_API_ENDPOINT": {
+        "public": {
+            "us-south": "https://resource-controller.test.cloud.ibm.com",
+            "us-east": "https://resource-controller.test.cloud.ibm.com",
+            "eu-gb": "https://resource-controller.test.cloud.ibm.com",
+            "eu-de": "https://resource-controller.test.cloud.ibm.com",
+            "eu-es": "https://resource-controller.test.cloud.ibm.com",
+            "jp-tok": "https://resource-controller.test.cloud.ibm.com",
+            "jp-osa": "https://resource-controller.test.cloud.ibm.com",
+            "au-syd": "https://resource-controller.test.cloud.ibm.com",
+            "ca-tor": "https://resource-controller.test.cloud.ibm.com",
+            "br-sao": "https://resource-controller.test.cloud.ibm.com",
+            "in-che": "https://resource-controller.test.cloud.ibm.com"
         }
     }
 }
