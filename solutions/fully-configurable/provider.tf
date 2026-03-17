@@ -5,7 +5,7 @@
 provider "ibm" {
   ibmcloud_api_key    = var.ibmcloud_api_key
   visibility          = var.provider_visibility
-  endpoints_file_path = var.dsc_registry == "stg.icr.io" ? "endpoints-testcloud.json" : "endpoints.json"
+  endpoints_file_path = strcontains(var.dsc_registry, "stg") ? "endpoints-testcloud.json" : "endpoints.json"
 }
 
 provider "kubernetes" {
