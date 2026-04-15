@@ -209,7 +209,7 @@ resource "helm_release" "data_source_connector" {
   timeout          = var.dsc_helm_timeout
   wait             = true
   atomic           = true
-  upgrade_install  = true
+
   values = [
     yamlencode({
       secrets = {
