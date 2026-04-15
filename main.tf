@@ -77,6 +77,9 @@ module "backup_recovery_instance" {
   resource_tags             = var.resource_tags
   access_tags               = var.access_tags
   connection_env_type       = var.connection_env_type
+  # Disable default "basic-policy" creation — this module manages policies independently.
+  # Without this, parallel test runs sharing the same BRS instance conflict on the policy name.
+  policies = []
 }
 
 ##############################################################################
