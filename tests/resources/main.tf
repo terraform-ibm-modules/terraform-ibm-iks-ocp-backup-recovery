@@ -110,4 +110,7 @@ module "backup_recovery_instance" {
   create_new_connection     = true
   connection_env_type       = "kRoksVpc"
   existing_brs_instance_crn = var.existing_brs_instance_crn == "" ? null : var.existing_brs_instance_crn
+  # Disable default "basic-policy" creation — policies are managed separately.
+  # Without this, parallel test runs sharing the same BRS instance conflict on the policy name.
+  policies = []
 }
