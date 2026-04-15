@@ -492,7 +492,7 @@ variable "policies" {
   description = "A list of protection policies to create or look up. Set `create_new_policy` to `true` (default) to create a new policy with the specified `schedule` and `retention`. Set `create_new_policy` to `false` to reference an existing policy by `name`."
   type = list(object({
     name                      = string
-    create_new_policy         = optional(bool, true)
+    create_new_policy         = optional(bool, false)
     use_default_backup_target = optional(bool, true)
 
     # --- primary_backup_target advanced details ---
@@ -730,7 +730,8 @@ variable "policies" {
     }))
   }))
   default = [{
-    name = "basic-policy"
+    name              = "Basic"
+    create_new_policy = false
     schedule = {
       unit         = "Days"
       day_schedule = { frequency = 1 }
