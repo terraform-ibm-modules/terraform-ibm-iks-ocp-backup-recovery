@@ -177,6 +177,16 @@ resource "ibm_container_vpc_worker_pool" "data_source_connector" {
     "dedicated" = "data-source-connector"
   }
 }
+##############################################################################
+# Wait for DSC Worker Pool nodes to become Ready
+##############################################################################
+
+resource "time_sleep" "wait_dsc_worker_pool" {
+  count = local.is_vpc && var.create_dsc_worker_pool ? 1 : 0
+
+  depends_on      = [ibm_container_vpc_worker_pool.data_source_connector]
+  create_duration = "300s"
+}
 
 ##############################################################################
 # Data Source Connector Namespace
