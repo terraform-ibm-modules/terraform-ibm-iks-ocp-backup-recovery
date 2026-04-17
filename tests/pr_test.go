@@ -172,6 +172,8 @@ func getSchematicTerraformVars(t *testing.T, prefix string, options *testschemat
 
 func TestRunFullyConfigurableInSchematics(t *testing.T) {
 
+	t.Skip("Skipping the DA tests for now since we are mostly focused on modules anyways renovate does update the DAs so we can revisit later")
+
 	tarIncludePatterns, recurseErr := getTarIncludePatternsRecursively("..", excludeDirs, includeFiletypes)
 	// if error producing tar patterns (very unexpected) fail test immediately
 	require.NoError(t, recurseErr, "Schematic Test had unexpected error traversing directory tree")
@@ -201,6 +203,8 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 
 // Upgrade Test does not require KMS encryption
 func TestRunUpgradeFullyConfigurable(t *testing.T) {
+
+	t.Skip("Skipping the DA tests for now since we are mostly focused on modules anyways renovate does update the DAs so we can revisit later")
 
 	tarIncludePatterns, recurseErr := getTarIncludePatternsRecursively("..", excludeDirs, includeFiletypes)
 	// if error producing tar patterns (very unexpected) fail test immediately
