@@ -155,10 +155,11 @@ module "backup_recover_protect_iks" {
   region                    = var.region
   connection_env_type       = var.classic_cluster ? "kIksClassic" : "kIksVpc"
   dsc_storage_class         = var.dsc_storage_class == null ? (var.classic_cluster ? "ibmc-block-silver" : "ibmc-vpc-block-metro-5iops-tier") : var.dsc_storage_class
-  # --- Backup Policy (policy must already exist in the BRS instance) ---
+  # --- Backup Policy ---
   auto_protect_policy_name = "${var.prefix}-retention"
   access_tags              = var.access_tags
   resource_tags            = var.resource_tags
+  # Policies are now created in the BRS module
   policies = [
     {
       name              = "${var.prefix}-retention"

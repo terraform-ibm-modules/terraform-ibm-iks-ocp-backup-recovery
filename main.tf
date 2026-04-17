@@ -35,20 +35,8 @@ locals {
   brs_instance_region                  = element(split(":", module.backup_recovery_instance.brs_instance_crn), 5)
   backup_recovery_instance_url         = var.brs_endpoint_type == "public" ? local.backup_recovery_instance_public_url : local.backup_recovery_instance_private_url
 
-  # --- Protection policy ---
-  needs_policy = var.enable_auto_protect || length(var.protection_groups) > 0
-
-  # Collect all unique policy names from auto_protect_policy_name and protection_groups
-  all_policy_names = local.needs_policy ? toset(compact(concat(
-    var.auto_protect_policy_name != null ? [var.auto_protect_policy_name] : [],
-    [for pg in var.protection_groups : pg.policy_name if pg.policy_name != null]
-  ))) : toset([])
-
-  resolved_policy_ids = {
-    for k, v in data.ibm_backup_recovery_protection_policies.existing_policies : k => (
-      length(v.policies) > 0 ? v.policies[0].id : null
-    )
-  }
+  # Get resolved policy IDs from the BRS module
+  resolved_policy_ids = module.backup_recovery_instance.resolved_policy_ids
 }
 
 ##############################################################################
@@ -315,22 +303,6 @@ resource "kubernetes_secret_v1" "brsagent_token" {
   }
   type                           = "kubernetes.io/service-account-token"
   wait_for_service_account_token = true
-}
-
-##############################################################################
-# Protection Policy
-##############################################################################
-
-data "ibm_backup_recovery_protection_policies" "existing_policies" {
-  for_each = local.all_policy_names
-
-  x_ibm_tenant_id = local.brs_tenant_id
-  instance_id     = local.brs_instance_guid
-  region          = local.brs_instance_region
-  endpoint_type   = var.brs_endpoint_type
-  policy_names    = [each.value]
-
-  depends_on = [module.backup_recovery_instance]
 }
 
 ##############################################################################
