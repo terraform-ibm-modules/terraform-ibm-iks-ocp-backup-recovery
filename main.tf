@@ -77,9 +77,6 @@ module "backup_recovery_instance" {
   resource_tags             = var.resource_tags
   access_tags               = var.access_tags
   connection_env_type       = var.connection_env_type
-  # Disable default "basic-policy" creation — this module manages policies independently.
-  # Without this, parallel test runs sharing the same BRS instance conflict on the policy name.
-  policies = []
 }
 
 ##############################################################################
@@ -179,16 +176,6 @@ resource "ibm_container_vpc_worker_pool" "data_source_connector" {
   labels = {
     "dedicated" = "data-source-connector"
   }
-}
-##############################################################################
-# Wait for DSC Worker Pool nodes to become Ready
-##############################################################################
-
-resource "time_sleep" "wait_dsc_worker_pool" {
-  count = local.is_vpc && var.create_dsc_worker_pool ? 1 : 0
-
-  depends_on      = [ibm_container_vpc_worker_pool.data_source_connector]
-  create_duration = "300s"
 }
 
 ##############################################################################
