@@ -190,13 +190,13 @@ resource "terraform_data" "wait_for_workload" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      ${path.module}/../../scripts/wait_for_workload.sh \
+      ${path.module}/wait_for_workload.sh \
         "${self.triggers_replace.kubeconfig}" \
         "${self.triggers_replace.namespace}" \
         "${self.triggers_replace.deployment_with_pvc}" \
         300
 
-      ${path.module}/../../scripts/wait_for_workload.sh \
+      ${path.module}/wait_for_workload.sh \
         "${self.triggers_replace.kubeconfig}" \
         "${self.triggers_replace.namespace}" \
         "${self.triggers_replace.deployment_no_pvc}" \

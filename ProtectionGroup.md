@@ -38,6 +38,7 @@ is_paused = true  # Use this to manually pause/resume backups
 ```
 
 **Validation Rule:**
+
 - Kubernetes protection groups do not support blackout window controls
 - Use `is_paused` for manual pause/resume functionality
 - Blackout windows are only supported for other source types (VMs, databases, etc.)
@@ -69,6 +70,7 @@ objects = [
 ```
 
 **Error Message:**
+
 ```
 Both include and exclude resource options can't be used
 ```
@@ -76,6 +78,7 @@ Both include and exclude resource options can't be used
 **✅ VALID Configurations:**
 
 **Option 1: Include Only (Whitelist)**
+
 ```terraform
 objects = [
   {
@@ -90,6 +93,7 @@ objects = [
 ```
 
 **Option 2: Exclude Only (Blacklist)**
+
 ```terraform
 objects = [
   {
@@ -103,6 +107,7 @@ objects = [
 ```
 
 **Option 3: No Filtering (Backup Everything)**
+
 ```terraform
 objects = [
   {
@@ -128,6 +133,7 @@ included_resources = [
 ```
 
 **Error Message:**
+
 ```
 PVC-related resources (like pvc, configmap, sc, etc.) cannot be included in resource selection.
 ```
@@ -147,6 +153,7 @@ included_resources = [
 ```
 
 **Explanation:**
+
 - PVCs, ConfigMaps, and StorageClasses are automatically included in namespace backups
 - Explicitly listing them in `included_resources` causes an error
 - They are handled by the backup system based on the namespace selection
@@ -163,6 +170,7 @@ pause_in_blackouts = true  # Error: Cannot both be true
 ```
 
 **Error Message:**
+
 ```
 Protection can not be created/updated if both 'abortInBlackouts' and 'pauseInBlackouts' are set as true
 ```
@@ -175,17 +183,17 @@ Protection can not be created/updated if both 'abortInBlackouts' and 'pauseInBla
 
 ### ✅ Fully Supported Features
 
-| Feature | Parameter | Values | Description |
-|---------|-----------|--------|-------------|
-| **Priority** | `priority` | `kLow`, `kMedium`, `kHigh` | Backup job execution priority |
-| **QoS Policy** | `qos_policy` | `kBackupHDD`, `kBackupSSD`, `kBackupAll` | Storage tier for backups |
-| **Start Time** | `start_time` | Object with hour, minute, timezone | Schedule backup start time |
-| **Pause Control** | `is_paused` | `true`, `false` | Manually pause/resume backups |
-| **CSI Snapshots** | `leverage_csi_snapshot` | `true`, `false` | Use CSI for faster backups |
-| **Indexing** | `enable_indexing` | `true`, `false` | Enable search/indexing |
-| **Label Filtering** | `include_params`, `exclude_params` | Label vectors | Filter by Kubernetes labels |
-| **Alerts** | `alert_policy` | Object | Email notifications |
-| **SLA** | `sla` | Array of SLA objects | Backup time SLA monitoring |
+| Feature             | Parameter                          | Values                                   | Description                   |
+| ------------------- | ---------------------------------- | ---------------------------------------- | ----------------------------- |
+| **Priority**        | `priority`                         | `kLow`, `kMedium`, `kHigh`               | Backup job execution priority |
+| **QoS Policy**      | `qos_policy`                       | `kBackupHDD`, `kBackupSSD`, `kBackupAll` | Storage tier for backups      |
+| **Start Time**      | `start_time`                       | Object with hour, minute, timezone       | Schedule backup start time    |
+| **Pause Control**   | `is_paused`                        | `true`, `false`                          | Manually pause/resume backups |
+| **CSI Snapshots**   | `leverage_csi_snapshot`            | `true`, `false`                          | Use CSI for faster backups    |
+| **Indexing**        | `enable_indexing`                  | `true`, `false`                          | Enable search/indexing        |
+| **Label Filtering** | `include_params`, `exclude_params` | Label vectors                            | Filter by Kubernetes labels   |
+| **Alerts**          | `alert_policy`                     | Object                                   | Email notifications           |
+| **SLA**             | `sla`                              | Array of SLA objects                     | Backup time SLA monitoring    |
 
 ---
 
@@ -424,12 +432,14 @@ protection_groups = [
 #### Error 1: Blackout Controls Not Supported
 
 **Error:**
+
 ```
 Pause in quiet times is not supported for this source type.
 ```
 
 **Solution:**
 Remove `abort_in_blackouts` and `pause_in_blackouts` parameters:
+
 ```terraform
 # Remove these lines
 # abort_in_blackouts = false
@@ -444,12 +454,14 @@ is_paused = false
 #### Error 2: Both Include and Exclude Resources
 
 **Error:**
+
 ```
 Both include and exclude resource options can't be used
 ```
 
 **Solution:**
 Choose either `included_resources` OR `excluded_resources`, not both:
+
 ```terraform
 # Option 1: Include only
 included_resources = ["deployments", "statefulsets"]
@@ -463,12 +475,14 @@ included_resources = ["deployments", "statefulsets"]
 #### Error 3: PVC-Related Resources
 
 **Error:**
+
 ```
 PVC-related resources (like pvc, configmap, sc, etc.) cannot be included in resource selection.
 ```
 
 **Solution:**
 Remove PVC-related resources from `included_resources`:
+
 ```terraform
 # Remove these from included_resources:
 # - persistentvolumeclaims
@@ -488,14 +502,17 @@ included_resources = [
 #### Error 4: Namespace Not Found
 
 **Error:**
+
 ```
 Cannot resolve namespace 'my-namespace' to an ID
 ```
 
 **Solution:**
+
 1. Ensure the namespace exists in the cluster
 2. Wait for Data Source Connector to discover the namespace (3-5 minutes)
 3. Verify namespace is visible in protection sources:
+
 ```bash
 kubectl get namespace my-namespace
 ```
@@ -507,6 +524,7 @@ kubectl get namespace my-namespace
 ### 1. Resource Selection Strategy
 
 **Whitelist Approach (Recommended for Production):**
+
 ```terraform
 included_resources = [
   "deployments",
@@ -515,17 +533,20 @@ included_resources = [
   "services"
 ]
 ```
+
 - ✅ Explicit control over what's backed up
 - ✅ Prevents accidental backup of unnecessary resources
 - ✅ Faster backups with smaller backup size
 
 **Blacklist Approach:**
+
 ```terraform
 excluded_resources = [
   "events",
   "replicasets"
 ]
 ```
+
 - ✅ Easier to implement
 - ✅ Backs up everything except specified resources
 - ⚠️ May backup unnecessary data
@@ -535,6 +556,7 @@ excluded_resources = [
 ### 2. Label-Based Filtering
 
 **Opt-In Strategy (Recommended):**
+
 ```terraform
 include_params = {
   label_combination_method = "AND"
@@ -543,11 +565,13 @@ include_params = {
   ]
 }
 ```
+
 - ✅ Only backs up explicitly labeled resources
 - ✅ Prevents accidental backups
 - ✅ Clear backup intent
 
 **Opt-Out Strategy:**
+
 ```terraform
 exclude_params = {
   label_combination_method = "AND"
@@ -556,6 +580,7 @@ exclude_params = {
   ]
 }
 ```
+
 - ✅ Backs up everything except labeled resources
 - ⚠️ Risk of backing up unnecessary data
 
@@ -572,6 +597,7 @@ start_time = {
 ```
 
 **Recommendations:**
+
 - Schedule during low-traffic periods (typically 2-4 AM)
 - Stagger multiple protection groups by 15-30 minutes
 - Use timezone of your operations team
@@ -602,6 +628,7 @@ alert_policy = {
 ```
 
 **Recommendations:**
+
 - Always alert on failures and SLA violations
 - Use object-level alerts for granular failure tracking
 - Alert after last attempt to reduce noise
@@ -625,6 +652,7 @@ sla = [
 ```
 
 **Recommendations:**
+
 - Set realistic SLAs based on actual backup times
 - Monitor SLA violations and adjust as needed
 - Different SLAs for full vs incremental backups
@@ -640,12 +668,14 @@ non_snapshot_backup   = false  # Use snapshot-based backups
 ```
 
 **When to Enable:**
+
 - ✅ Storage supports CSI snapshots (IBM VPC Block Storage)
 - ✅ Need application-consistent backups
 - ✅ Want faster backup/restore times
 - ✅ Have snapshot-capable storage class
 
 **When to Disable:**
+
 - ❌ Storage doesn't support CSI
 - ❌ Using non-CSI storage drivers
 - ❌ Need file-level backup granularity
@@ -684,6 +714,7 @@ included_resources = [
 ### Automatically Handled (Do Not Include)
 
 These resources are automatically backed up with the namespace:
+
 - `persistentvolumeclaims`
 - `configmaps`
 - `storageclasses`
@@ -692,6 +723,7 @@ These resources are automatically backed up with the namespace:
 ### Typically Excluded
 
 These resources are usually not needed in backups:
+
 - `events` (ephemeral)
 - `endpoints` (auto-generated)
 - `pods` (managed by controllers)
@@ -718,12 +750,14 @@ These resources are usually not needed in backups:
 - [IBM Backup Recovery Documentation](https://cloud.ibm.com/docs/backup-recovery)
 - [Terraform IBM Provider Documentation](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs)
 - [Module README](./README.md)
-- [Main Module Documentation](../../README.md)
+- [Kubernetes Example](./examples/kubernetes/README.md)
+- [OpenShift Example](./examples/openshift/README.md)
 
 ---
 
 **Last Updated:** 2026-03-09
 **Tested With:**
+
 - Terraform IBM Provider v1.89.0
 - IBM Backup Recovery Service v7.2.17
 - Kubernetes v1.28+

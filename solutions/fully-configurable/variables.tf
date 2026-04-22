@@ -541,8 +541,10 @@ variable "policies" {
   validation {
     condition = alltrue([
       for p in var.policies : (
-        p.retention == null || p.retention.data_lock_config == null ? true :
-        contains(["Compliance", "Administrative"], p.retention.data_lock_config.mode)
+        p.retention == null ? true : (
+          p.retention.data_lock_config == null ? true :
+          contains(["Compliance", "Administrative"], p.retention.data_lock_config.mode)
+        )
       )
     ])
     error_message = "Data lock mode must be 'Compliance' or 'Administrative'."
@@ -575,14 +577,16 @@ variable "policies" {
   validation {
     condition = alltrue([
       for p in var.policies : (
-        p.primary_backup_target_details == null || p.primary_backup_target_details.tier_settings == null ? true : alltrue([
-          for ts in p.primary_backup_target_details.tier_settings : (
-            (ts.cloud_platform == "AWS" ? ts.aws_tiering != null : true) &&
-            (ts.cloud_platform == "Azure" ? ts.azure_tiering != null : true) &&
-            (ts.cloud_platform == "Oracle" ? ts.oracle_tiering != null : true) &&
-            (ts.cloud_platform == "Google" ? ts.google_tiering != null : true)
-          )
-        ])
+        p.primary_backup_target_details == null ? true : (
+          p.primary_backup_target_details.tier_settings == null ? true : alltrue([
+            for ts in p.primary_backup_target_details.tier_settings : (
+              (ts.cloud_platform == "AWS" ? ts.aws_tiering != null : true) &&
+              (ts.cloud_platform == "Azure" ? ts.azure_tiering != null : true) &&
+              (ts.cloud_platform == "Oracle" ? ts.oracle_tiering != null : true) &&
+              (ts.cloud_platform == "Google" ? ts.google_tiering != null : true)
+            )
+          ])
+        )
       )
     ])
     error_message = "The tiering configuration block must match the selected cloud_platform (e.g., provide 'aws_tiering' for 'AWS')."

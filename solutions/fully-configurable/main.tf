@@ -73,33 +73,3 @@ module "protect_cluster" {
   resource_tags = var.resource_tags
   access_tags   = var.access_tags
 }
-
-########################################################################################################################
-# Cleanup BRS-agent runtime resources on destroy
-# BRS agent creates a namespace and ClusterRoleBinding (brs-backup-agent-<uuid>) that Terraform does not manage.
-# This terraform_data resource runs a local-exec on destroy to clean them up.
-#
-# Cluster credentials (host, CA, cert, key) are stored in triggers at apply time so they are available
-# at destroy time without any dependency on kubeconfig files on disk.
-# Schematics runs refresh and destroy in separate phases/containers, so file-based kubeconfig approaches
-# are unreliable. Storing credentials in triggers is the only reliable approach.
-# Note: these values are already present in Terraform state via the data source; Schematics encrypts state.
-########################################################################################################################
-resource "terraform_data" "cleanup_brs_agent_resources" {
-  triggers_replace = {
-    cluster_id = var.cluster_id
-    kube_host  = data.ibm_container_cluster_config.cluster_config.host
-    kube_ca    = data.ibm_container_cluster_config.cluster_config.ca_certificate
-    kube_cert  = data.ibm_container_cluster_config.cluster_config.admin_certificate
-    kube_key   = data.ibm_container_cluster_config.cluster_config.admin_key
-  }
-
-  provisioner "local-exec" {
-    when    = destroy
-    command = "${path.module}/../../scripts/cleanup_brs_agent_resources_schematics.sh \"${self.triggers_replace.kube_host}\" \"${self.triggers_replace.kube_ca}\" \"${self.triggers_replace.kube_cert}\" \"${self.triggers_replace.kube_key}\""
-  }
-
-  depends_on = [
-    module.protect_cluster
-  ]
-}

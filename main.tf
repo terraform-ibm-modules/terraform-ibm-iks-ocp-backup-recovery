@@ -57,7 +57,7 @@ module "crn_parser" {
 
 module "backup_recovery_instance" {
   source                    = "terraform-ibm-modules/backup-recovery/ibm"
-  version                   = "v1.10.0"
+  version                   = "v1.10.1"
   region                    = local.brs_region
   resource_group_id         = var.cluster_resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
@@ -91,6 +91,14 @@ data "ibm_container_cluster" "classic_cluster" {
   resource_group_id = var.cluster_resource_group_id
   wait_till         = var.wait_till
   wait_till_timeout = var.wait_till_timeout
+}
+
+data "ibm_container_cluster_config" "cluster_config" {
+  cluster_name_id   = var.cluster_id
+  resource_group_id = var.cluster_resource_group_id
+  config_dir        = "${path.module}/kubeconfig"
+  endpoint_type     = var.cluster_config_endpoint_type != "default" ? var.cluster_config_endpoint_type : null
+  admin             = true
 }
 
 data "ibm_container_vpc_worker_pool" "pool" {
@@ -339,32 +347,46 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
 
   depends_on = [
     helm_release.data_source_connector,
-    time_sleep.wait_before_helm_destroy,
+    terraform_data.wait_before_helm_destroy,
     module.backup_recovery_instance
   ]
 }
 
-# Wait 5 minutes during destroy to allow namespace cleanup before destroying helm release
-resource "time_sleep" "wait_before_helm_destroy" {
+# Wait for namespace cleanup during destroy before destroying helm release
+# Uses a script to check for BRS-managed resources rather than a fixed time delay
+resource "terraform_data" "wait_before_helm_destroy" {
   depends_on = [helm_release.data_source_connector]
 
-  destroy_duration = "5m"
-
-  triggers = {
-    # Ensure this resource is recreated when the helm release changes
+  triggers_replace = {
     helm_release_id = helm_release.data_source_connector.id
+    kube_host       = data.ibm_container_cluster_config.cluster_config.host
+    kube_ca         = data.ibm_container_cluster_config.cluster_config.ca_certificate
+    kube_cert       = data.ibm_container_cluster_config.cluster_config.admin_certificate
+    kube_key        = data.ibm_container_cluster_config.cluster_config.admin_key
+    dsc_namespace   = var.dsc_namespace
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "${path.module}/scripts/wait_for_namespace_cleanup.sh '${self.triggers_replace.kube_host}' '${self.triggers_replace.kube_ca}' '${self.triggers_replace.kube_cert}' '${self.triggers_replace.kube_key}' '${self.triggers_replace.dsc_namespace}'"
   }
 }
 
-resource "time_sleep" "wait_for_source_refresh" {
+# Wait for source registration to refresh and discover namespaces
+# Uses a script to poll the BRS API rather than a fixed time delay
+resource "terraform_data" "wait_for_source_refresh" {
   depends_on = [
     ibm_backup_recovery_source_registration.source_registration,
     helm_release.data_source_connector
   ]
-  create_duration = "5m" # Allow registration to discover namespaces
-  triggers = {
+
+  triggers_replace = {
     connection_id = local.connection_id
     dsc_version   = var.dsc_image_version
+  }
+
+  provisioner "local-exec" {
+    command = "${path.module}/scripts/wait_for_source_refresh.sh '${local.brs_tenant_id}' '${local.brs_instance_guid}' '${local.brs_instance_region}' '${var.brs_endpoint_type}'"
   }
 }
 
@@ -375,7 +397,7 @@ data "ibm_backup_recovery_protection_sources" "sources" {
   region          = local.brs_instance_region
   endpoint_type   = var.brs_endpoint_type
 
-  depends_on = [time_sleep.wait_for_source_refresh]
+  depends_on = [terraform_data.wait_for_source_refresh]
 }
 
 locals {
@@ -708,7 +730,7 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
 
   depends_on = [
     data.ibm_backup_recovery_protection_sources.sources,
-    time_sleep.wait_for_source_refresh
+    terraform_data.wait_for_source_refresh
   ]
 
   lifecycle {
@@ -813,5 +835,33 @@ resource "ibm_backup_recovery" "recover_snapshot" {
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
     ibm_backup_recovery_source_registration.source_registration
+  ]
+}
+
+
+##############################################################################
+# Cleanup Runtime BRS-agent-created resources during destroy
+##############################################################################
+# BRS agent creates namespaces and CRBs dynamically at runtime that Terraform
+# doesn't manage. This cleanup resource ensures they are deleted during destroy.
+# Cluster credentials are stored in triggers at apply time so they are available
+# at destroy time without dependency on kubeconfig files (required for Schematics).
+resource "terraform_data" "cleanup_brs_agent_resources" {
+  triggers_replace = {
+    cluster_id = var.cluster_id
+    kube_host  = data.ibm_container_cluster_config.cluster_config.host
+    kube_ca    = data.ibm_container_cluster_config.cluster_config.ca_certificate
+    kube_cert  = data.ibm_container_cluster_config.cluster_config.admin_certificate
+    kube_key   = data.ibm_container_cluster_config.cluster_config.admin_key
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "${path.module}/scripts/cleanup_brs_agent_resources_schematics.sh '${self.triggers_replace.kube_host}' '${self.triggers_replace.kube_ca}' '${self.triggers_replace.kube_cert}' '${self.triggers_replace.kube_key}'"
+  }
+
+  depends_on = [
+    ibm_backup_recovery_source_registration.source_registration,
+    helm_release.data_source_connector
   ]
 }
