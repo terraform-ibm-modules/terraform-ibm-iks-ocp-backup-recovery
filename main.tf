@@ -99,6 +99,13 @@ data "ibm_container_cluster_config" "cluster_config" {
   config_dir        = "${path.module}/kubeconfig"
   endpoint_type     = var.cluster_config_endpoint_type != "default" ? var.cluster_config_endpoint_type : null
   admin             = true
+
+  # Wait for cluster to be ready before fetching config
+  # This prevents timeouts when cluster is still provisioning
+  depends_on = [
+    data.ibm_container_vpc_cluster.vpc_cluster,
+    data.ibm_container_cluster.classic_cluster
+  ]
 }
 
 data "ibm_container_vpc_worker_pool" "pool" {
