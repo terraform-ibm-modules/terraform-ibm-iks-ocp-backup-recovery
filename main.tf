@@ -401,23 +401,22 @@ resource "terraform_data" "wait_before_helm_destroy" {
   }
 }
 
-# Wait for source registration to refresh and discover namespaces
-# Uses a script to poll the BRS API rather than a fixed time delay
-resource "terraform_data" "wait_for_source_refresh" {
+# Wait for BRS asynchronous discovery to stabilize before reading protection sources.
+# A fixed delay is more reliable here than a custom polling script because the UI
+# refresh behavior is not exposed through a verified CLI/API operation.
+resource "time_sleep" "wait_for_source_discovery" {
   depends_on = [
     ibm_backup_recovery_source_registration.source_registration,
     helm_release.data_source_connector,
     terraform_data.install_dependencies
   ]
 
-  triggers_replace = {
+  triggers = {
     connection_id = local.connection_id
     dsc_version   = var.dsc_image_version
   }
 
-  provisioner "local-exec" {
-    command = "${path.module}/scripts/wait_for_source_refresh.sh '${local.brs_tenant_id}' '${local.brs_instance_guid}' '${local.brs_instance_region}' '${var.brs_endpoint_type}' 40 '${local.binaries_path}'"
-  }
+  create_duration = "5m"
 }
 
 data "ibm_backup_recovery_protection_sources" "sources" {
@@ -427,7 +426,7 @@ data "ibm_backup_recovery_protection_sources" "sources" {
   region          = local.brs_instance_region
   endpoint_type   = var.brs_endpoint_type
 
-  depends_on = [terraform_data.wait_for_source_refresh]
+  depends_on = [time_sleep.wait_for_source_discovery]
 }
 
 locals {
@@ -760,7 +759,7 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
 
   depends_on = [
     data.ibm_backup_recovery_protection_sources.sources,
-    terraform_data.wait_for_source_refresh
+    time_sleep.wait_for_source_discovery
   ]
 
   lifecycle {
