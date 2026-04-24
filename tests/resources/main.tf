@@ -110,6 +110,4 @@ module "backup_recovery_instance" {
   create_new_connection     = true
   connection_env_type       = "kRoksVpc"
   existing_brs_instance_crn = var.existing_brs_instance_crn == "" ? null : var.existing_brs_instance_crn
-  # Pass empty policies list to avoid creating default "basic-policy" which causes conflicts in upgrade tests
-  policies = []
 }
