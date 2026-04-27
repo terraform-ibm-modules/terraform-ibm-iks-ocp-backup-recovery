@@ -455,7 +455,7 @@ variable "protection_groups" {
     abort_in_blackouts = optional(bool, false)
     pause_in_blackouts = optional(bool, false)
   }))
-  default = null
+  default = []
 }
 
 ##############################################################################
@@ -743,18 +743,7 @@ variable "policies" {
       }))
     }))
   }))
-  default = [{
-    name              = "Basic"
-    create_new_policy = false
-    schedule = {
-      unit         = "Days"
-      day_schedule = { frequency = 1 }
-    }
-    retention = {
-      duration = 2
-      unit     = "Days"
-    }
-  }]
+  default = null
 
   # 1. Structural Validation
   validation {
