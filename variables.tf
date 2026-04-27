@@ -455,7 +455,8 @@ variable "protection_groups" {
     abort_in_blackouts = optional(bool, false)
     pause_in_blackouts = optional(bool, false)
   }))
-  default = []
+  default  = []
+  nullable = false
 }
 
 ##############################################################################
@@ -934,7 +935,8 @@ variable "recoveries" {
       })))
     }))
   }))
-  default = []
+  default  = []
+  nullable = false
 
   validation {
     condition = alltrue([
