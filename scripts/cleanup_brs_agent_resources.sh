@@ -23,17 +23,8 @@
 
 set -e
 
-KUBE_HOST="${1:-}"
-KUBE_CA="${2:-}"
-KUBE_CERT="${3:-}"
-KUBE_KEY="${4:-}"
-
-if [ -z "$KUBE_HOST" ] || [ -z "$KUBE_CERT" ] || [ -z "$KUBE_KEY" ]; then
-  echo "Error: Host, client certificate, and client key are required."
-  echo "Usage: $0 <host> <ca_cert> <client_cert> <client_key>"
-  echo "Note: ca_cert can be empty for clusters that don't require it"
-  exit 1
-fi
+# The binaries downloaded by the install-binaries script are located in the /tmp directory.
+export PATH=$PATH:${1:-"/tmp"}
 
 echo "Cleaning up BRS-agent-created namespaces and cluster role bindings..."
 
@@ -43,54 +34,27 @@ if ! command -v kubectl >/dev/null 2>&1; then
   exit 0
 fi
 
-# Build a temporary directory for credentials
-TMPDIR=$(mktemp -d /tmp/brs-cleanup-XXXXXX)
-trap 'rm -rf "$TMPDIR"' EXIT
-
-# Only create CA file if CA certificate is provided
-if [ -n "$KUBE_CA" ]; then
-  printf '%s\n' "$KUBE_CA" > "$TMPDIR/ca.pem"
-  CA_ARG="--certificate-authority=$TMPDIR/ca.pem"
-else
-  # Use insecure-skip-tls-verify if no CA certificate provided
-  CA_ARG="--insecure-skip-tls-verify=true"
-fi
-
-printf '%s\n' "$KUBE_CERT" > "$TMPDIR/client.crt"
-printf '%s\n' "$KUBE_KEY" > "$TMPDIR/client.key"
-
-# Helper function to run kubectl with stored credentials
-kctl() {
-  # shellcheck disable=SC2086
-  kubectl \
-    --server="$KUBE_HOST" \
-    $CA_ARG \
-    --client-certificate="$TMPDIR/client.crt" \
-    --client-key="$TMPDIR/client.key" \
-    "$@"
-}
-
 # Check cluster connectivity
-if ! kctl version --request-timeout=15s >/dev/null 2>&1; then
+if ! kubectl version --request-timeout=15s >/dev/null 2>&1; then
   echo "kubectl cannot reach the target cluster; skipping BRS-agent cleanup."
   exit 0
 fi
 
 # Delete namespaces by runtime-generated naming pattern
 echo "Deleting BRS-agent namespaces..."
-kctl get namespace --no-headers | awk '{print $1}' | grep -E '^brs-backup-agent-' | while read -r ns; do
+kubectl get namespace --no-headers | awk '{print $1}' | grep -E '^brs-backup-agent-' | while read -r ns; do
   if [ -n "$ns" ]; then
     echo "  Deleting namespace: $ns"
-    kctl delete namespace "$ns" --ignore-not-found=true || true
+    kubectl delete namespace "$ns" --ignore-not-found=true || true
   fi
 done
 
 # Delete ClusterRoleBindings by runtime-generated naming pattern
 echo "Deleting BRS-agent ClusterRoleBindings..."
-kctl get clusterrolebinding --no-headers | awk '{print $1}' | grep -E '^brs-backup-agent-' | while read -r crb; do
+kubectl get clusterrolebinding --no-headers | awk '{print $1}' | grep -E '^brs-backup-agent-' | while read -r crb; do
   if [ -n "$crb" ]; then
     echo "  Deleting ClusterRoleBinding: $crb"
-    kctl delete clusterrolebinding "$crb" --ignore-not-found=true || true
+    kubectl delete clusterrolebinding "$crb" --ignore-not-found=true || true
   fi
 done
 

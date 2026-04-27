@@ -873,16 +873,17 @@ resource "ibm_backup_recovery" "recover_snapshot" {
 # at destroy time without dependency on kubeconfig files (required for Schematics).
 resource "terraform_data" "cleanup_brs_agent_resources" {
   triggers_replace = {
-    cluster_id = var.cluster_id
-    kube_host  = data.ibm_container_cluster_config.cluster_config.host
-    kube_ca    = data.ibm_container_cluster_config.cluster_config.ca_certificate
-    kube_cert  = data.ibm_container_cluster_config.cluster_config.admin_certificate
-    kube_key   = data.ibm_container_cluster_config.cluster_config.admin_key
+    cluster_id      = var.cluster_id
+    kubeconfig_path = data.ibm_container_cluster_config.cluster_config.config_file_path
+    binaries_path   = local.binaries_path
   }
 
   provisioner "local-exec" {
     when    = destroy
-    command = "${path.module}/scripts/cleanup_brs_agent_resources.sh '${self.triggers_replace.kube_host}' '${self.triggers_replace.kube_ca}' '${self.triggers_replace.kube_cert}' '${self.triggers_replace.kube_key}'"
+    command = "${path.module}/scripts/cleanup_brs_agent_resources.sh ${self.triggers_replace.binaries_path}"
+    environment = {
+      KUBECONFIG = self.triggers_replace.kubeconfig_path
+    }
   }
 
   depends_on = [
