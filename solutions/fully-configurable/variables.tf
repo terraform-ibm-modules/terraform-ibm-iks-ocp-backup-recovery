@@ -294,7 +294,7 @@ variable "dsc_replicas" {
 variable "dsc_helm_timeout" {
   description = "Timeout in seconds for the Data Source Connector Helm deployment."
   type        = number
-  default     = 1500
+  default     = 3600
   nullable    = false
 }
 
@@ -325,6 +325,11 @@ variable "dsc_registry" {
   type        = string
   default     = "icr.io"
   nullable    = false
+}
+variable "rollback_on_failure" {
+  description = "Flag to automatically rollback the helm chart on installation failure."
+  type        = bool
+  default     = true
 }
 variable "brs_connection_name" {
   type        = string
