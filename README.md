@@ -172,7 +172,7 @@ You need the following permissions to run this module:
 
 | Name | Source | Version |
 |------|--------|---------|
-| <a name="module_backup_recovery_instance"></a> [backup\_recovery\_instance](#module\_backup\_recovery\_instance) | terraform-ibm-modules/backup-recovery/ibm | v1.10.1 |
+| <a name="module_backup_recovery_instance"></a> [backup\_recovery\_instance](#module\_backup\_recovery\_instance) | terraform-ibm-modules/backup-recovery/ibm | v1.10.2 |
 | <a name="module_crn_parser"></a> [crn\_parser](#module\_crn\_parser) | terraform-ibm-modules/common-utilities/ibm//modules/crn-parser | 1.5.0 |
 | <a name="module_dsc_sg_rule"></a> [dsc\_sg\_rule](#module\_dsc\_sg\_rule) | terraform-ibm-modules/security-group/ibm | v2.9.0 |
 
@@ -219,7 +219,7 @@ You need the following permissions to run this module:
 | <a name="input_connection_env_type"></a> [connection\_env\_type](#input\_connection\_env\_type) | Connection environment type to determine the required parameters for creating a new connection. Allowed values are 'kIksVpc', 'kRoksVpc', 'kRoksClassic', and 'kIksClassic'. | `string` | `"kIksVpc"` | no |
 | <a name="input_create_dsc_worker_pool"></a> [create\_dsc\_worker\_pool](#input\_create\_dsc\_worker\_pool) | Set to `true` to create a dedicated worker pool for the Data Source Connector in VPC clusters. If set to `false`, the connector will be deployed on existing worker nodes. | `bool` | `true` | no |
 | <a name="input_dsc_chart_uri"></a> [dsc\_chart\_uri](#input\_dsc\_chart\_uri) | The full OCI registry URI for the Data Source Connector Helm chart, including the digest. | `string` | `"oci://icr.io/ext/brs/brs-ds-connector-chart:7.2.18-release-20260226-49768040@sha256:99728a3146a7d8b2ae2f88300a6a89752488d3733e29118ee83a655959114541"` | no |
-| <a name="input_dsc_helm_timeout"></a> [dsc\_helm\_timeout](#input\_dsc\_helm\_timeout) | Timeout in seconds for the Data Source Connector Helm deployment. | `number` | `1500` | no |
+| <a name="input_dsc_helm_timeout"></a> [dsc\_helm\_timeout](#input\_dsc\_helm\_timeout) | Timeout in seconds for the Data Source Connector Helm deployment. | `number` | `3600` | no |
 | <a name="input_dsc_image_version"></a> [dsc\_image\_version](#input\_dsc\_image\_version) | Container image for the Data Source Connector. | `string` | `"icr.io/ext/brs/brs-ds-connector:7.2.18-release-20260226-49768040@sha256:99728a3146a7d8b2ae2f88300a6a89752488d3733e29118ee83a655959114541"` | no |
 | <a name="input_dsc_name"></a> [dsc\_name](#input\_dsc\_name) | Release name for the Data Source Connector Helm deployment. | `string` | `"dsc"` | no |
 | <a name="input_dsc_namespace"></a> [dsc\_namespace](#input\_dsc\_namespace) | The cluster namespace where the Data Source Connector will be installed. Will be created if it does not exist. | `string` | `"ibm-brs-data-source-connector"` | no |
