@@ -123,7 +123,6 @@ data "ibm_container_cluster" "classic_cluster_data" {
 data "ibm_container_cluster_config" "cluster_config" {
   cluster_name_id   = local.cluster_id
   resource_group_id = module.resource_group.resource_group_id
-  config_dir        = "${path.module}/kubeconfig"
   admin             = true
 }
 
