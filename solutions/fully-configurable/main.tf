@@ -9,7 +9,6 @@ data "ibm_container_vpc_cluster" "vpc_cluster" {
 data "ibm_container_cluster_config" "cluster_config" {
   cluster_name_id   = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
-  config_dir        = "${path.module}/kubeconfig"
   endpoint_type     = var.cluster_config_endpoint_type != "default" ? var.cluster_config_endpoint_type : null
   admin             = true
 
@@ -39,7 +38,6 @@ module "protect_cluster" {
   add_dsc_rules_to_cluster_sg  = var.add_dsc_rules_to_cluster_sg
   kube_type                    = var.kube_type
   ibmcloud_api_key             = var.ibmcloud_api_key
-  external_kubeconfig_path     = data.ibm_container_cluster_config.cluster_config.config_file_path
   # --- BRS Instance Details---
   brs_endpoint_type         = var.brs_endpoint_type
   existing_brs_instance_crn = var.existing_brs_instance_crn
