@@ -206,6 +206,7 @@ resource "terraform_data" "wait_for_workload" {
 
   depends_on = [
     kubernetes_deployment_v1.test_app_with_pvc,
-    kubernetes_deployment_v1.test_app_without_pvc
+    kubernetes_deployment_v1.test_app_without_pvc,
+    time_sleep.wait_operators
   ]
 }
