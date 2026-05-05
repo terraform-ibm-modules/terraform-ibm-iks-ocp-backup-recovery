@@ -154,6 +154,7 @@ locals {
 data "ibm_container_cluster_config" "cluster_config" {
   cluster_name_id   = local.cluster_name_id_for_config
   resource_group_id = module.resource_group.resource_group_id
+  config_dir        = "${path.module}/kubeconfig"
   admin             = true
 }
 
