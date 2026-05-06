@@ -874,6 +874,7 @@ resource "terraform_data" "cleanup_brs_agent_resources" {
   triggers_replace = {
     cluster_id        = var.cluster_id
     resource_group_id = var.cluster_resource_group_id
+    region            = var.region
     binaries_path     = local.binaries_path
     endpoint_type     = var.cluster_config_endpoint_type
   }
@@ -886,7 +887,15 @@ resource "terraform_data" "cleanup_brs_agent_resources" {
       # Get fresh cluster config using ibmcloud CLI during destroy
       TEMP_KUBECONFIG=$(mktemp)
 
+      # Login to ibmcloud (uses TF_VAR_ibmcloud_api_key from environment)
+      API_KEY="$${TF_VAR_ibmcloud_api_key:-$${IC_API_KEY}}"
+      if [ -n "$API_KEY" ]; then
+        echo "Authenticating with IBM Cloud..."
+        ibmcloud login --apikey "$API_KEY" -r "${self.triggers_replace.region}" -g "${self.triggers_replace.resource_group_id}" >/dev/null 2>&1 || true
+      fi
+
       # Download cluster config using ibmcloud CLI
+      echo "Retrieving cluster config for cleanup..."
       if ibmcloud ks cluster config --cluster "${self.triggers_replace.cluster_id}" \
          --admin \
          ${self.triggers_replace.endpoint_type != "default" ? "--endpoint ${self.triggers_replace.endpoint_type}" : ""} \
