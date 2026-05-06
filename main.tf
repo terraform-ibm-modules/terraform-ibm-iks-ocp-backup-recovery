@@ -872,17 +872,37 @@ resource "ibm_backup_recovery" "recover_snapshot" {
 # at destroy time without dependency on kubeconfig files (required for Schematics).
 resource "terraform_data" "cleanup_brs_agent_resources" {
   triggers_replace = {
-    cluster_id      = var.cluster_id
-    kubeconfig_path = data.ibm_container_cluster_config.cluster_config.config_file_path
-    binaries_path   = local.binaries_path
+    cluster_id        = var.cluster_id
+    resource_group_id = var.cluster_resource_group_id
+    binaries_path     = local.binaries_path
+    endpoint_type     = var.cluster_config_endpoint_type
   }
 
   provisioner "local-exec" {
     when    = destroy
-    command = "${path.module}/scripts/cleanup_brs_agent_resources.sh ${self.triggers_replace.binaries_path}"
-    environment = {
-      KUBECONFIG = self.triggers_replace.kubeconfig_path
-    }
+    command = <<-EOT
+      set -e
+
+      # Get fresh cluster config using ibmcloud CLI during destroy
+      TEMP_KUBECONFIG=$(mktemp)
+
+      # Download cluster config using ibmcloud CLI
+      if ibmcloud ks cluster config --cluster "${self.triggers_replace.cluster_id}" \
+         --admin \
+         ${self.triggers_replace.endpoint_type != "default" ? "--endpoint ${self.triggers_replace.endpoint_type}" : ""} \
+         --output yaml > "$TEMP_KUBECONFIG" 2>/dev/null; then
+
+        echo "Successfully retrieved cluster config for destroy-time cleanup"
+        export KUBECONFIG="$TEMP_KUBECONFIG"
+        ${path.module}/scripts/cleanup_brs_agent_resources.sh ${self.triggers_replace.binaries_path}
+
+      else
+        echo "Could not retrieve cluster config; cluster may already be deleted. Skipping cleanup."
+      fi
+
+      # Clean up temporary file
+      rm -f "$TEMP_KUBECONFIG"
+    EOT
   }
 
   depends_on = [
