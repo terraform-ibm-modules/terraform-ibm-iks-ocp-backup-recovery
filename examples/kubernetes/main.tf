@@ -120,19 +120,10 @@ data "ibm_container_cluster" "classic_cluster_data" {
   resource_group_id = module.resource_group.resource_group_id
 }
 
-resource "terraform_data" "create_kubeconfig_dir" {
-  provisioner "local-exec" {
-    command = "mkdir -p ${path.module}/kubeconfig"
-  }
-}
-
 data "ibm_container_cluster_config" "cluster_config" {
   cluster_name_id   = local.cluster_id
   resource_group_id = module.resource_group.resource_group_id
   admin             = true
-  config_dir        = "${path.module}/kubeconfig"
-
-  depends_on = [terraform_data.create_kubeconfig_dir]
 }
 
 # Sleep to allow RBAC sync on cluster
@@ -332,7 +323,4 @@ module "backup_recover_protect_iks" {
   # }]
   # ========================================
 
-  depends_on = [
-    terraform_data.wait_for_workload
-  ]
 }
