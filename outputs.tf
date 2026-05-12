@@ -12,6 +12,11 @@ output "brs_instance_crn" {
   value       = module.backup_recovery_instance.brs_instance_crn
 }
 
+output "brs_instance_name" {
+  description = "Name of the Backup & Recovery Service instance"
+  value       = var.brs_instance_name
+}
+
 output "brs_instance_guid" {
   description = "GUID of the Backup & Recovery Service instance"
   value       = local.brs_instance_guid
@@ -38,17 +43,45 @@ output "protection_sources" {
 }
 
 output "recovery_ids" {
-  description = "Map of recovery operation names to their IDs"
+  description = "Map of recovery operation names to their IDs. Empty if enable_recovery is false."
   value       = { for k, v in ibm_backup_recovery.recover_snapshot : k => v.id }
 }
 
 output "recovery_status" {
-  description = "Map of recovery operation names to their status information"
+  description = "Map of recovery operation names to their status information. Empty if enable_recovery is false."
   value = {
     for k, v in ibm_backup_recovery.recover_snapshot : k => {
       id     = v.id
       status = v.status
       name   = v.name
+    }
+  }
+}
+
+output "latest_snapshots" {
+  description = "Map of protection group names to their latest snapshot IDs. Used for automatic recovery. Empty if enable_recovery is false."
+  value       = local.latest_snapshots
+}
+
+output "recovery_mode" {
+  description = "Current recovery mode: 'same-cluster' or 'cross-cluster'"
+  value       = var.recovery_mode
+}
+
+output "target_cluster_id" {
+  description = "Target cluster ID for recovery operations. Same as source cluster for same-cluster mode."
+  value       = local.target_cluster_id
+}
+
+output "backup_runs_summary" {
+  description = "Summary of backup runs per protection group. Shows run count and latest run status. Empty if enable_recovery is false."
+  value = {
+    for pg_name, runs in data.ibm_backup_recovery_protection_group_runs.backup_runs : pg_name => {
+      total_runs          = length(try(runs.runs, []))
+      latest_run_id       = try(runs.runs[0].id, null)
+      latest_status       = try(runs.runs[0].status, null)
+      latest_snapshot_id  = try(runs.runs[0].local_backup_info[0].snapshot_info[0].snapshot_id, null)
+      polled_backup_ready = contains(keys(terraform_data.wait_for_backup_run), pg_name)
     }
   }
 }

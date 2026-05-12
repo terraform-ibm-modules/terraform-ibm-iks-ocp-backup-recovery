@@ -375,6 +375,102 @@
             {
               "key": "resource_tags",
               "display_name": "Resource Tags"
+            },
+            {
+              "key": "enable_recovery",
+              "display_name": "Enable Automatic Recovery Testing",
+              "description": "Enable automatic recovery testing after backup completes to validate backup integrity"
+            },
+            {
+              "key": "recovery_type",
+              "display_name": "Recovery Type",
+              "description": "Type of recovery: restore to same cluster or cross-cluster",
+              "options": [
+                {
+                  "displayname": "Same Cluster",
+                  "value": "same_cluster"
+                },
+                {
+                  "displayname": "Cross Cluster",
+                  "value": "cross_cluster"
+                }
+              ]
+            },
+            {
+              "key": "recovery_namespace_prefix",
+              "display_name": "Recovery Namespace Prefix",
+              "description": "Prefix to add to namespace names during recovery (e.g., 'restored-')"
+            },
+            {
+              "key": "recovery_protection_group_name",
+              "display_name": "Recovery Protection Group Name",
+              "description": "Name of protection group to recover from (optional, uses first PG if not specified)"
+            },
+            {
+              "key": "recovery_wait_timeout_minutes",
+              "display_name": "Recovery Wait Timeout (Minutes)",
+              "description": "Maximum time to wait for backup completion before triggering recovery"
+            },
+            {
+              "key": "recovery_poll_interval_seconds",
+              "display_name": "Recovery Poll Interval (Seconds)",
+              "description": "Interval between backup status checks while waiting for completion"
+            },
+            {
+              "key": "target_cluster_id",
+              "display_name": "Target Cluster (Cross-Cluster Recovery)",
+              "description": "Target cluster ID for cross-cluster recovery (required when recovery_type is 'cross_cluster')",
+              "custom_config": {
+                "type": "cluster_var",
+                "grouping": "deployment",
+                "original_grouping": "deployment"
+              }
+            },
+            {
+              "key": "target_cluster_resource_group_id",
+              "display_name": "Target Cluster Resource Group (Cross-Cluster)",
+              "description": "Target cluster resource group ID for cross-cluster recovery",
+              "custom_config": {
+                "type": "resource_group",
+                "grouping": "deployment",
+                "original_grouping": "deployment",
+                "config_constraints": {
+                  "identifier": "rg_id"
+                }
+              }
+            },
+            {
+              "key": "target_cluster_config_endpoint_type",
+              "display_name": "Target Cluster Endpoint Type (Cross-Cluster)",
+              "description": "Endpoint type for target cluster configuration access",
+              "options": [
+                {
+                  "displayname": "Default",
+                  "value": "default"
+                },
+                {
+                  "displayname": "Private",
+                  "value": "private"
+                },
+                {
+                  "displayname": "VPE",
+                  "value": "vpe"
+                },
+                {
+                  "displayname": "Link",
+                  "value": "link"
+                }
+              ]
+            },
+            {
+              "key": "target_brs_connection_name",
+              "display_name": "Target BRS Connection Name (Cross-Cluster)",
+              "description": "Name for BRS connection to target cluster (optional, auto-generated if not specified)"
+            },
+            {
+              "key": "target_create_dsc_worker_pool",
+              "display_name": "Create DSC Worker Pool on Target (Cross-Cluster)",
+              "description": "Create dedicated worker pool for Data Source Connector on target cluster"
             }
           ],
           "dependencies": [],

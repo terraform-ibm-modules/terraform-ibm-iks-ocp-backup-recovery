@@ -267,6 +267,27 @@ variable "enable_auto_protect" {
   type        = bool
   default     = true
 }
+variable "backup_run_poll_timeout_minutes" {
+  description = "Maximum time in minutes to poll for the first restorable backup run when recovery is enabled in a single apply."
+  type        = number
+  default     = 45
+
+  validation {
+    condition     = var.backup_run_poll_timeout_minutes >= 1
+    error_message = "backup_run_poll_timeout_minutes must be at least 1."
+  }
+}
+
+variable "backup_run_poll_interval_seconds" {
+  description = "Polling interval in seconds when waiting for the first restorable backup run."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.backup_run_poll_interval_seconds >= 5
+    error_message = "backup_run_poll_interval_seconds must be at least 5."
+  }
+}
 
 ##############################################################################
 # Protection Groups (granular backup control)
@@ -838,8 +859,58 @@ variable "policies" {
 # Recovery Variables
 ##############################################################################
 
+variable "enable_recovery" {
+  description = "Enable automatic recovery after backup completion. When true, recovery operations defined in `recoveries` will be triggered automatically after successful backup. Set to false to only perform backups without recovery."
+  type        = bool
+  default     = false
+}
+
+variable "recovery_mode" {
+  description = "Recovery mode: 'same-cluster' to restore within the same cluster, or 'cross-cluster' to restore to a different target cluster. Required when enable_recovery is true."
+  type        = string
+  default     = "same-cluster"
+
+  validation {
+    condition     = contains(["same-cluster", "cross-cluster"], var.recovery_mode)
+    error_message = "recovery_mode must be either 'same-cluster' or 'cross-cluster'."
+  }
+}
+
+variable "target_cluster_id" {
+  description = "Target cluster ID for cross-cluster recovery. Required when recovery_mode is 'cross-cluster'. Must be a cluster already registered with the BRS instance."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.recovery_mode == "same-cluster" || (var.recovery_mode == "cross-cluster" && var.target_cluster_id != null)
+    error_message = "target_cluster_id is required when recovery_mode is 'cross-cluster'."
+  }
+}
+
+variable "target_cluster_resource_group_id" {
+  description = "Resource group ID of the target cluster for cross-cluster recovery. Required when recovery_mode is 'cross-cluster'."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.recovery_mode == "same-cluster" || (var.recovery_mode == "cross-cluster" && var.target_cluster_resource_group_id != null)
+    error_message = "target_cluster_resource_group_id is required when recovery_mode is 'cross-cluster'."
+  }
+}
+
+variable "wait_for_backup_completion" {
+  description = "Wait time in minutes for initial backup to complete before attempting recovery. Increase this value for large clusters or slow networks. Set to 0 to disable waiting (recovery will use existing snapshots only)."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.wait_for_backup_completion >= 0
+    error_message = "wait_for_backup_completion must be a non-negative number."
+  }
+}
+
 variable "recoveries" {
-  description = "List of recovery operations to restore backups created by protection groups. Supports multiple environments: Kubernetes, VMware, Physical, AWS, Azure, GCP, SQL, Oracle, and more. This variable follows the official IBM Backup Recovery provider schema and can be used across different backup scenarios. For IKS/ROKS recovery, use kubernetes_params. See the Usage section in the README for examples."
+  description = "List of recovery operations to restore backups created by protection groups. When enable_recovery is true, these operations will be triggered automatically after backup completion. Supports multiple environments: Kubernetes, VMware, Physical, AWS, Azure, GCP, SQL, Oracle, and more. This variable follows the official IBM Backup Recovery provider schema and can be used across different backup scenarios. For IKS/ROKS recovery, use kubernetes_params. See the Usage section in the README for examples."
   type = list(object({
     name                 = string
     snapshot_environment = string # kKubernetes, kVMware, kPhysical, kAWS, kAzure, kGCP, kSQL, kOracle, kView, etc.
