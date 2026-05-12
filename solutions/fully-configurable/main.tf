@@ -122,8 +122,8 @@ module "target_cluster_registration" {
   source = "../.."
 
   providers = {
-    helm       = helm
-    kubernetes = kubernetes
+    helm       = helm.target
+    kubernetes = kubernetes.target
   }
 
   cluster_id                   = var.target_cluster_id
