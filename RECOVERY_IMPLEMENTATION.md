@@ -140,7 +140,7 @@ module "backup_recovery" {
 
   cluster_id                    = "my-cluster"
   cluster_resource_group_id     = "xxxx"
-  ibmcloud_api_key              = var.ibmcloud_api_key
+  ibmcloud_api_key              = var.ibmcloud_api_key # pragma: allowlist secret
   region                        = "us-south"
   brs_instance_name             = "my-brs-instance"
   brs_connection_name           = "my-connection"

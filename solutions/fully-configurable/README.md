@@ -101,7 +101,7 @@ module "backup_recovery" {
   # Cluster Configuration
   cluster_id                = "my-cluster-id"
   cluster_resource_group_id = "my-resource-group-id"
-  ibmcloud_api_key          = var.ibmcloud_api_key
+  ibmcloud_api_key          = var.ibmcloud_api_key # pragma: allowlist secret
 
   # BRS Instance
   brs_instance_name = "my-brs-instance"
