@@ -82,7 +82,7 @@ locals {
   # Determine which protection group to use for recovery
   recovery_pg_name = var.enable_recovery ? (
     var.recovery_protection_group_name != null ? var.recovery_protection_group_name :
-    var.protection_groups != null && length(var.protection_groups) > 0 ? var.protection_groups[0].name :
+    try(length(var.protection_groups), 0) > 0 ? var.protection_groups[0].name :
     var.auto_protect_policy_name
   ) : null
 
@@ -182,8 +182,25 @@ resource "time_sleep" "wait_for_target_registration" {
 }
 
 ##############################################################################
-# Backup Completion Polling
+# Immediate Backup Trigger and Completion Polling
 ##############################################################################
+
+# Trigger an immediate on-demand backup run for the recovery protection group.
+resource "ibm_backup_recovery_protection_group_run_request" "recovery_backup_run" {
+  count = var.enable_recovery ? 1 : 0
+
+  x_ibm_tenant_id = module.protect_cluster.brs_tenant_id
+  group_id        = local.recovery_pg_id
+  run_type        = "kRegular"
+  endpoint_type   = var.brs_endpoint_type
+  instance_id     = module.protect_cluster.brs_instance_guid
+  region          = local.region
+
+  # Only depends on source cluster - backup triggers immediately when PG is ready
+  depends_on = [
+    module.protect_cluster
+  ]
+}
 
 # Poll for backup completion before attempting recovery
 resource "terraform_data" "wait_for_backup" {
@@ -191,7 +208,8 @@ resource "terraform_data" "wait_for_backup" {
 
   depends_on = [
     module.protect_cluster,
-    time_sleep.wait_for_target_registration
+    time_sleep.wait_for_target_registration,
+    ibm_backup_recovery_protection_group_run_request.recovery_backup_run
   ]
 
   input = {
