@@ -205,6 +205,10 @@ resource "kubernetes_stateful_set_v1" "source_app" {
     namespace = local.source_namespace
   }
 
+  depends_on = [
+    null_resource.create_source_namespace
+  ]
+
   spec {
     replicas     = 1
     service_name = "sample-app"
