@@ -27,6 +27,7 @@ const resourceGroup = "geretain-test-resources"
 const fullyConfigurableTerraformDir = "solutions/fully-configurable"
 const iksExampleDir = "examples/kubernetes"
 const ocpExampleDir = "examples/openshift"
+const crossClusterExampleDir = "examples/backup-recovery-cross-cluster"
 
 var excludeDirs = []string{".terraform", ".docs", ".github", ".git", ".idea", "common-dev-assets", "examples", "tests", "reference-architectures"}
 
@@ -301,6 +302,21 @@ func TestRunOCPExample(t *testing.T) {
 		"module.backup_recover_protect_ocp.ibm_backup_recovery_source_registration.source_registration",
 		"module.ocp_base[0].ibm_container_vpc_cluster.cluster[0]",
 		"ibm_container_cluster.cluster[0]",
+	})
+
+	output, err := options.RunTestConsistency()
+	assert.NoError(t, err, "This should not have errored")
+	assert.NotNil(t, output, "Expected some output")
+}
+
+func TestRunCrossClusterExample(t *testing.T) {
+	t.Parallel()
+
+	options := setupOptions(t, "brs-cross", crossClusterExampleDir, []string{
+		"module.source_backup_recovery.ibm_backup_recovery_source_registration.source_registration",
+		"module.target_backup_recovery.ibm_backup_recovery_source_registration.source_registration",
+		"ibm_container_vpc_cluster.source_cluster[0]",
+		"ibm_container_vpc_cluster.target_cluster[0]",
 	})
 
 	output, err := options.RunTestConsistency()

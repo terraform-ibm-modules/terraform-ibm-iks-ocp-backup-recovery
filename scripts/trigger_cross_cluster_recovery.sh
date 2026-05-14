@@ -110,5 +110,3 @@ fi
 
 echo "✓ Recovery triggered successfully!" >&2
 echo "$body" | jq '.'
-
-# Made with Bob

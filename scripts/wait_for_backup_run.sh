@@ -195,5 +195,3 @@ main() {
 }
 
 main
-
-# Made with Bob
