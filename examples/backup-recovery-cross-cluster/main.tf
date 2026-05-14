@@ -163,6 +163,8 @@ resource "null_resource" "create_source_namespace" {
       export KUBECONFIG="${data.ibm_container_cluster_config.source_cluster_config.config_file_path}"
       kubectl create namespace ${var.prefix}-source-app --dry-run=client -o yaml | kubectl apply -f -
       kubectl label namespace ${var.prefix}-source-app backup-enabled=true environment=production --overwrite
+      # Wait for namespace to be fully ready
+      kubectl wait --for=jsonpath='{.status.phase}'=Active --timeout=60s namespace/${var.prefix}-source-app
     EOT
   }
 
