@@ -65,7 +65,7 @@ resource "terraform_data" "install_dependencies" {
 module "crn_parser" {
   source  = "terraform-ibm-modules/common-utilities/ibm//modules/crn-parser"
   version = "1.5.0"
-  crn     = var.existing_brs_instance_crn != null ? var.existing_brs_instance_crn : "crn:v1:bluemix:public:backup-recovery:us-south:a/placeholder:::"
+  crn     = var.existing_brs_instance_crn != null ? var.existing_brs_instance_crn : ""
 }
 
 ##############################################################################
@@ -828,14 +828,14 @@ resource "terraform_data" "delete_auto_protect_pg" {
 # Wait for initial backup to complete before attempting recovery
 # This ensures snapshots are available for the recovery operation
 resource "time_sleep" "wait_for_backup_completion" {
-  count = var.enable_recovery && var.wait_for_backup_completion > 0 ? 1 : 0
+  count = var.enable_recovery && var.wait_for_backup_completion != "0s" ? 1 : 0
 
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
     time_sleep.wait_for_source_discovery
   ]
 
-  create_duration = "${var.wait_for_backup_completion}m"
+  create_duration = var.wait_for_backup_completion
 
   triggers = {
     protection_group_ids = join(",", [for pg in ibm_backup_recovery_protection_group.protection_group : pg.id])
@@ -871,8 +871,11 @@ resource "terraform_data" "wait_for_backup_run" {
   }
 
   provisioner "local-exec" {
-    command     = "${path.module}/scripts/wait_for_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' '${self.input.protection_group_id}' '${self.input.api_key}' '${self.input.timeout_minutes}' '${self.input.poll_interval_seconds}' '${self.input.binaries_path}'"
+    command     = "${path.module}/scripts/wait_for_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' '${self.input.protection_group_id}' '${self.input.timeout_minutes}' '${self.input.poll_interval_seconds}' '${self.input.binaries_path}'"
     interpreter = ["/bin/bash", "-c"]
+    environment = {
+      IBMCLOUD_API_KEY = self.input.api_key
+    }
   }
 }
 

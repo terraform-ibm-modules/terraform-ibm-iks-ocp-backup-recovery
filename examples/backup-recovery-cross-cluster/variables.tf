@@ -91,12 +91,12 @@ variable "recovery_mode" {
 }
 
 variable "wait_for_backup_completion" {
-  description = "Initial wait time in minutes before polling for backup completion. The module will then actively poll until a backup completes (up to backup_run_poll_timeout_minutes). Set to 0 to start polling immediately."
-  type        = number
-  default     = 5 # Short initial wait, then active polling takes over
+  description = "Initial wait duration before polling for backup completion. Specify with time unit suffix (e.g., '5m', '10m', '1h'). The module will then actively poll until a backup completes (up to backup_run_poll_timeout_minutes). Set to '0s' to start polling immediately."
+  type        = string
+  default     = "5m" # Short initial wait, then active polling takes over
 
   validation {
-    condition     = var.wait_for_backup_completion >= 0
-    error_message = "wait_for_backup_completion must be a non-negative number."
+    condition     = can(regex("^[0-9]+(s|m|h)$", var.wait_for_backup_completion))
+    error_message = "wait_for_backup_completion must be a duration string with unit suffix (e.g., '5m', '10m', '1h')."
   }
 }

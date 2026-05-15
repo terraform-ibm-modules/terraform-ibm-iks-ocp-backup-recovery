@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+# Source common utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/common_utils.sh
+source "${SCRIPT_DIR}/common_utils.sh"
+
 if [ "$#" -lt 9 ]; then
   echo "Usage: $0 URL TENANT ENDPOINT_TYPE INSTANCE_ID SOURCE_PG_ID TARGET_SOURCE_ID SNAPSHOT_ID API_KEY RECOVERY_NAME [BINARIES_PATH]" >&2
   exit 1
@@ -20,35 +25,12 @@ BINARIES_PATH=${10:-/tmp}
 
 export PATH="${PATH}:${BINARIES_PATH}"
 
-get_iam_token() {
-  local iam_endpoint="${IBMCLOUD_IAM_API_ENDPOINT:-iam.cloud.ibm.com}"
-  iam_endpoint=${iam_endpoint#https://}
-
-  if [[ "$iam_endpoint" == "iam.cloud.ibm.com" && "$ENDPOINT_TYPE" == "private" ]]; then
-    iam_endpoint="private.${iam_endpoint}"
-  fi
-
-  local response
-  response=$(curl --retry 3 -s -X POST "https://${iam_endpoint}/identity/token" \
-    --header 'Content-Type: application/x-www-form-urlencoded' \
-    --header 'Accept: application/json' \
-    --data-urlencode 'grant_type=urn:ibm:params:oauth:grant-type:apikey' \
-    --data-urlencode "apikey=${API_KEY}")  # pragma: allowlist secret
-
-  if echo "$response" | jq -e 'has("errorMessage")' > /dev/null; then
-    echo "IAM Error: $(echo "$response" | jq -r '.errorMessage')" >&2
-    exit 1
-  fi
-
-  echo "$response" | jq -r '.access_token'
-}
-
 echo "=== Cross-Cluster Recovery ===" >&2
 echo "Source PG ID: ${SOURCE_PG_ID}" >&2
 echo "Target Source ID: ${TARGET_SOURCE_ID}" >&2
 echo "Snapshot ID: ${SNAPSHOT_ID}" >&2
 
-IAM_TOKEN=$(get_iam_token)
+IAM_TOKEN=$(get_iam_token "${API_KEY}" "${ENDPOINT_TYPE}")
 
 # Create recovery request with correct structure based on UI-generated recovery
 # The key is: kubernetesParams.recoverNamespaceParams.kubernetesTargetParams.recoveryTargetConfig

@@ -74,11 +74,6 @@ output "backup_runs_summary" {
   value       = module.source_backup_recovery.backup_runs_summary
 }
 
-output "recovery_mode" {
-  description = "Current recovery mode"
-  value       = module.source_backup_recovery.recovery_mode
-}
-
 output "source_workload_namespace" {
   description = "Name of the test workload namespace on source cluster"
   value       = local.source_namespace

@@ -98,7 +98,7 @@ locals {
 
 # Only needed for cross-cluster recovery
 data "ibm_container_vpc_cluster" "target_cluster" {
-  count             = var.enable_recovery && var.recovery_type == "cross_cluster" ? 1 : 0
+  count             = var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
   name              = var.target_cluster_id
   resource_group_id = var.target_cluster_resource_group_id
   wait_till         = var.wait_till
@@ -106,19 +106,19 @@ data "ibm_container_vpc_cluster" "target_cluster" {
 }
 
 data "ibm_container_cluster_config" "target_cluster_config" {
-  count             = var.enable_recovery && var.recovery_type == "cross_cluster" ? 1 : 0
+  depends_on = [data.ibm_container_vpc_cluster.target_cluster]
+
+  count             = var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
   cluster_name_id   = var.target_cluster_id
   resource_group_id = var.target_cluster_resource_group_id
   config_dir        = "${path.module}/kubeconfig"
-  endpoint_type     = var.target_cluster_config_endpoint_type != "default" ? var.target_cluster_config_endpoint_type : null
+  endpoint_type     = var.target_cluster_config_endpoint_type == "default" ? null : var.target_cluster_config_endpoint_type
   admin             = true
-
-  depends_on = [data.ibm_container_vpc_cluster.target_cluster]
 }
 
 # Register target cluster with BRS for cross-cluster recovery
 module "target_cluster_registration" {
-  count  = var.enable_recovery && var.recovery_type == "cross_cluster" ? 1 : 0
+  count  = var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
   source = "../.."
 
   providers = {
@@ -174,11 +174,11 @@ module "target_cluster_registration" {
 
 # Wait for target registration to propagate
 resource "time_sleep" "wait_for_target_registration" {
-  count = var.enable_recovery && var.recovery_type == "cross_cluster" ? 1 : 0
+  count = var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
 
   depends_on = [module.target_cluster_registration]
 
-  create_duration = "30s"
+  create_duration = "90s"
 }
 
 ##############################################################################
@@ -248,7 +248,7 @@ locals {
 ##############################################################################
 
 resource "terraform_data" "same_cluster_recovery" {
-  count = var.enable_recovery && var.recovery_type == "same_cluster" ? 1 : 0
+  count = var.enable_recovery && var.recovery_type == "same-cluster" ? 1 : 0
 
   input = {
     url              = "https://${module.protect_cluster.brs_instance_guid}.${local.region}.backup-recovery.cloud.ibm.com"
@@ -291,7 +291,7 @@ resource "terraform_data" "same_cluster_recovery" {
 ##############################################################################
 
 resource "terraform_data" "cross_cluster_recovery" {
-  count = var.enable_recovery && var.recovery_type == "cross_cluster" ? 1 : 0
+  count = var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
 
   input = {
     url              = "https://${module.protect_cluster.brs_instance_guid}.${local.region}.backup-recovery.cloud.ibm.com"

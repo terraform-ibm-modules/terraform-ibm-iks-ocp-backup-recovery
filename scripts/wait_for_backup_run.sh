@@ -1,13 +1,24 @@
 #!/bin/bash
 set -euo pipefail
 
+# Source common utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/common_utils.sh
+source "${SCRIPT_DIR}/common_utils.sh"
+
 # Log script invocation
 echo "=== wait_for_backup_run.sh invoked at $(date) ===" >&2
 echo "Arguments: $#" >&2
 
-if [ "$#" -lt 6 ]; then
-  echo "ERROR: Insufficient arguments (got $#, need at least 6)" >&2
-  echo "Usage: $0 URL TENANT ENDPOINT_TYPE INSTANCE_ID PROTECTION_GROUP_ID API_KEY [TIMEOUT_MINUTES] [POLL_INTERVAL_SECONDS] [BINARIES_PATH]" >&2
+if [ "$#" -lt 5 ]; then
+  echo "ERROR: Insufficient arguments (got $#, need at least 5)" >&2
+  echo "Usage: $0 URL TENANT ENDPOINT_TYPE INSTANCE_ID PROTECTION_GROUP_ID [TIMEOUT_MINUTES] [POLL_INTERVAL_SECONDS] [BINARIES_PATH]" >&2
+  echo "Note: IBMCLOUD_API_KEY must be set as an environment variable" >&2
+  exit 1
+fi
+
+if [ -z "${IBMCLOUD_API_KEY:-}" ]; then  # pragma: allowlist secret
+  echo "ERROR: IBMCLOUD_API_KEY environment variable is not set" >&2
   exit 1
 fi
 
@@ -17,10 +28,10 @@ ENDPOINT_TYPE=$3
 # shellcheck disable=SC2034  # Used in API URL construction
 INSTANCE_ID=$4
 PROTECTION_GROUP_ID=$5
-API_KEY=$6
-TIMEOUT_MINUTES=${7:-45}
-POLL_INTERVAL_SECONDS=${8:-30}
-BINARIES_PATH=${9:-/tmp}
+API_KEY="${IBMCLOUD_API_KEY}"
+TIMEOUT_MINUTES=${6:-45}
+POLL_INTERVAL_SECONDS=${7:-30}
+BINARIES_PATH=${8:-/tmp}
 
 export PATH="${PATH}:${BINARIES_PATH}"
 
@@ -54,29 +65,6 @@ call_api() {
   fi
 
   echo "$body"
-}
-
-get_iam_token() {
-  local iam_endpoint="${IBMCLOUD_IAM_API_ENDPOINT:-iam.cloud.ibm.com}"
-  iam_endpoint=${iam_endpoint#https://}
-
-  if [[ "$iam_endpoint" == "iam.cloud.ibm.com" && "$ENDPOINT_TYPE" == "private" ]]; then
-    iam_endpoint="private.${iam_endpoint}"
-  fi
-
-  local response
-  response=$(curl --retry 3 -s -X POST "https://${iam_endpoint}/identity/token" \
-    --header 'Content-Type: application/x-www-form-urlencoded' \
-    --header 'Accept: application/json' \
-    --data-urlencode 'grant_type=urn:ibm:params:oauth:grant-type:apikey' \
-    --data-urlencode "apikey=${API_KEY}")  # pragma: allowlist secret
-
-  if echo "$response" | jq -e 'has("errorMessage")' > /dev/null; then
-    echo "IAM Error: $(echo "$response" | jq -r '.errorMessage')" >&2
-    exit 1
-  fi
-
-  echo "$response" | jq -r '.access_token'
 }
 
 latest_snapshot_id() {
@@ -124,9 +112,9 @@ latest_run_id() {
 main() {
   local debug_file="/tmp/backup_poll_debug_${PROTECTION_GROUP_ID##*:}.log"
 
-  # Create debug file immediately and make it writable
+  # Create debug file immediately and make it writable (owner only for security)
   touch "$debug_file" 2>/dev/null || debug_file="/tmp/backup_poll_debug_$$.log"
-  chmod 666 "$debug_file" 2>/dev/null || true
+  chmod 600 "$debug_file" 2>/dev/null || true
 
   echo "=== Script started at $(date) ===" | tee -a "$debug_file" >&2
   echo "Protection Group ID (full): ${PROTECTION_GROUP_ID}" | tee -a "$debug_file" >&2
@@ -141,7 +129,7 @@ main() {
   echo "Debug log: ${debug_file}" | tee -a "$debug_file" >&2
 
   echo "Getting IAM token..." | tee -a "$debug_file" >&2
-  IAM_TOKEN=$(get_iam_token)
+  IAM_TOKEN=$(get_iam_token "${API_KEY}" "${ENDPOINT_TYPE}")
   export IAM_TOKEN
   echo "IAM token obtained" | tee -a "$debug_file" >&2
 

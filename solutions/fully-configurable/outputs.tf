@@ -43,13 +43,8 @@ output "protection_group_ids" {
 # Recovery Outputs (when enabled)
 ##############################################################################
 
-output "recovery_enabled" {
-  description = "Whether recovery is enabled"
-  value       = var.enable_recovery
-}
-
 output "recovery_type" {
-  description = "Type of recovery configured (same_cluster or cross_cluster)"
+  description = "Type of recovery configured (`same-cluster` or `cross-cluster`)"
   value       = var.enable_recovery ? var.recovery_type : null
 }
 
@@ -72,19 +67,19 @@ output "recovery_namespace_prefix" {
 # Cross-Cluster Recovery Outputs
 output "target_cluster_registration_id" {
   description = "Registration ID of the target cluster (cross-cluster recovery only)"
-  value       = var.enable_recovery && var.recovery_type == "cross_cluster" ? module.target_cluster_registration[0].source_registration_id : null
+  value       = var.enable_recovery && var.recovery_type == "cross-cluster" ? module.target_cluster_registration[0].source_registration_id : null
 }
 
 output "target_cluster_connection_id" {
   description = "Connection ID for the target cluster (cross-cluster recovery only)"
-  value       = var.enable_recovery && var.recovery_type == "cross_cluster" ? module.target_cluster_registration[0].connection_id : null
+  value       = var.enable_recovery && var.recovery_type == "cross-cluster" ? module.target_cluster_registration[0].connection_id : null
   sensitive   = true
 }
 
 output "recovery_status" {
   description = "Status message about recovery configuration"
   value = var.enable_recovery ? (
-    var.recovery_type == "same_cluster" ?
+    var.recovery_type == "same-cluster" ?
     "Same-cluster recovery enabled. Namespaces will be restored with prefix '${var.recovery_namespace_prefix}' to the source cluster." :
     "Cross-cluster recovery enabled. Namespaces will be restored with prefix '${var.recovery_namespace_prefix}' to target cluster '${var.target_cluster_id}'."
   ) : "Recovery is disabled. Set 'enable_recovery = true' to enable automatic recovery testing."

@@ -43,12 +43,12 @@ output "protection_sources" {
 }
 
 output "recovery_ids" {
-  description = "Map of recovery operation names to their IDs. Empty if enable_recovery is false."
+  description = "Map of recovery operation names to their IDs. Empty if `var.enable_recovery` is `false`."
   value       = { for k, v in ibm_backup_recovery.recover_snapshot : k => v.id }
 }
 
 output "recovery_status" {
-  description = "Map of recovery operation names to their status information. Empty if enable_recovery is false."
+  description = "Map of recovery operation names to their status information. Empty if `var.enable_recovery` is `false`."
   value = {
     for k, v in ibm_backup_recovery.recover_snapshot : k => {
       id     = v.id
@@ -59,22 +59,17 @@ output "recovery_status" {
 }
 
 output "latest_snapshots" {
-  description = "Map of protection group names to their latest snapshot IDs. Used for automatic recovery. Empty if enable_recovery is false."
+  description = "Map of protection group names to their latest snapshot IDs. Used for automatic recovery. Empty if `var.enable_recovery` is `false`."
   value       = local.latest_snapshots
 }
 
-output "recovery_mode" {
-  description = "Current recovery mode: 'same-cluster' or 'cross-cluster'"
-  value       = var.recovery_mode
-}
-
 output "target_cluster_id" {
-  description = "Target cluster ID for recovery operations. Same as source cluster for same-cluster mode."
+  description = "Target cluster ID for recovery operations. Same as source cluster for `same-cluster` recovery mode."
   value       = local.target_cluster_id
 }
 
 output "backup_runs_summary" {
-  description = "Summary of backup runs per protection group. Shows run count and latest run status. Empty if enable_recovery is false."
+  description = "Summary of backup runs per protection group. Shows run count and latest run status. Empty if `var.enable_recovery` is `false`."
   value = {
     for pg_name, runs in data.ibm_backup_recovery_protection_group_runs.backup_runs : pg_name => {
       total_runs          = length(try(runs.runs, []))
