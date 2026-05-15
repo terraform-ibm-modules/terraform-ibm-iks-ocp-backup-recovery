@@ -377,7 +377,7 @@ module "source_backup_recovery" {
     # This approach doesn't require querying protection sources first
     objects = []
     include_params = {
-      label_combination_method = "kAnd"
+      label_combination_method = "AND"
       label_vector = [{
         key   = "backup-enabled"
         value = "true"
