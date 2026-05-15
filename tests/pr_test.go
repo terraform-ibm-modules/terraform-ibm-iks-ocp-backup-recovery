@@ -317,9 +317,14 @@ func TestRunCrossClusterExample(t *testing.T) {
 		"module.target_backup_recovery.ibm_backup_recovery_source_registration.source_registration",
 		"ibm_container_vpc_cluster.source_cluster[0]",
 		"ibm_container_vpc_cluster.target_cluster[0]",
-		"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-		"module.target_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
 	})
+
+	options.IgnoreDestroys = testhelper.Exemptions{
+		List: []string{
+			"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
+			"module.target_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
+		},
+	}
 
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
