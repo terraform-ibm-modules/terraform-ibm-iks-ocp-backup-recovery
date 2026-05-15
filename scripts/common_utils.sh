@@ -28,4 +28,3 @@ get_iam_token() {
 
   echo "$response" | jq -r '.access_token'
 }
-
