@@ -343,14 +343,14 @@ module "source_backup_recovery" {
   region                    = var.region
   connection_env_type       = "kIksVpc"
 
-  # Backup policy - 30-minute backup schedule
+  # Backup policy - 240-minute backup schedule
   policies = [{
     name              = "${var.prefix}-continuous-backup"
     create_new_policy = true
     schedule = {
       unit = "Minutes"
       minute_schedule = {
-        frequency = 30 # Backup every 30 minutes
+        frequency = 240 # Backup every 240 minutes
       }
     }
     retention = {
