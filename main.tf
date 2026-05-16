@@ -773,6 +773,39 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
 }
 
 ##############################################################################
+# Cancel running backup jobs before protection group deletion
+##############################################################################
+
+# Cancels any active backup run on each protection group during destroy.
+# Must depend on the protection group so Terraform destroys this resource first,
+# running the cancel provisioner before the provider attempts to delete the group.
+resource "terraform_data" "cancel_pg_runs" {
+  for_each = { for pg in var.protection_groups : pg.name => pg }
+
+  input = {
+    url                 = local.backup_recovery_instance_url
+    tenant              = local.brs_tenant_id
+    endpoint_type       = var.brs_endpoint_type
+    protection_group_id = ibm_backup_recovery_protection_group.protection_group[each.key].id
+  }
+
+  triggers_replace = {
+    api_key = sensitive(var.ibmcloud_api_key)
+  }
+
+  provisioner "local-exec" {
+    when        = destroy
+    command     = "${path.module}/scripts/cancel_pg_runs.sh 'https://${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.protection_group_id}'"
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      API_KEY = self.triggers_replace.api_key
+    }
+  }
+
+  depends_on = [ibm_backup_recovery_protection_group.protection_group]
+}
+
+##############################################################################
 # Tag cluster with BRS instance information
 ##############################################################################
 
