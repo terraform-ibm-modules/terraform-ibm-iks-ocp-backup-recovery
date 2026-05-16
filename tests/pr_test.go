@@ -321,6 +321,10 @@ func TestRunCrossClusterExample(t *testing.T) {
 		"ibm_container_vpc_cluster.target_cluster[0]",
 	})
 
+	options.IgnoreUpdates.List = append(options.IgnoreUpdates.List,
+		fmt.Sprintf(`module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-continuous-backup"]`, options.Prefix),
+	)
+
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
 	assert.NotNil(t, output, "Expected some output")
