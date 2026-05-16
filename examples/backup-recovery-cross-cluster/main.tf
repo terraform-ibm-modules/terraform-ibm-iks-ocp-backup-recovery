@@ -443,7 +443,6 @@ module "target_backup_recovery" {
   access_tags   = var.access_tags
 
   depends_on = [
-    module.source_backup_recovery,
     time_sleep.wait_clusters
   ]
 }
