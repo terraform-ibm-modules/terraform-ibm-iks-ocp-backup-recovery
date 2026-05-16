@@ -372,19 +372,17 @@ module "source_backup_recovery" {
     non_snapshot_backup   = false # Use snapshot-based backups
     volume_backup_failure = false # Don't fail entire backup if volume fails
 
-    # Use label-based selection to avoid needing object IDs
-    # The namespace was labeled with "backup-enabled=true" during creation
-    # This approach doesn't require querying protection sources first
-    objects = []
-    include_params = {
-      label_combination_method = "AND"
-      label_vector = [{
-        key   = "backup-enabled"
-        value = "true"
-      }]
-      selected_resources = null
-    }
-    exclude_params = null
+    objects = [{
+      name = local.source_namespace
+
+      # Backup configuration
+      backup_only_pvc             = false # Backup entire namespace, not just PVCs
+      fail_backup_on_hook_failure = false # Continue backup even if hooks fail
+
+      # No exclusions needed - deployment-based workload is safe to restore
+      exclude_params = null
+      include_params = null
+    }]
   }]
 
   # Disable recovery in source module - will be handled separately
