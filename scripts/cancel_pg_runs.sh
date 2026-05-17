@@ -59,6 +59,14 @@ main() {
   echo "Getting IAM token..."
   IAM_TOKEN=$(get_iam_token "${API_KEY}" "${ENDPOINT_TYPE}") # pragma: allowlist secret
 
+  echo "Pausing protection group ${API_PG_ID} to block new runs..."
+  call_api "POST" "/v2/data-protect/protection-groups/${API_PG_ID}/states" \
+    --data-raw '{"action":"kPause"}' > /dev/null \
+    || echo "Pause request failed or not supported; continuing anyway..."
+
+  echo "Waiting 30s for any in-flight run state to surface..."
+  sleep 30
+
   echo "Checking for active backup runs on protection group: ${API_PG_ID}"
   local run_data
   run_data=$(call_api "GET" "/v2/data-protect/protection-groups/${API_PG_ID}/runs?includeObjectDetails=false" || echo '{"runs":[]}')
