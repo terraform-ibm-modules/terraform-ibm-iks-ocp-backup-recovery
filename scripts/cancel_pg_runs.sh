@@ -71,12 +71,10 @@ cancel_active_runs() {
 
   echo "Total runs returned by API: ${total_runs}" >&2
 
-  # Iterate over ALL runs and cancel any that are not in a terminal state
   for i in $(seq 0 $(( total_runs - 1 ))); do
-    local run_id run_status task_id
+    local run_id run_status
     run_id=$(echo "$run_data" | jq -r ".runs[${i}].id // empty")
     run_status=$(echo "$run_data" | jq -r ".runs[${i}].status // empty")
-    task_id=$(echo "$run_data" | jq -r ".runs[${i}].archivalInfo.archivalTargetResults[0].archivalTaskId // empty")
 
     echo "Run[${i}]: id=${run_id:-<none>}, status=${run_status:-<none>}" >&2
 
@@ -84,25 +82,35 @@ cancel_active_runs() {
       continue
     fi
 
-    if is_terminal "$run_status"; then
-      echo "  -> Terminal status, skipping." >&2
-      continue
+    # Cancel the entire run if it is not in a terminal state
+    if ! is_terminal "$run_status"; then
+      echo "  -> Non-terminal run status '${run_status}'. Sending cancel for run ${run_id}..." >&2
+      active_found=$(( active_found + 1 ))
+      call_api "POST" "/v2/data-protect/protection-groups/${API_PG_ID}/runs/actions" \
+        --data-raw "{\"action\": \"Cancel\", \"cancelParams\": [{\"runId\": \"${run_id}\"}]}" > /dev/null \
+        || echo "  -> Cancel request may have failed, continuing..." >&2
     fi
 
-    # Non-terminal status — treat as active/blocking and cancel
-    echo "  -> Non-terminal status '${run_status}'. Sending cancel for run ${run_id}..." >&2
-    active_found=$(( active_found + 1 ))
+    # Even for terminal runs, copy (archival) tasks may still be active and will
+    # block protection group deletion.  Cancel each non-terminal archival task.
+    local num_archival
+    num_archival=$(echo "$run_data" | jq ".runs[${i}].archivalInfo.archivalTargetResults | length // 0")
 
-    local cancel_payload
-    if [[ -n "$task_id" ]]; then
-      cancel_payload="{\"action\": \"Cancel\", \"cancelParams\": [{\"runId\": \"${run_id}\", \"localTaskId\": \"${task_id}\"}]}"
-    else
-      cancel_payload="{\"action\": \"Cancel\", \"cancelParams\": [{\"runId\": \"${run_id}\"}]}"
-    fi
+    for j in $(seq 0 $(( num_archival - 1 ))); do
+      local archival_status archival_task_id
+      archival_status=$(echo "$run_data" | jq -r ".runs[${i}].archivalInfo.archivalTargetResults[${j}].status // empty")
+      archival_task_id=$(echo "$run_data" | jq -r ".runs[${i}].archivalInfo.archivalTargetResults[${j}].archivalTaskId // empty")
 
-    call_api "POST" "/v2/data-protect/protection-groups/${API_PG_ID}/runs/actions" \
-      --data-raw "$cancel_payload" > /dev/null \
-      || echo "  -> Cancel request may have failed, continuing..." >&2
+      echo "  Copy task[${j}]: status=${archival_status:-<none>}, taskId=${archival_task_id:-<none>}" >&2
+
+      if [[ -n "$archival_status" ]] && ! is_terminal "$archival_status" && [[ -n "$archival_task_id" ]]; then
+        echo "  -> Active copy task '${archival_status}'. Sending cancel for archival task ${archival_task_id}..." >&2
+        active_found=$(( active_found + 1 ))
+        call_api "POST" "/v2/data-protect/protection-groups/${API_PG_ID}/runs/actions" \
+          --data-raw "{\"action\": \"Cancel\", \"cancelParams\": [{\"runId\": \"${run_id}\", \"archivalTaskId\": \"${archival_task_id}\"}]}" > /dev/null \
+          || echo "  -> Archival cancel request may have failed, continuing..." >&2
+      fi
+    done
   done
 
   echo "$active_found"
@@ -122,8 +130,20 @@ has_active_runs() {
       echo "Still active: run[${i}] status=${run_status}" >&2
       return 0  # has active run
     fi
+
+    # Also check whether any copy (archival) tasks are still running
+    local num_archival
+    num_archival=$(echo "$run_data" | jq ".runs[${i}].archivalInfo.archivalTargetResults | length // 0")
+    for j in $(seq 0 $(( num_archival - 1 ))); do
+      local archival_status
+      archival_status=$(echo "$run_data" | jq -r ".runs[${i}].archivalInfo.archivalTargetResults[${j}].status // empty")
+      if [[ -n "$archival_status" ]] && ! is_terminal "$archival_status"; then
+        echo "Still active: run[${i}] copy task[${j}] status=${archival_status}" >&2
+        return 0  # has active copy task
+      fi
+    done
   done
-  return 1  # no active runs
+  return 1  # no active runs or copy tasks
 }
 
 pause_protection_group() {
