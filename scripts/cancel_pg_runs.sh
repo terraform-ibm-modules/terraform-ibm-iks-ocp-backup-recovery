@@ -69,7 +69,7 @@ cancel_active_runs() {
   total_runs=$(echo "$run_data" | jq '.runs | length')
   active_found=0
 
-  echo "Total runs returned by API: ${total_runs}"
+  echo "Total runs returned by API: ${total_runs}" >&2
 
   # Iterate over ALL runs and cancel any that are not in a terminal state
   for i in $(seq 0 $(( total_runs - 1 ))); do
@@ -78,19 +78,19 @@ cancel_active_runs() {
     run_status=$(echo "$run_data" | jq -r ".runs[${i}].status // empty")
     task_id=$(echo "$run_data" | jq -r ".runs[${i}].archivalInfo.archivalTargetResults[0].archivalTaskId // empty")
 
-    echo "Run[${i}]: id=${run_id:-<none>}, status=${run_status:-<none>}"
+    echo "Run[${i}]: id=${run_id:-<none>}, status=${run_status:-<none>}" >&2
 
     if [[ -z "$run_id" ]]; then
       continue
     fi
 
     if is_terminal "$run_status"; then
-      echo "  -> Terminal status, skipping."
+      echo "  -> Terminal status, skipping." >&2
       continue
     fi
 
     # Non-terminal status — treat as active/blocking and cancel
-    echo "  -> Non-terminal status '${run_status}'. Sending cancel for run ${run_id}..."
+    echo "  -> Non-terminal status '${run_status}'. Sending cancel for run ${run_id}..." >&2
     active_found=$(( active_found + 1 ))
 
     local cancel_payload
@@ -102,7 +102,7 @@ cancel_active_runs() {
 
     call_api "POST" "/v2/data-protect/protection-groups/${API_PG_ID}/runs/actions" \
       --data-raw "$cancel_payload" > /dev/null \
-      || echo "  -> Cancel request may have failed, continuing..."
+      || echo "  -> Cancel request may have failed, continuing..." >&2
   done
 
   echo "$active_found"
@@ -119,24 +119,34 @@ has_active_runs() {
     local run_status
     run_status=$(echo "$run_data" | jq -r ".runs[${i}].status // empty")
     if [[ -n "$run_status" ]] && ! is_terminal "$run_status"; then
-      echo "Still active: run[${i}] status=${run_status}"
+      echo "Still active: run[${i}] status=${run_status}" >&2
       return 0  # has active run
     fi
   done
   return 1  # no active runs
 }
 
+pause_protection_group() {
+  local pg_body
+  pg_body=$(call_api "GET" "/v2/data-protect/protection-groups/${API_PG_ID}") || {
+    echo "Could not fetch protection group details; skipping pause..." >&2
+    return 0
+  }
+
+  local paused_body
+  paused_body=$(echo "$pg_body" | jq '.isPaused = true')
+
+  call_api "PUT" "/v2/data-protect/protection-groups/${API_PG_ID}" \
+    --data-raw "$paused_body" > /dev/null \
+    || echo "Pause request failed; continuing anyway..." >&2
+}
+
 main() {
   echo "Getting IAM token..."
   IAM_TOKEN=$(get_iam_token "${API_KEY}" "${ENDPOINT_TYPE}") # pragma: allowlist secret
 
-  # Pause the protection group so BRS won't schedule new runs while the
-  # provider's DELETE call is retrying. Soft-fail: if the endpoint is unsupported
-  # by this BRS version the script continues with the cancel-only path.
   echo "Pausing protection group ${API_PG_ID} to block new runs..."
-  call_api "POST" "/v2/data-protect/protection-groups/${API_PG_ID}/states" \
-    --data-raw '{"action":"kPause"}' > /dev/null \
-    || echo "Pause request failed or not supported; continuing anyway..."
+  pause_protection_group
 
   # Wait briefly so any run BRS had already internally queued (but not yet
   # visible via /runs) has time to surface before we check.

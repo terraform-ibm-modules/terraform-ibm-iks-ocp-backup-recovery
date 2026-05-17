@@ -780,7 +780,7 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
 # Must depend on the protection group so Terraform destroys this resource first,
 # running the cancel provisioner before the provider attempts to delete the group.
 resource "terraform_data" "cancel_pg_runs" {
-  for_each = { for pg in var.protection_groups : pg.name => pg }
+  for_each = var.recovery_mode == "cross-cluster" ? { for pg in var.protection_groups : pg.name => pg } : {}
 
   input = {
     url                 = local.backup_recovery_instance_url
