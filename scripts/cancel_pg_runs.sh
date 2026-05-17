@@ -47,73 +47,126 @@ call_api() {
   echo "$body"
 }
 
-is_running() {
+# Returns 0 (true) if a run status is a known terminal/done state.
+# Anything NOT in this list is treated as active/blocking — this intentionally
+# catches statuses like kScheduled, kInitializing, kPending that BRS may use
+# and that would still block a DELETE even though they look "not running".
+is_terminal() {
   local status=$1
   case "$status" in
-    Running | Accepted | Queued | kRunning | kAccepted | kQueued) return 0 ;;
+    Succeeded | Failed | Canceled | Skipped | Missed | SucceededWithWarning | \
+    kSucceeded | kFailed | kCanceled | kSkipped | kMissed | kSucceededWithWarning)
+      return 0 ;;
     *) return 1 ;;
   esac
+}
+
+cancel_active_runs() {
+  local run_data
+  run_data=$(call_api "GET" "/v2/data-protect/protection-groups/${API_PG_ID}/runs?includeObjectDetails=false&numRuns=10" || echo '{"runs":[]}')
+
+  local total_runs active_found
+  total_runs=$(echo "$run_data" | jq '.runs | length')
+  active_found=0
+
+  echo "Total runs returned by API: ${total_runs}"
+
+  # Iterate over ALL runs and cancel any that are not in a terminal state
+  for i in $(seq 0 $(( total_runs - 1 ))); do
+    local run_id run_status task_id
+    run_id=$(echo "$run_data" | jq -r ".runs[${i}].id // empty")
+    run_status=$(echo "$run_data" | jq -r ".runs[${i}].status // empty")
+    task_id=$(echo "$run_data" | jq -r ".runs[${i}].archivalInfo.archivalTargetResults[0].archivalTaskId // empty")
+
+    echo "Run[${i}]: id=${run_id:-<none>}, status=${run_status:-<none>}"
+
+    if [[ -z "$run_id" ]]; then
+      continue
+    fi
+
+    if is_terminal "$run_status"; then
+      echo "  -> Terminal status, skipping."
+      continue
+    fi
+
+    # Non-terminal status — treat as active/blocking and cancel
+    echo "  -> Non-terminal status '${run_status}'. Sending cancel for run ${run_id}..."
+    active_found=$(( active_found + 1 ))
+
+    local cancel_payload
+    if [[ -n "$task_id" ]]; then
+      cancel_payload="{\"action\": \"Cancel\", \"cancelParams\": [{\"runId\": \"${run_id}\", \"localTaskId\": \"${task_id}\"}]}"
+    else
+      cancel_payload="{\"action\": \"Cancel\", \"cancelParams\": [{\"runId\": \"${run_id}\"}]}"
+    fi
+
+    call_api "POST" "/v2/data-protect/protection-groups/${API_PG_ID}/runs/actions" \
+      --data-raw "$cancel_payload" > /dev/null \
+      || echo "  -> Cancel request may have failed, continuing..."
+  done
+
+  echo "$active_found"
+}
+
+has_active_runs() {
+  local run_data
+  run_data=$(call_api "GET" "/v2/data-protect/protection-groups/${API_PG_ID}/runs?includeObjectDetails=false&numRuns=10" || echo '{"runs":[]}')
+
+  local total_runs
+  total_runs=$(echo "$run_data" | jq '.runs | length')
+
+  for i in $(seq 0 $(( total_runs - 1 ))); do
+    local run_status
+    run_status=$(echo "$run_data" | jq -r ".runs[${i}].status // empty")
+    if [[ -n "$run_status" ]] && ! is_terminal "$run_status"; then
+      echo "Still active: run[${i}] status=${run_status}"
+      return 0  # has active run
+    fi
+  done
+  return 1  # no active runs
 }
 
 main() {
   echo "Getting IAM token..."
   IAM_TOKEN=$(get_iam_token "${API_KEY}" "${ENDPOINT_TYPE}") # pragma: allowlist secret
 
+  # Pause the protection group so BRS won't schedule new runs while the
+  # provider's DELETE call is retrying. Soft-fail: if the endpoint is unsupported
+  # by this BRS version the script continues with the cancel-only path.
   echo "Pausing protection group ${API_PG_ID} to block new runs..."
   call_api "POST" "/v2/data-protect/protection-groups/${API_PG_ID}/states" \
     --data-raw '{"action":"kPause"}' > /dev/null \
     || echo "Pause request failed or not supported; continuing anyway..."
 
-  echo "Waiting 30s for any in-flight run state to surface..."
+  # Wait briefly so any run BRS had already internally queued (but not yet
+  # visible via /runs) has time to surface before we check.
+  echo "Waiting 30s for in-flight run state to surface in API..."
   sleep 30
 
-  echo "Checking for active backup runs on protection group: ${API_PG_ID}"
-  local run_data
-  run_data=$(call_api "GET" "/v2/data-protect/protection-groups/${API_PG_ID}/runs?includeObjectDetails=false" || echo '{"runs":[]}')
+  # Cancel all non-terminal runs
+  echo "Checking for active runs on protection group: ${API_PG_ID}"
+  local active_count
+  active_count=$(cancel_active_runs)
 
-  local run_id run_status task_id
-  run_id=$(echo "$run_data" | jq -r '.runs[0].id // empty')
-  run_status=$(echo "$run_data" | jq -r '.runs[0].status // empty')
-  task_id=$(echo "$run_data" | jq -r '.runs[0].archivalInfo.archivalTargetResults[0].archivalTaskId // empty')
-
-  echo "Latest run: id=${run_id:-<none>}, status=${run_status:-<none>}"
-
-  if [[ -z "$run_id" ]]; then
-    echo "No runs found. Protection group is ready for deletion."
+  if [[ "$active_count" -eq 0 ]]; then
+    echo "No active runs found. Protection group is ready for deletion."
     exit 0
   fi
 
-  if ! is_running "$run_status"; then
-    echo "Latest run status is '${run_status}'. No cancellation needed."
-    exit 0
-  fi
-
-  echo "Active backup run detected (status: ${run_status}). Canceling run ${run_id}..."
-
-  local cancel_payload
-  if [[ -n "$task_id" ]]; then
-    cancel_payload="{\"action\": \"Cancel\", \"cancelParams\": [{\"runId\": \"${run_id}\", \"localTaskId\": \"${task_id}\"}]}"
-  else
-    cancel_payload="{\"action\": \"Cancel\", \"cancelParams\": [{\"runId\": \"${run_id}\"}]}"
-  fi
-
-  call_api "POST" "/v2/data-protect/protection-groups/${API_PG_ID}/runs/actions" \
-    --data-raw "$cancel_payload" > /dev/null || echo "Cancel request may have failed, continuing..."
-
-  echo "Waiting for run to stop..."
+  # Wait for all active runs to reach a terminal state
+  echo "Waiting for ${active_count} active run(s) to stop..."
   local timeout_at
   timeout_at=$(( $(date +%s) + 600 ))
 
   while [[ "$(date +%s)" -lt "$timeout_at" ]]; do
     sleep 15
-    run_data=$(call_api "GET" "/v2/data-protect/protection-groups/${API_PG_ID}/runs?includeObjectDetails=false" || echo '{"runs":[]}')
-    run_status=$(echo "$run_data" | jq -r '.runs[0].status // empty')
-    echo "Current run status: ${run_status:-<unknown>}"
-
-    if ! is_running "${run_status:-unknown}"; then
-      echo "Run ${run_id} stopped (status: ${run_status}). Ready for deletion."
+    echo "Re-checking run states..."
+    if ! has_active_runs; then
+      echo "All runs stopped. Protection group is ready for deletion."
       exit 0
     fi
+    # Re-issue cancel in case a run transitioned to a cancellable state
+    cancel_active_runs > /dev/null
   done
 
   echo "WARNING: Timed out (10 min) waiting for run cancellation. Proceeding anyway." >&2
