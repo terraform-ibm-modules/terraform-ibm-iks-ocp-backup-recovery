@@ -167,7 +167,6 @@ module "target_cluster_registration" {
   access_tags   = var.access_tags
 
   depends_on = [
-    module.protect_cluster,
     data.ibm_container_cluster_config.target_cluster_config
   ]
 }
