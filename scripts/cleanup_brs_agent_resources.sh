@@ -4,21 +4,24 @@
 ##############################################################################
 # BRS agent creates namespaces and ClusterRoleBindings dynamically at runtime
 # that Terraform doesn't manage. This script ensures they are properly deleted.
-#
-# This version is designed for IBM Cloud Schematics where kubeconfig files
-# are not reliable across refresh/destroy phases. It uses stored cluster
-# credentials passed as arguments.
+# It runs after source deregistration so the BRS agent is no longer actively
+# managing these resources when they are removed.
 #
 # Usage:
-#   cleanup_brs_agent_resources_schematics.sh <host> <ca_cert> <client_cert> <client_key>
+#   cleanup_brs_agent_resources.sh <binaries_path>
+#
+# Environment variables:
+#   KUBECONFIG       - Path to kubeconfig file (stored at apply time)
+#   CLUSTER_ID       - IBM Cloud cluster ID (used for IBM Cloud CLI fallback)
+#   IC_API_KEY       - IBM Cloud API key (optional; enables ibmcloud CLI fallback)
+#   IBMCLOUD_API_KEY - IBM Cloud API key alternative name (optional)
 #
 # The script will:
 # 1. Check if kubectl is available
-# 2. Create temporary credential files
-# 3. Verify cluster connectivity
-# 4. Delete all BRS-agent-created namespaces (pattern: brs-backup-agent-*)
-# 5. Delete all BRS-agent-created ClusterRoleBindings (pattern: brs-backup-agent-*)
-# 6. Clean up temporary files
+# 2. Verify cluster connectivity; if it fails and IC_API_KEY/IBMCLOUD_API_KEY
+#    is set, attempt to get a fresh kubeconfig via IBM Cloud CLI (public endpoint)
+# 3. Delete all BRS-agent-created namespaces (pattern: brs-backup-agent-*)
+# 4. Delete all BRS-agent-created ClusterRoleBindings (pattern: brs-backup-agent-*)
 ##############################################################################
 
 set -e
@@ -34,10 +37,36 @@ if ! command -v kubectl >/dev/null 2>&1; then
   exit 0
 fi
 
-# Check cluster connectivity
+# Check cluster connectivity; if it fails, try IBM Cloud CLI fallback.
+# This handles cases where the stored kubeconfig uses a private endpoint that
+# is not reachable from the current execution environment (e.g., CI runners).
 if ! kubectl version --request-timeout=15s >/dev/null 2>&1; then
-  echo "kubectl cannot reach the target cluster; skipping BRS-agent cleanup."
-  exit 0
+  echo "kubectl cannot reach cluster with stored kubeconfig; attempting IBM Cloud CLI fallback..."
+
+  IBMCLOUD_APIKEY="${IC_API_KEY:-${IBMCLOUD_API_KEY:-}}"
+
+  if [ -n "${IBMCLOUD_APIKEY}" ] && [ -n "${CLUSTER_ID:-}" ] && command -v ibmcloud >/dev/null 2>&1; then
+    echo "Logging into IBM Cloud..."
+    if ibmcloud login -a https://cloud.ibm.com --apikey "${IBMCLOUD_APIKEY}" --quiet 2>&1; then
+      echo "Getting fresh kubeconfig for cluster ${CLUSTER_ID} (public endpoint)..."
+      # ibmcloud ks cluster config uses the cluster's default (public) endpoint,
+      # bypassing the private endpoint stored in the original kubeconfig.
+      ibmcloud ks cluster config --cluster "${CLUSTER_ID}" --admin 2>&1 || true
+
+      if kubectl version --request-timeout=15s >/dev/null 2>&1; then
+        echo "Successfully connected to cluster via IBM Cloud CLI."
+      else
+        echo "Still cannot reach cluster after IBM Cloud CLI login; skipping BRS-agent cleanup."
+        exit 0
+      fi
+    else
+      echo "IBM Cloud login failed; skipping BRS-agent cleanup."
+      exit 0
+    fi
+  else
+    echo "kubectl cannot reach the target cluster; skipping BRS-agent cleanup."
+    exit 0
+  fi
 fi
 
 # Delete namespaces by runtime-generated naming pattern

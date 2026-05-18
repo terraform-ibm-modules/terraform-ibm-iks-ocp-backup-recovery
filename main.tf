@@ -374,7 +374,8 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
   depends_on = [
     helm_release.data_source_connector,
     terraform_data.wait_before_helm_destroy,
-    module.backup_recovery_instance
+    module.backup_recovery_instance,
+    terraform_data.cleanup_brs_agent_resources
   ]
 }
 
@@ -883,11 +884,11 @@ resource "terraform_data" "cleanup_brs_agent_resources" {
     command = "${path.module}/scripts/cleanup_brs_agent_resources.sh ${self.triggers_replace.binaries_path}"
     environment = {
       KUBECONFIG = self.triggers_replace.kubeconfig_path
+      CLUSTER_ID = self.triggers_replace.cluster_id
     }
   }
 
   depends_on = [
-    ibm_backup_recovery_source_registration.source_registration,
     helm_release.data_source_connector,
     kubernetes_cluster_role_binding_v1.brsagent_admin
   ]
