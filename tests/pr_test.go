@@ -250,6 +250,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			"module.protect_cluster.time_rotating.token_rotation",
 			"module.protect_cluster.ibm_backup_recovery_connection_registration_token.registration_token",
 			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
+			"module.protect_cluster.terraform_data.cleanup_brs_agent_resources",
 		},
 	}
 
