@@ -390,6 +390,15 @@ resource "terraform_data" "wait_before_helm_destroy" {
     dsc_namespace   = var.dsc_namespace
   }
 
+  # BRS source deregistration is async on the backend. Without this sleep,
+  # DeleteDataSourceConnectionWithContext fails with "can't be deleted as it is
+  # being used by the source" because the connection is still referenced when
+  # helm_release attempts to delete it.
+  provisioner "local-exec" {
+    when    = destroy
+    command = "sleep 180"
+  }
+
   provisioner "local-exec" {
     when    = destroy
     command = "${path.module}/scripts/wait_for_namespace_cleanup.sh '${self.triggers_replace.dsc_namespace}'"
