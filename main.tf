@@ -274,7 +274,7 @@ resource "helm_release" "data_source_connector" {
 
   depends_on = [
     ibm_container_vpc_worker_pool.data_source_connector,
-    kubernetes_namespace_v1.dsc_namespace
+    kubernetes_namespace_v1.dsc_namespace,
   ]
 
   lifecycle {
@@ -374,20 +374,32 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
   depends_on = [
     helm_release.data_source_connector,
     terraform_data.wait_before_helm_destroy,
-    module.backup_recovery_instance,
-    terraform_data.cleanup_brs_agent_resources
+    module.backup_recovery_instance
   ]
 }
 
-# Wait for namespace cleanup during destroy before destroying helm release
-# Uses a script to check for BRS-managed resources rather than a fixed time delay
+# Wait for namespace cleanup during destroy before destroying helm release.
+# Keeps brsagent RBAC and token alive so BRS can use them to clean up
+# brs-backup-agent-* namespaces via the DSC pod after source deregistration.
 resource "terraform_data" "wait_before_helm_destroy" {
-  depends_on = [helm_release.data_source_connector]
+  depends_on = [
+    helm_release.data_source_connector,
+    kubernetes_cluster_role_binding_v1.brsagent_admin,
+    kubernetes_secret_v1.brsagent_token,
+  ]
 
   triggers_replace = {
     helm_release_id = helm_release.data_source_connector.id
     kubeconfig_path = data.ibm_container_cluster_config.cluster_config.config_file_path
     dsc_namespace   = var.dsc_namespace
+  }
+
+  # api_key, cluster_id, and region stored in input (not triggers_replace) so changes
+  # to them do not force replacement of this resource.
+  input = {
+    api_key    = sensitive(var.ibmcloud_api_key)
+    cluster_id = var.cluster_id
+    region     = local.brs_instance_region
   }
 
   # BRS source deregistration is async on the backend. Without this sleep,
@@ -403,7 +415,10 @@ resource "terraform_data" "wait_before_helm_destroy" {
     when    = destroy
     command = "${path.module}/scripts/wait_for_namespace_cleanup.sh '${self.triggers_replace.dsc_namespace}'"
     environment = {
-      KUBECONFIG = self.triggers_replace.kubeconfig_path
+      KUBECONFIG        = self.triggers_replace.kubeconfig_path
+      CLUSTER_ID        = self.input.cluster_id
+      IBMCLOUD_API_KEY  = self.input.api_key
+      IBMCLOUD_REGION   = self.input.region
     }
   }
 }
@@ -870,35 +885,5 @@ resource "ibm_backup_recovery" "recover_snapshot" {
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
     ibm_backup_recovery_source_registration.source_registration
-  ]
-}
-
-
-##############################################################################
-# Cleanup Runtime BRS-agent-created resources during destroy
-##############################################################################
-# BRS agent creates namespaces and CRBs dynamically at runtime that Terraform
-# doesn't manage. This cleanup resource ensures they are deleted during destroy.
-# Cluster credentials are stored in triggers at apply time so they are available
-# at destroy time without dependency on kubeconfig files (required for Schematics).
-resource "terraform_data" "cleanup_brs_agent_resources" {
-  triggers_replace = {
-    cluster_id      = var.cluster_id
-    kubeconfig_path = data.ibm_container_cluster_config.cluster_config.config_file_path
-    binaries_path   = local.binaries_path
-  }
-
-  provisioner "local-exec" {
-    when    = destroy
-    command = "${path.module}/scripts/cleanup_brs_agent_resources.sh ${self.triggers_replace.binaries_path}"
-    environment = {
-      KUBECONFIG = self.triggers_replace.kubeconfig_path
-      CLUSTER_ID = self.triggers_replace.cluster_id
-    }
-  }
-
-  depends_on = [
-    helm_release.data_source_connector,
-    kubernetes_cluster_role_binding_v1.brsagent_admin
   ]
 }
