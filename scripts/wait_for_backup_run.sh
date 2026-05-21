@@ -131,6 +131,9 @@ main() {
   echo "Getting IAM token..." | tee -a "$debug_file" >&2
   IAM_TOKEN=$(get_iam_token "${API_KEY}" "${ENDPOINT_TYPE}")
   export IAM_TOKEN
+  local token_obtained_at
+  token_obtained_at=$(date +%s)
+  local token_refresh_threshold=3300  # Refresh before 60-minute expiry
   echo "IAM token obtained" | tee -a "$debug_file" >&2
 
   local deadline
@@ -139,6 +142,15 @@ main() {
   echo "Entering polling loop..." | tee -a "$debug_file" >&2
 
   while [ "$(date +%s)" -lt "$deadline" ]; do
+    local now
+    now=$(date +%s)
+    if (( now - token_obtained_at >= token_refresh_threshold )); then
+      echo "Refreshing IAM token..." | tee -a "$debug_file" >&2
+      IAM_TOKEN=$(get_iam_token "${API_KEY}" "${ENDPOINT_TYPE}")
+      export IAM_TOKEN
+      token_obtained_at=$(date +%s)
+      echo "IAM token refreshed" | tee -a "$debug_file" >&2
+    fi
     echo "=== Polling at $(date) ===" | tee -a "$debug_file" >&2
     echo "Calling API: GET /v2/data-protect/protection-groups/${api_pg_id}/runs?includeObjectDetails=true" | tee -a "$debug_file" >&2
 

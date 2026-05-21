@@ -224,8 +224,11 @@ resource "terraform_data" "wait_for_backup" {
   }
 
   provisioner "local-exec" {
-    command     = "${path.module}/../../scripts/wait_for_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' '${self.input.protection_group_id}' '${self.input.api_key}' '${self.input.timeout_minutes}' '${self.input.poll_interval_seconds}' '${self.input.binaries_path}' > /tmp/backup_snapshot_${self.input.instance_id}.json"
+    command     = "${path.module}/../../scripts/wait_for_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' '${self.input.protection_group_id}' '${self.input.timeout_minutes}' '${self.input.poll_interval_seconds}' '${self.input.binaries_path}' > /tmp/backup_snapshot_${self.input.instance_id}.json"
     interpreter = ["/bin/bash", "-c"]
+    environment = {
+      IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
+    }
   }
 }
 
@@ -273,10 +276,13 @@ resource "terraform_data" "same_cluster_recovery" {
         '${self.input.source_pg_id}' \
         '${self.input.target_source_id}' \
         '${self.input.snapshot_id}' \
-        '${self.input.api_key}' \
         '${self.input.recovery_name}' \
+        '${self.input.namespace_prefix}' \
         '${self.input.binaries_path}'
     EOT
+    environment = {
+      IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
+    }
   }
 
   depends_on = [
@@ -316,10 +322,13 @@ resource "terraform_data" "cross_cluster_recovery" {
         '${self.input.source_pg_id}' \
         '${self.input.target_source_id}' \
         '${self.input.snapshot_id}' \
-        '${self.input.api_key}' \
         '${self.input.recovery_name}' \
+        '${self.input.namespace_prefix}' \
         '${self.input.binaries_path}'
     EOT
+    environment = {
+      IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
+    }
   }
 
   depends_on = [

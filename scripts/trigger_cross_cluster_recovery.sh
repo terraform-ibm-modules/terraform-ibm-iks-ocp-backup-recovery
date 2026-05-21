@@ -6,8 +6,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/common_utils.sh
 source "${SCRIPT_DIR}/common_utils.sh"
 
-if [ "$#" -lt 9 ]; then
-  echo "Usage: $0 URL TENANT ENDPOINT_TYPE INSTANCE_ID SOURCE_PG_ID TARGET_SOURCE_ID SNAPSHOT_ID API_KEY RECOVERY_NAME [BINARIES_PATH]" >&2
+if [ "$#" -lt 8 ]; then
+  echo "Usage: $0 URL TENANT ENDPOINT_TYPE INSTANCE_ID SOURCE_PG_ID TARGET_SOURCE_ID SNAPSHOT_ID RECOVERY_NAME [NAMESPACE_PREFIX] [BINARIES_PATH]" >&2
+  echo "Note: IBMCLOUD_API_KEY must be set as an environment variable" >&2
+  exit 1
+fi
+
+if [ -z "${IBMCLOUD_API_KEY:-}" ]; then  # pragma: allowlist secret
+  echo "ERROR: IBMCLOUD_API_KEY environment variable is not set" >&2
   exit 1
 fi
 
@@ -19,8 +25,8 @@ INSTANCE_ID=$4
 SOURCE_PG_ID=$5
 TARGET_SOURCE_ID=$6
 SNAPSHOT_ID=$7
-API_KEY=$8
-RECOVERY_NAME=$9
+RECOVERY_NAME=$8
+NAMESPACE_PREFIX=${9:-restored-}
 BINARIES_PATH=${10:-/tmp}
 
 export PATH="${PATH}:${BINARIES_PATH}"
@@ -30,7 +36,7 @@ echo "Source PG ID: ${SOURCE_PG_ID}" >&2
 echo "Target Source ID: ${TARGET_SOURCE_ID}" >&2
 echo "Snapshot ID: ${SNAPSHOT_ID}" >&2
 
-IAM_TOKEN=$(get_iam_token "${API_KEY}" "${ENDPOINT_TYPE}")
+IAM_TOKEN=$(get_iam_token "${IBMCLOUD_API_KEY}" "${ENDPOINT_TYPE}")
 
 # Create recovery request with correct structure based on UI-generated recovery
 # The key is: kubernetesParams.recoverNamespaceParams.kubernetesTargetParams.recoveryTargetConfig
@@ -60,7 +66,7 @@ RECOVERY_PAYLOAD=$(cat <<PAYLOAD
           }
         },
         "renameRecoveredNamespacesParams": {
-          "prefix": "restored-"
+          "prefix": "${NAMESPACE_PREFIX}"
         }
       }
     }
@@ -70,9 +76,6 @@ PAYLOAD
 )
 
 echo "Triggering recovery to target cluster..." >&2
-echo "DEBUG: Payload being sent:" >&2
-echo "$RECOVERY_PAYLOAD" | jq '.' >&2
-echo "" >&2
 
 response=$(curl --retry 3 -s -w "\n%{http_code}" -X POST "${URL}/v2/data-protect/recoveries" \
   -H "Authorization: Bearer ${IAM_TOKEN}" \
