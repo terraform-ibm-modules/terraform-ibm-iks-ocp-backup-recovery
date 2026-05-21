@@ -1,11 +1,25 @@
+locals {
+  # --- Environment type detection ---
+  is_vpc     = length(regexall("Vpc$", var.connection_env_type)) > 0
+  is_classic = length(regexall("Classic$", var.connection_env_type)) > 0
+}
 # Retrieve information about an existing VPC cluster
 data "ibm_container_vpc_cluster" "vpc_cluster" {
+  count             = local.is_vpc ? 1 : 0
   name              = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
   wait_till         = var.wait_till
   wait_till_timeout = var.wait_till_timeout
 }
 
+# Retrieve information about an existing Classic cluster
+data "ibm_container_cluster" "classic_cluster" {
+  count             = local.is_classic ? 1 : 0
+  name              = var.cluster_id
+  resource_group_id = var.cluster_resource_group_id
+  wait_till         = var.wait_till
+  wait_till_timeout = var.wait_till_timeout
+}
 data "ibm_container_cluster_config" "cluster_config" {
   cluster_name_id   = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
@@ -16,7 +30,8 @@ data "ibm_container_cluster_config" "cluster_config" {
   # Wait for cluster to be ready before fetching config
   # This prevents timeouts when cluster is still provisioning
   depends_on = [
-    data.ibm_container_vpc_cluster.vpc_cluster
+    data.ibm_container_vpc_cluster.vpc_cluster,
+    data.ibm_container_cluster.classic_cluster
   ]
 }
 
