@@ -415,10 +415,10 @@ resource "terraform_data" "wait_before_helm_destroy" {
     when    = destroy
     command = "${path.module}/scripts/wait_for_namespace_cleanup.sh '${self.triggers_replace.dsc_namespace}'"
     environment = {
-      KUBECONFIG        = self.triggers_replace.kubeconfig_path
-      CLUSTER_ID        = self.input.cluster_id
-      IBMCLOUD_API_KEY  = self.input.api_key
-      IBMCLOUD_REGION   = self.input.region
+      KUBECONFIG       = self.triggers_replace.kubeconfig_path
+      CLUSTER_ID       = self.input.cluster_id
+      IBMCLOUD_API_KEY = self.input.api_key
+      IBMCLOUD_REGION  = self.input.region
     }
   }
 }
