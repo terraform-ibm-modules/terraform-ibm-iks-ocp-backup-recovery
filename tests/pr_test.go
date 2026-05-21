@@ -243,6 +243,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration",
 			"module.protect_cluster.kubernetes_cluster_role_binding_v1.brsagent_admin",
 			"module.protect_cluster.kubernetes_namespace_v1.dsc_namespace",
+			"module.protect_cluster.time_sleep.wait_for_source_discovery",
 		},
 	}
 	options.IgnoreDestroys = testhelper.Exemptions{
