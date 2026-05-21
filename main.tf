@@ -409,7 +409,7 @@ resource "time_sleep" "wait_for_source_discovery" {
     dsc_version   = var.dsc_image_version
   }
 
-  create_duration = "5m"
+  create_duration = "10m"
 }
 
 data "ibm_backup_recovery_protection_sources" "sources" {
