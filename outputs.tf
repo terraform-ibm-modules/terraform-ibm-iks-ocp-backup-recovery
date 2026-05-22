@@ -12,11 +12,6 @@ output "brs_instance_crn" {
   value       = module.backup_recovery_instance.brs_instance_crn
 }
 
-output "brs_instance_name" {
-  description = "Name of the Backup & Recovery Service instance"
-  value       = var.brs_instance_name
-}
-
 output "brs_instance_guid" {
   description = "GUID of the Backup & Recovery Service instance"
   value       = local.brs_instance_guid
