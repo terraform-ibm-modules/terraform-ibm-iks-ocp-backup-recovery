@@ -11,7 +11,7 @@ variable "ibmcloud_api_key" {
 variable "prefix" {
   description = "Prefix for naming resources"
   type        = string
-  default     = "backup-recovery-test"
+  default     = "bkp-rcv"
 }
 
 variable "region" {
@@ -62,11 +62,6 @@ variable "existing_brs_instance_crn" {
   description = "CRN of existing Backup & Recovery Service instance. If null, a new instance will be created."
   type        = string
   default     = null
-
-  validation {
-    condition     = var.existing_brs_instance_crn == null || can(regex("^crn:v1:[a-z0-9-]+:[a-z0-9-]*:[a-z0-9-]+:[a-z0-9-]*:a/[a-f0-9]+:[a-f0-9-]+::$", var.existing_brs_instance_crn))
-    error_message = "'existing_brs_instance_crn' must be a valid CRN or null."
-  }
 }
 
 ##############################################################################
