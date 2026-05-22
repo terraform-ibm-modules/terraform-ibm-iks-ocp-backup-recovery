@@ -782,15 +782,17 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
 resource "terraform_data" "cancel_pg_runs" {
   for_each = var.recovery_mode == "cross-cluster" ? { for pg in var.protection_groups : pg.name => pg } : {}
 
-  triggers_replace = {
-    api_key = sensitive(var.ibmcloud_api_key)
-  }
+  depends_on = [ibm_backup_recovery_protection_group.protection_group]
 
   input = {
     url                 = local.backup_recovery_instance_url
     tenant              = local.brs_tenant_id
     endpoint_type       = var.brs_endpoint_type
     protection_group_id = ibm_backup_recovery_protection_group.protection_group[each.key].id
+  }
+
+  triggers_replace = {
+    api_key = sensitive(var.ibmcloud_api_key)
   }
 
   provisioner "local-exec" {
@@ -801,8 +803,6 @@ resource "terraform_data" "cancel_pg_runs" {
       API_KEY = self.triggers_replace.api_key
     }
   }
-
-  depends_on = [ibm_backup_recovery_protection_group.protection_group]
 }
 
 ##############################################################################
