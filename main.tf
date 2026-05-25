@@ -373,9 +373,20 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
 
   depends_on = [
     helm_release.data_source_connector,
-    terraform_data.wait_before_helm_destroy,
-    module.backup_recovery_instance
+    time_sleep.brs_source_deregistration_wait,
+    module.backup_recovery_instance,
   ]
+}
+
+# BRS source deregistration is async on the backend. Without this sleep,
+# DeleteDataSourceConnectionWithContext fails with "can't be deleted as it is
+# being used by the source" because the connection is still referenced when
+# helm_release attempts to delete it.
+# destroy_duration fires between source_registration destruction and the
+# namespace wait, giving BRS time to process the async deregistration.
+resource "time_sleep" "brs_source_deregistration_wait" {
+  depends_on       = [terraform_data.wait_before_helm_destroy]
+  destroy_duration = "180s"
 }
 
 # Wait for namespace cleanup during destroy before destroying helm release.
@@ -394,31 +405,11 @@ resource "terraform_data" "wait_before_helm_destroy" {
     dsc_namespace   = var.dsc_namespace
   }
 
-  # api_key, cluster_id, and region stored in input (not triggers_replace) so changes
-  # to them do not force replacement of this resource.
-  input = {
-    api_key    = sensitive(var.ibmcloud_api_key)
-    cluster_id = var.cluster_id
-    region     = local.brs_instance_region
-  }
-
-  # BRS source deregistration is async on the backend. Without this sleep,
-  # DeleteDataSourceConnectionWithContext fails with "can't be deleted as it is
-  # being used by the source" because the connection is still referenced when
-  # helm_release attempts to delete it.
-  provisioner "local-exec" {
-    when    = destroy
-    command = "sleep 180"
-  }
-
   provisioner "local-exec" {
     when    = destroy
     command = "${path.module}/scripts/wait_for_namespace_cleanup.sh '${self.triggers_replace.dsc_namespace}'"
     environment = {
-      KUBECONFIG       = self.triggers_replace.kubeconfig_path
-      CLUSTER_ID       = try(self.input.cluster_id, "")
-      IBMCLOUD_API_KEY = try(self.input.api_key, "")
-      IBMCLOUD_REGION  = try(self.input.region, "")
+      KUBECONFIG = self.triggers_replace.kubeconfig_path
     }
   }
 }

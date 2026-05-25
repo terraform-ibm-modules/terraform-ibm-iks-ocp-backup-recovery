@@ -7,40 +7,26 @@ set -e
 # This script polls until they are gone before allowing helm_release to be destroyed.
 #
 # Usage:
-#   wait_for_namespace_cleanup.sh <dsc_namespace> [max_attempts]
+#   wait_for_namespace_cleanup.sh <dsc_namespace> [max_attempts] [binaries_path]
 #
 # Environment variables:
-#   KUBECONFIG       - Path to kubeconfig file (stored at apply time)
-#   CLUSTER_ID       - IBM Cloud cluster ID (used for IBM Cloud CLI fallback)
-#   IBMCLOUD_API_KEY - IBM Cloud API key (enables ibmcloud CLI fallback)
-#   IBMCLOUD_REGION  - IBM Cloud region for non-interactive login (avoids region prompt)
+#   KUBECONFIG - Path to kubeconfig file created by the terraform provider
 
 DSC_NAMESPACE="${1:-ibm-brs-data-source-connector}"
 MAX_ATTEMPTS="${2:-20}"
 SLEEP_DURATION=30
 
-# The binaries downloaded by install-binaries are in /tmp
-export PATH=$PATH:/tmp
+# The binaries downloaded by install-binaries are placed in binaries_path (default: /tmp)
+export PATH=$PATH:${3:-"/tmp"}
 
 echo "Waiting for BRS-managed resources to be cleaned up..."
 echo "DSC Namespace: $DSC_NAMESPACE"
 echo "Max attempts: $MAX_ATTEMPTS (checking every ${SLEEP_DURATION}s)"
 
-# Establish cluster connectivity: try KUBECONFIG first, fall back to IBM Cloud CLI.
+# Verify cluster connectivity using the kubeconfig created by the terraform provider.
 if ! kubectl version --request-timeout=15s >/dev/null 2>&1; then
-  echo "Stored kubeconfig unreachable; attempting IBM Cloud CLI fallback..."
-  if [ -n "${IBMCLOUD_API_KEY:-}" ] && [ -n "${CLUSTER_ID:-}" ] && command -v ibmcloud >/dev/null 2>&1; then  # pragma: allowlist secret
-    ibmcloud login -a https://cloud.ibm.com --apikey "${IBMCLOUD_API_KEY}" ${IBMCLOUD_REGION:+-r "${IBMCLOUD_REGION}"} --quiet 2>&1
-    ibmcloud ks cluster config --cluster "${CLUSTER_ID}" --admin 2>&1 || true
-    if ! kubectl version --request-timeout=15s >/dev/null 2>&1; then
-      echo "Cannot reach cluster after IBM Cloud CLI login; skipping namespace wait."
-      exit 0
-    fi
-    echo "Connected to cluster via IBM Cloud CLI."
-  else
-    echo "No fallback credentials available; skipping namespace wait."
-    exit 0
-  fi
+  echo "kubectl cannot reach cluster with stored kubeconfig; skipping namespace wait."
+  exit 0
 fi
 
 COUNTER=0
