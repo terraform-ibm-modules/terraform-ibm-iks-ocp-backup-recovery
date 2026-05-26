@@ -203,7 +203,6 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 	}
 	options.IgnoreDestroys = testhelper.Exemptions{
 		List: []string{
-			"module.protect_cluster.terraform_data.cleanup_brs_agent_resources",
 			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 		},
 	}
