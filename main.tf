@@ -59,6 +59,13 @@ resource "terraform_data" "install_dependencies" {
 }
 
 ##############################################################################
+# IAM Auth Token (retrieved from provider credentials)
+##############################################################################
+
+# Retrieves the IAM access token from the IBM Cloud provider configuration.
+data "ibm_iam_auth_token" "iam_token" {}
+
+##############################################################################
 # CRN Parser (for existing BRS instance)
 ##############################################################################
 
@@ -924,6 +931,7 @@ resource "terraform_data" "wait_for_backup_run" {
     interpreter = ["/bin/bash", "-c"]
     environment = {
       IBMCLOUD_API_KEY = self.input.api_key
+      IAM_TOKEN        = data.ibm_iam_auth_token.iam_token.iam_access_token
     }
   }
 }

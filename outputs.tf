@@ -54,7 +54,7 @@ output "recovery_status" {
 }
 
 output "latest_snapshots" {
-  description = "Map of protection group names to their latest snapshot IDs. Used for automatic recovery. Empty if `var.enable_recovery` is `false`."
+  description = "Map of protection group names to the most recent successful snapshot ID per protection group. Populated only when `var.enable_recovery` is `true`, because snapshot discovery relies on the backup-polling infrastructure (`terraform_data.wait_for_backup_run` and `data.ibm_backup_recovery_protection_group_runs`) that is activated by that flag. Use the snapshot IDs from this output as explicit `snapshot_id` values in a recovery's `kubernetes_params.objects` to target a specific backup rather than always recovering the latest."
   value       = local.latest_snapshots
 }
 

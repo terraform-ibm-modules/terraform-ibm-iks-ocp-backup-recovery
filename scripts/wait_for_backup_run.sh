@@ -146,6 +146,7 @@ main() {
     now=$(date +%s)
     if (( now - token_obtained_at >= token_refresh_threshold )); then
       echo "Refreshing IAM token..." | tee -a "$debug_file" >&2
+      unset IAM_TOKEN  # force API key exchange in get_iam_token, not cached env var
       IAM_TOKEN=$(get_iam_token "${API_KEY}" "${ENDPOINT_TYPE}")
       export IAM_TOKEN
       token_obtained_at=$(date +%s)

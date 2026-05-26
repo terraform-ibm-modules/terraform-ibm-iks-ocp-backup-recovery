@@ -915,7 +915,7 @@ variable "wait_for_backup_completion" {
 }
 
 variable "recoveries" {
-  description = "List of recovery operations to restore backups created by protection groups. When enable_recovery is true, these operations will be triggered automatically after backup completion. Supports multiple environments: Kubernetes, VMware, Physical, AWS, Azure, GCP, SQL, Oracle, and more. This variable follows the official IBM Backup Recovery provider schema and can be used across different backup scenarios. For IKS/ROKS recovery, use kubernetes_params. See the Usage section in the README for examples."
+  description = "List of recovery operations to restore backups. When `enable_recovery` is `true`, these operations are triggered automatically after a backup run completes. Each entry's `kubernetes_params.objects[*].snapshot_id` controls which backup is restored: supply an explicit snapshot ID to recover from any specific backup (not necessarily the one taken in the current apply), or use the `latest_snapshots` output to reference the most recent run. Supports multiple environments: Kubernetes, VMware, Physical, AWS, Azure, GCP, SQL, Oracle, and more. This variable follows the official IBM Backup Recovery provider schema. For IKS/ROKS recovery use `kubernetes_params`. See the Usage section in the README for examples."
   type = list(object({
     name                 = string
     snapshot_environment = string # kKubernetes, kVMware, kPhysical, kAWS, kAzure, kGCP, kSQL, kOracle, kView, etc.

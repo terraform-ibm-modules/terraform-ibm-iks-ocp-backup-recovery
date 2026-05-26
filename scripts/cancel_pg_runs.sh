@@ -12,6 +12,11 @@ if [ "$#" -lt 4 ]; then
   exit 1
 fi
 
+if [ -z "${API_KEY:-}" ]; then  # pragma: allowlist secret
+  echo "ERROR: API_KEY environment variable is not set" >&2
+  exit 1
+fi
+
 URL=$1
 TENANT=$2
 ENDPOINT_TYPE=$3
