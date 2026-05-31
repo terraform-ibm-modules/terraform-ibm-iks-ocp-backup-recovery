@@ -23,7 +23,7 @@ data "ibm_container_cluster_config" "cluster_config" {
 module "existing_brs_crn_parser" {
   count   = var.existing_brs_instance_crn != null ? 1 : 0
   source  = "terraform-ibm-modules/common-utilities/ibm//modules/crn-parser"
-  version = "1.5.0"
+  version = "1.6.1"
   crn     = var.existing_brs_instance_crn
 }
 
