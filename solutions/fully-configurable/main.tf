@@ -1,11 +1,25 @@
+locals {
+  # --- Environment type detection ---
+  is_vpc     = length(regexall("Vpc$", var.connection_env_type)) > 0
+  is_classic = length(regexall("Classic$", var.connection_env_type)) > 0
+}
 # Retrieve information about an existing VPC cluster
 data "ibm_container_vpc_cluster" "vpc_cluster" {
+  count             = local.is_vpc ? 1 : 0
   name              = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
   wait_till         = var.wait_till
   wait_till_timeout = var.wait_till_timeout
 }
 
+# Retrieve information about an existing Classic cluster
+data "ibm_container_cluster" "classic_cluster" {
+  count             = local.is_classic ? 1 : 0
+  name              = var.cluster_id
+  resource_group_id = var.cluster_resource_group_id
+  wait_till         = var.wait_till
+  wait_till_timeout = var.wait_till_timeout
+}
 data "ibm_container_cluster_config" "cluster_config" {
   cluster_name_id   = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
@@ -16,7 +30,8 @@ data "ibm_container_cluster_config" "cluster_config" {
   # Wait for cluster to be ready before fetching config
   # This prevents timeouts when cluster is still provisioning
   depends_on = [
-    data.ibm_container_vpc_cluster.vpc_cluster
+    data.ibm_container_vpc_cluster.vpc_cluster,
+    data.ibm_container_cluster.classic_cluster
   ]
 }
 
@@ -54,15 +69,20 @@ module "protect_cluster" {
   wait_till                = var.wait_till
   wait_till_timeout        = var.wait_till_timeout
   # --- Data Source Connector (DSC) ---
-  dsc_chart_uri          = var.dsc_chart_uri
-  dsc_image_version      = var.dsc_image_version
-  dsc_name               = var.dsc_name
-  dsc_replicas           = var.dsc_replicas
-  dsc_namespace          = var.dsc_namespace
-  dsc_helm_timeout       = var.dsc_helm_timeout
-  dsc_storage_class      = var.dsc_storage_class
-  create_dsc_worker_pool = var.create_dsc_worker_pool
-  rollback_on_failure    = var.rollback_on_failure
+  dsc_chart_uri           = var.dsc_chart_uri
+  dsc_image_version       = var.dsc_image_version
+  dsc_name                = var.dsc_name
+  dsc_replicas            = var.dsc_replicas
+  dsc_namespace           = var.dsc_namespace
+  dsc_helm_timeout        = var.dsc_helm_timeout
+  dsc_storage_class       = var.dsc_storage_class
+  create_dsc_worker_pool  = var.create_dsc_worker_pool
+  dsc_worker_pool_flavor  = var.dsc_worker_pool_flavor
+  dsc_pod_cpu_limits      = var.dsc_pod_cpu_limits
+  dsc_pod_memory_limits   = var.dsc_pod_memory_limits
+  dsc_pod_cpu_requests    = var.dsc_pod_cpu_requests
+  dsc_pod_memory_requests = var.dsc_pod_memory_requests
+  rollback_on_failure     = var.rollback_on_failure
   # --- Registration Settings ---
   registration_images = var.registration_images
   enable_auto_protect = var.enable_auto_protect
