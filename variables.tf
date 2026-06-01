@@ -157,9 +157,9 @@ variable "dsc_storage_class" {
 }
 
 variable "create_dsc_worker_pool" {
-  description = "Set to `true` to create a dedicated worker pool for the Data Source Connector in VPC clusters. If set to `false`, the connector will be deployed on existing worker nodes."
+  description = "Set to `true` to create a dedicated worker pool for the Data Source Connector in VPC clusters. If set to `false`, the connector will be deployed on existing worker nodes. NOTE: This feature is currently disabled due to Terraform limitations with dynamic zone discovery."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "dsc_worker_pool_flavor" {
