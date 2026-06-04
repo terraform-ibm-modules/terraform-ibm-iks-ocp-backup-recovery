@@ -272,7 +272,7 @@ resource "terraform_data" "same_cluster_recovery" {
     instance_id      = module.protect_cluster.brs_instance_guid
     source_pg_id     = local.recovery_pg_id
     target_source_id = split("::", module.protect_cluster.source_registration_id)[1]
-    snapshot_id      = local.snapshot_data.snapshot_id
+    snapshot_id      = try(local.snapshot_data.snapshot_id, null)
     api_key          = sensitive(var.ibmcloud_api_key)
     recovery_name    = "recovery-${local.recovery_pg_name}-${formatdate("YYYYMMDD-hhmm", timestamp())}"
     binaries_path    = "/tmp"
@@ -318,7 +318,7 @@ resource "terraform_data" "cross_cluster_recovery" {
     instance_id      = module.protect_cluster.brs_instance_guid
     source_pg_id     = local.recovery_pg_id
     target_source_id = split("::", module.target_cluster_registration[0].source_registration_id)[1]
-    snapshot_id      = local.snapshot_data.snapshot_id
+    snapshot_id      = try(local.snapshot_data.snapshot_id, null)
     api_key          = sensitive(var.ibmcloud_api_key)
     recovery_name    = "cross-cluster-recovery-${local.recovery_pg_name}-${formatdate("YYYYMMDD-hhmm", timestamp())}"
     binaries_path    = "/tmp"
