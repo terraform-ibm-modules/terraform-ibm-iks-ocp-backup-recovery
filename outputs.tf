@@ -78,7 +78,7 @@ output "backup_runs_summary" {
 
 output "brs_instance_url" {
   description = "Endpoint URL for the BRS instance, derived from the IBM Cloud resource extensions. Correct for both staging and production environments."
-  value       = local.backup_recovery_instance_url
+  value       = "https://${local.backup_recovery_instance_url}"
 }
 
 output "brs_tags" {
