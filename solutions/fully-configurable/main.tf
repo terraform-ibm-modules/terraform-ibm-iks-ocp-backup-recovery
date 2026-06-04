@@ -245,7 +245,7 @@ resource "terraform_data" "snapshot_state" {
   # At the apply that creates this resource, wait_for_backup has already written the file.
   # try() guards plan-time evaluation on pods where /tmp does not have the file;
   # ignore_changes ensures the stored state value is authoritative in those cases.
-  input = try(jsondecode(file("/tmp/backup_snapshot_${module.protect_cluster.brs_instance_guid}.json")), {})
+  input = try(jsondecode(file("/tmp/backup_snapshot_${module.protect_cluster.brs_instance_guid}.json")), { snapshot_id = "", run_id = "", protection_group_id = "" })
 
   lifecycle {
     ignore_changes = [input]
