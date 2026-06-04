@@ -232,17 +232,30 @@ resource "terraform_data" "wait_for_backup" {
   }
 }
 
-# Read the snapshot ID from the file created by polling
-data "local_file" "snapshot_info" {
+# Persist snapshot info captured by wait_for_backup into Terraform state.
+# Using a managed resource (not a data source) means this is read from the state file
+# during refresh/destroy — it never touches /tmp, which is ephemeral across Schematics
+# job pods. triggers_replace re-captures the content whenever wait_for_backup is recreated.
+# ignore_changes prevents spurious plan diffs on subsequent applies where /tmp is empty.
+resource "terraform_data" "snapshot_state" {
   count = var.enable_recovery ? 1 : 0
 
-  filename = "/tmp/backup_snapshot_${module.protect_cluster.brs_instance_guid}.json"
+  triggers_replace = terraform_data.wait_for_backup[0].id
+
+  # At the apply that creates this resource, wait_for_backup has already written the file.
+  # try() guards plan-time evaluation on pods where /tmp does not have the file;
+  # ignore_changes ensures the stored state value is authoritative in those cases.
+  input = try(jsondecode(file("/tmp/backup_snapshot_${module.protect_cluster.brs_instance_guid}.json")), {})
+
+  lifecycle {
+    ignore_changes = [input]
+  }
 
   depends_on = [terraform_data.wait_for_backup]
 }
 
 locals {
-  snapshot_data = var.enable_recovery ? jsondecode(data.local_file.snapshot_info[0].content) : null
+  snapshot_data = var.enable_recovery ? terraform_data.snapshot_state[0].output : null
 }
 
 ##############################################################################
@@ -287,7 +300,7 @@ resource "terraform_data" "same_cluster_recovery" {
 
   depends_on = [
     terraform_data.wait_for_backup,
-    data.local_file.snapshot_info
+    terraform_data.snapshot_state
   ]
 }
 
@@ -333,7 +346,7 @@ resource "terraform_data" "cross_cluster_recovery" {
 
   depends_on = [
     terraform_data.wait_for_backup,
-    data.local_file.snapshot_info,
+    terraform_data.snapshot_state,
     module.target_cluster_registration,
     time_sleep.wait_for_target_registration
   ]
