@@ -212,7 +212,7 @@ resource "terraform_data" "wait_for_backup" {
   ]
 
   input = {
-    url                   = "https://${module.protect_cluster.brs_instance_guid}.${local.region}.backup-recovery.cloud.ibm.com"
+    url                   = module.protect_cluster.brs_instance_url
     tenant                = module.protect_cluster.brs_tenant_id
     endpoint_type         = var.brs_endpoint_type
     instance_id           = module.protect_cluster.brs_instance_guid
@@ -253,7 +253,7 @@ resource "terraform_data" "same_cluster_recovery" {
   count = var.enable_recovery && var.recovery_type == "same-cluster" ? 1 : 0
 
   input = {
-    url              = "https://${module.protect_cluster.brs_instance_guid}.${local.region}.backup-recovery.cloud.ibm.com"
+    url              = module.protect_cluster.brs_instance_url
     tenant           = module.protect_cluster.brs_tenant_id
     endpoint_type    = var.brs_endpoint_type
     instance_id      = module.protect_cluster.brs_instance_guid
@@ -299,7 +299,7 @@ resource "terraform_data" "cross_cluster_recovery" {
   count = var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
 
   input = {
-    url              = "https://${module.protect_cluster.brs_instance_guid}.${local.region}.backup-recovery.cloud.ibm.com"
+    url              = module.protect_cluster.brs_instance_url
     tenant           = module.protect_cluster.brs_tenant_id
     endpoint_type    = var.brs_endpoint_type
     instance_id      = module.protect_cluster.brs_instance_guid
