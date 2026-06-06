@@ -106,9 +106,11 @@ locals {
     var.auto_protect_policy_name
   ) : null
 
-  # Extract protection group ID for recovery
+  # Extract protection group ID for recovery.
+  # Keep the full ID returned by the module because downstream resources/scripts
+  # expect the protection group identifier in that format.
   recovery_pg_id = var.enable_recovery && local.recovery_pg_name != null ? (
-    try(split("::", module.protect_cluster.protection_group_ids[local.recovery_pg_name])[1], null)
+    try(module.protect_cluster.protection_group_ids[local.recovery_pg_name], null)
   ) : null
 }
 

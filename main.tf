@@ -537,26 +537,35 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
     exclude_label_ids     = each.value.exclude_label_ids != null ? each.value.exclude_label_ids : []
 
     dynamic "objects" {
-      for_each = each.value.objects != null ? each.value.objects : []
+      for_each = each.value.objects != null ? [
+        for obj in each.value.objects :
+        obj if(obj.id != null || try(local.object_name_to_id[obj.name][0], null) != null)
+      ] : []
       content {
-        id                          = objects.value.id != null ? objects.value.id : try(local.object_name_to_id[objects.value.name][0], null)
+        id                          = objects.value.id != null ? objects.value.id : local.object_name_to_id[objects.value.name][0]
         backup_only_pvc             = objects.value.backup_only_pvc
         fail_backup_on_hook_failure = objects.value.fail_backup_on_hook_failure
         included_resources          = objects.value.included_resources
         excluded_resources          = objects.value.excluded_resources
 
         dynamic "include_pvcs" {
-          for_each = objects.value.include_pvcs != null ? objects.value.include_pvcs : []
+          for_each = objects.value.include_pvcs != null ? [
+            for pvc in objects.value.include_pvcs :
+            pvc if(pvc.id != null || try(local.object_name_to_id[pvc.name][0], null) != null)
+          ] : []
           content {
-            id   = include_pvcs.value.id != null ? include_pvcs.value.id : try(local.object_name_to_id[include_pvcs.value.name][0], null)
+            id   = include_pvcs.value.id != null ? include_pvcs.value.id : local.object_name_to_id[include_pvcs.value.name][0]
             name = include_pvcs.value.name
           }
         }
 
         dynamic "exclude_pvcs" {
-          for_each = objects.value.exclude_pvcs != null ? objects.value.exclude_pvcs : []
+          for_each = objects.value.exclude_pvcs != null ? [
+            for pvc in objects.value.exclude_pvcs :
+            pvc if(pvc.id != null || try(local.object_name_to_id[pvc.name][0], null) != null)
+          ] : []
           content {
-            id   = exclude_pvcs.value.id != null ? exclude_pvcs.value.id : try(local.object_name_to_id[exclude_pvcs.value.name][0], null)
+            id   = exclude_pvcs.value.id != null ? exclude_pvcs.value.id : local.object_name_to_id[exclude_pvcs.value.name][0]
             name = exclude_pvcs.value.name
           }
         }
