@@ -227,6 +227,10 @@ resource "kubernetes_namespace_v1" "dsc_namespace" {
     name = var.dsc_namespace
   }
 
+  timeouts {
+    delete = "10m"
+  }
+
   lifecycle {
     ignore_changes = [
       metadata[0].annotations,
