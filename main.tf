@@ -185,8 +185,9 @@ module "dsc_sg_rule" {
 
 locals {
   # Calculate workers per zone based on total replicas
-  # This uses count instead of for_each to avoid dependency on unknown values
-  num_zones     = local.is_vpc && var.create_dsc_worker_pool ? length(data.ibm_container_vpc_worker_pool.pool[0].zones) : 0
+  # Convert zones set to list for indexing
+  zones_list    = local.is_vpc && var.create_dsc_worker_pool ? [for zone in data.ibm_container_vpc_worker_pool.pool[0].zones : zone] : []
+  num_zones     = length(local.zones_list)
   base_workers  = local.num_zones > 0 ? floor(var.dsc_replicas / local.num_zones) : 0
   extra_workers = local.num_zones > 0 ? var.dsc_replicas % local.num_zones : 0
 }
@@ -202,8 +203,8 @@ resource "ibm_container_vpc_worker_pool" "data_source_connector" {
   resource_group_id = var.cluster_resource_group_id
 
   zones {
-    name      = data.ibm_container_vpc_worker_pool.pool[0].zones[count.index].name
-    subnet_id = data.ibm_container_vpc_worker_pool.pool[0].zones[count.index].subnet_id
+    name      = local.zones_list[count.index].name
+    subnet_id = local.zones_list[count.index].subnet_id
   }
 
   labels = {
@@ -840,7 +841,7 @@ resource "terraform_data" "cancel_pg_runs" {
 
   provisioner "local-exec" {
     when        = destroy
-    command     = "${path.module}/scripts/cancel_pg_runs.sh 'https://${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.protection_group_id}'"
+    command     = "${path.module}/scripts/cancel_pg_runs.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.protection_group_id}'"
     interpreter = ["/bin/bash", "-c"]
     environment = {
       API_KEY = self.triggers_replace.api_key
@@ -890,7 +891,7 @@ resource "terraform_data" "delete_auto_protect_pg" {
 
   provisioner "local-exec" {
     when        = destroy
-    command     = "${path.module}/scripts/delete_auto_protect_pg.sh https://${self.input.url} ${self.input.tenant} ${self.input.endpoint_type} ${self.input.protection_group_id} ${self.input.registration_id}"
+    command     = "${path.module}/scripts/delete_auto_protect_pg.sh ${self.input.url} ${self.input.tenant} ${self.input.endpoint_type} ${self.input.protection_group_id} ${self.input.registration_id}"
     interpreter = ["/bin/bash", "-c"]
     environment = {
       API_KEY = self.triggers_replace.api_key
