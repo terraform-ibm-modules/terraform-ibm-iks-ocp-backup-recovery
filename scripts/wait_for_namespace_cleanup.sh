@@ -39,7 +39,13 @@ while [[ $COUNTER -lt $MAX_ATTEMPTS ]]; do
   PROTECTED_NS=$(kubectl get namespaces -l cohesity.com/backup-enabled=true --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo "0")
   BRS_AGENT_NS=$(kubectl get namespaces --no-headers 2>/dev/null | awk '{print $1}' | grep -c '^brs-backup-agent-' || echo "0")
 
-  TOTAL=$((${VELERO_BACKUPS:-0} + ${VELERO_RESTORES:-0} + ${PROTECTED_NS:-0} + ${BRS_AGENT_NS:-0}))
+  # Ensure variables are valid integers before arithmetic
+  VELERO_BACKUPS=${VELERO_BACKUPS:-0}
+  VELERO_RESTORES=${VELERO_RESTORES:-0}
+  PROTECTED_NS=${PROTECTED_NS:-0}
+  BRS_AGENT_NS=${BRS_AGENT_NS:-0}
+
+  TOTAL=$((VELERO_BACKUPS + VELERO_RESTORES + PROTECTED_NS + BRS_AGENT_NS))
 
   if [ "$TOTAL" -eq 0 ]; then
     echo "All BRS-managed resources cleaned up."
