@@ -185,9 +185,10 @@ module "dsc_sg_rule" {
 
 locals {
   # Calculate workers per zone based on total replicas
-  # Convert zones set to list for indexing
+  # Get number of zones from the first worker pool in cluster data (available at plan time)
+  num_zones = local.is_vpc && var.create_dsc_worker_pool ? length(data.ibm_container_vpc_cluster.vpc_cluster[0].worker_pools[0].zones) : 0
+  # Convert zones set to list for indexing (only used after apply)
   zones_list    = local.is_vpc && var.create_dsc_worker_pool ? [for zone in data.ibm_container_vpc_worker_pool.pool[0].zones : zone] : []
-  num_zones     = length(local.zones_list)
   base_workers  = local.num_zones > 0 ? floor(var.dsc_replicas / local.num_zones) : 0
   extra_workers = local.num_zones > 0 ? var.dsc_replicas % local.num_zones : 0
 }
