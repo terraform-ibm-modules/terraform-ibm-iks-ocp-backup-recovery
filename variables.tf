@@ -162,6 +162,17 @@ variable "create_dsc_worker_pool" {
   default     = true
 }
 
+variable "dsc_worker_pool_zones" {
+  description = "Number of zones to create worker pools in. Defaults to 1 for single-zone deployments. Set to 2 or 3 for multi-zone high availability. Must be between 1 and 3."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.dsc_worker_pool_zones >= 1 && var.dsc_worker_pool_zones <= 3
+    error_message = "dsc_worker_pool_zones must be between 1 and 3."
+  }
+}
+
 variable "dsc_worker_pool_flavor" {
   description = "The machine flavor for the Data Source Connector worker pool. This determines the CPU, memory, and other resources available to each worker node. Common flavors: bx2.4x16 (4 vCPU, 16GB RAM), bx2.8x32 (8 vCPU, 32GB RAM), bx2.16x64 (16 vCPU, 64GB RAM)."
   type        = string
