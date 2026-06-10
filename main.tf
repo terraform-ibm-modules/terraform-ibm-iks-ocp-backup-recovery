@@ -180,25 +180,33 @@ module "dsc_sg_rule" {
 }
 
 ##############################################################################
-# Data Source Connector Worker Pool
+# Data Source Connector Worker Pools (Single-Zone)
 ##############################################################################
 
+locals {
+  # Calculate workers per zone based on total replicas
+  # Use the dsc_worker_pool_zones variable (defaults to 1) for count calculation
+  # This ensures the count is known at plan time
+  num_zones = local.is_vpc && var.create_dsc_worker_pool ? var.dsc_worker_pool_zones : 0
+  # Convert zones set to list for indexing (only used after apply)
+  zones_list    = local.is_vpc && var.create_dsc_worker_pool ? [for zone in data.ibm_container_vpc_worker_pool.pool[0].zones : zone] : []
+  base_workers  = local.num_zones > 0 ? floor(var.dsc_replicas / local.num_zones) : 0
+  extra_workers = local.num_zones > 0 ? var.dsc_replicas % local.num_zones : 0
+}
+
 resource "ibm_container_vpc_worker_pool" "data_source_connector" {
-  count = local.is_vpc && var.create_dsc_worker_pool ? 1 : 0
+  count = local.is_vpc && var.create_dsc_worker_pool ? local.num_zones : 0
 
   cluster           = data.ibm_container_vpc_cluster.vpc_cluster[0].id
-  worker_pool_name  = "data-source-connector-pool"
-  flavor            = "bx2.4x16" # this flavor works for both IKS and OCP
+  worker_pool_name  = "dsc-pool-zone-${count.index + 1}"
+  flavor            = var.dsc_worker_pool_flavor
   vpc_id            = data.ibm_container_vpc_worker_pool.pool[0].vpc_id
-  worker_count      = ceil(var.dsc_replicas / length(data.ibm_container_vpc_worker_pool.pool[0].zones))
+  worker_count      = count.index < local.extra_workers ? local.base_workers + 1 : local.base_workers
   resource_group_id = var.cluster_resource_group_id
 
-  dynamic "zones" {
-    for_each = data.ibm_container_vpc_worker_pool.pool[0].zones
-    content {
-      name      = zones.value.name
-      subnet_id = zones.value.subnet_id
-    }
+  zones {
+    name      = local.zones_list[count.index].name
+    subnet_id = local.zones_list[count.index].subnet_id
   }
 
   labels = {
@@ -219,6 +227,10 @@ resource "ibm_container_vpc_worker_pool" "data_source_connector" {
 resource "kubernetes_namespace_v1" "dsc_namespace" {
   metadata {
     name = var.dsc_namespace
+  }
+
+  timeouts {
+    delete = "10m"
   }
 
   lifecycle {
@@ -257,6 +269,16 @@ resource "helm_release" "data_source_connector" {
       }
       replicaCount     = var.dsc_replicas
       fullnameOverride = var.dsc_name
+      resources = {
+        limits = {
+          cpu    = var.dsc_pod_cpu_limits
+          memory = var.dsc_pod_memory_limits
+        }
+        requests = {
+          cpu    = var.dsc_pod_cpu_requests
+          memory = var.dsc_pod_memory_requests
+        }
+      }
       nodeSelector = local.is_vpc && var.create_dsc_worker_pool ? {
         "dedicated" = "data-source-connector"
       } : {}
@@ -346,6 +368,13 @@ resource "kubernetes_secret_v1" "brsagent_token" {
 # Source Registration
 ##############################################################################
 
+# Wait for DSC to stabilize after helm installation before source registration
+resource "time_sleep" "wait_for_dsc_stabilization" {
+  depends_on = [helm_release.data_source_connector]
+
+  create_duration = "5m" # DSC needs 5 minutes to stabilize after pod ready
+}
+
 resource "ibm_backup_recovery_source_registration" "source_registration" {
   x_ibm_tenant_id = local.brs_tenant_id
   environment     = "kKubernetes"
@@ -376,6 +405,7 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
 
   depends_on = [
     helm_release.data_source_connector,
+    time_sleep.wait_for_dsc_stabilization,
     time_sleep.brs_source_deregistration_wait,
     module.backup_recovery_instance,
   ]
@@ -389,7 +419,7 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
 # namespace wait, giving BRS time to process the async deregistration.
 resource "time_sleep" "brs_source_deregistration_wait" {
   depends_on       = [terraform_data.wait_before_helm_destroy]
-  destroy_duration = "180s"
+  destroy_duration = "5m" # Increased to allow sufficient time for async deregistration
 }
 
 # Wait for namespace cleanup during destroy before destroying helm release.
