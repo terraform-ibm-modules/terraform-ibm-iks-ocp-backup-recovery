@@ -342,6 +342,7 @@ module "source_backup_recovery" {
   brs_create_new_connection = true
   region                    = var.region
   connection_env_type       = "kIksVpc"
+  dsc_worker_pool_zones     = 1 # Single-zone cluster
 
   # Backup policy - 240-minute backup schedule
   policies = [{
@@ -429,6 +430,7 @@ module "target_backup_recovery" {
   brs_create_new_connection = true
   region                    = var.region
   connection_env_type       = "kIksVpc"
+  dsc_worker_pool_zones     = 1 # Single-zone cluster
 
   # Target cluster: NO protection groups (recovery destination only)
   # It will use policies from the source cluster's BRS instance
