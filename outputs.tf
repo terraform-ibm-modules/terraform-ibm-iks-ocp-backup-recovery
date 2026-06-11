@@ -3,8 +3,8 @@
 ##############################################################################
 
 output "source_registration_id" {
-  description = "ID of the registered Kubernetes source"
-  value       = ibm_backup_recovery_source_registration.source_registration.id
+  description = "ID of the registered Kubernetes source. Null if source registration is skipped."
+  value       = length(ibm_backup_recovery_source_registration.source_registration) > 0 ? ibm_backup_recovery_source_registration.source_registration[0].id : null
 }
 
 output "brs_instance_crn" {
@@ -28,17 +28,17 @@ output "connection_id" {
 }
 
 output "protection_group_ids" {
-  description = "Map of protection group names to their IDs"
+  description = "Map of protection group names to their IDs. Empty if protection groups are not deployed."
   value       = { for k, v in ibm_backup_recovery_protection_group.protection_group : k => v.id }
 }
 
 output "protection_sources" {
-  description = "List of protection sources"
-  value       = data.ibm_backup_recovery_protection_sources.sources
+  description = "List of protection sources. Null if protection groups are not deployed."
+  value       = length(data.ibm_backup_recovery_protection_sources.sources) > 0 ? data.ibm_backup_recovery_protection_sources.sources[0] : null
 }
 
 output "recovery_ids" {
-  description = "Map of recovery operation names to their IDs. Empty if `var.enable_recovery` is `false`."
+  description = "Map of recovery operation names to their IDs. Empty if recovery is not enabled."
   value       = { for k, v in ibm_backup_recovery.recover_snapshot : k => v.id }
 }
 

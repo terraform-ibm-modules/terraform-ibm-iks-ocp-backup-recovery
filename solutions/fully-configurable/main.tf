@@ -54,6 +54,8 @@ module "protect_cluster" {
   add_dsc_rules_to_cluster_sg  = var.add_dsc_rules_to_cluster_sg
   kube_type                    = var.kube_type
   ibmcloud_api_key             = var.ibmcloud_api_key
+  # --- Deployment Mode ---
+  deployment_mode = var.deployment_mode
   # --- BRS Instance Details---
   brs_endpoint_type         = var.brs_endpoint_type
   existing_brs_instance_crn = var.existing_brs_instance_crn

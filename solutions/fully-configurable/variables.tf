@@ -56,6 +56,25 @@ variable "wait_till_timeout" {
 }
 
 ##############################################################
+# Deployment Mode Control
+##############################################################
+variable "deployment_mode" {
+  description = <<-DESC
+    Deployment mode to control what components are deployed:
+    - 'backup_only' (default): Registers source cluster with BRS, configures protection groups. No target cluster, no recovery.
+    - 'connected_component': Registers both source + target clusters with BRS for cluster connection setup only. No backup or recovery triggered.
+    - 'full_backup_recovery': End-to-end: registers clusters, triggers on-demand backup, waits for completion, executes recovery to validate.
+  DESC
+  type        = string
+  default     = "backup_only"
+
+  validation {
+    condition     = contains(["backup_only", "connected_component", "full_backup_recovery"], var.deployment_mode)
+    error_message = "`deployment_mode` must be one of 'backup_only', 'connected_component', or 'full_backup_recovery'."
+  }
+}
+
+##############################################################
 # Backup Related
 ##############################################################
 variable "auto_protect_policy_name" {

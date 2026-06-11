@@ -294,6 +294,26 @@ variable "connection_env_type" {
 }
 
 ##############################################################################
+# Use Case Control Flags
+##############################################################################
+
+variable "deployment_mode" {
+  description = <<-DESC
+    Deployment mode to control what components are deployed:
+    - 'backup_only' (default): Registers source cluster with BRS, configures protection groups. No target cluster, no recovery.
+    - 'connected_component': Registers both source + target clusters with BRS for cluster connection setup only. No backup or recovery triggered.
+    - 'full_backup_recovery': End-to-end: registers clusters, triggers on-demand backup, waits for completion, executes recovery to validate.
+  DESC
+  type        = string
+  default     = "backup_only"
+
+  validation {
+    condition     = contains(["backup_only", "connected_component", "full_backup_recovery"], var.deployment_mode)
+    error_message = "`deployment_mode` must be one of 'backup_only', 'connected_component', or 'full_backup_recovery'."
+  }
+}
+
+##############################################################################
 # Protection Policy
 ##############################################################################
 
@@ -928,24 +948,34 @@ variable "recovery_mode" {
 }
 
 variable "target_cluster_id" {
-  description = "Target cluster ID for cross-cluster recovery. Required when `var.recovery_mode` is 'cross-cluster'. Must be a cluster already registered with the BRS instance."
+  description = "Target cluster ID for cross-cluster recovery or connected component setup. Required when `var.recovery_mode` is 'cross-cluster' or when `deployment_mode` is 'connected_component'. Must be a cluster already registered with the BRS instance."
   type        = string
   default     = null
 
   validation {
-    condition     = var.recovery_mode == "same-cluster" || (var.recovery_mode == "cross-cluster" && var.target_cluster_id != null)
-    error_message = "target_cluster_id is required when recovery_mode is 'cross-cluster'."
+    condition = (
+      var.deployment_mode == "backup_only" ||
+      (var.deployment_mode == "connected_component" && var.target_cluster_id != null) ||
+      (var.deployment_mode == "full_backup_recovery" && var.recovery_mode == "same-cluster") ||
+      (var.deployment_mode == "full_backup_recovery" && var.recovery_mode == "cross-cluster" && var.target_cluster_id != null)
+    )
+    error_message = "target_cluster_id is required when deployment_mode is 'connected_component' or when recovery_mode is 'cross-cluster' in 'full_backup_recovery' mode."
   }
 }
 
 variable "target_cluster_resource_group_id" {
-  description = "Resource group ID of the target cluster for cross-cluster recovery. Required when recovery_mode is 'cross-cluster'."
+  description = "Resource group ID of the target cluster for cross-cluster recovery or connected component setup. Required when recovery_mode is 'cross-cluster' or when `deployment_mode` is 'connected_component'."
   type        = string
   default     = null
 
   validation {
-    condition     = var.recovery_mode == "same-cluster" || (var.recovery_mode == "cross-cluster" && var.target_cluster_resource_group_id != null)
-    error_message = "target_cluster_resource_group_id is required when recovery_mode is 'cross-cluster'."
+    condition = (
+      var.deployment_mode == "backup_only" ||
+      (var.deployment_mode == "connected_component" && var.target_cluster_resource_group_id != null) ||
+      (var.deployment_mode == "full_backup_recovery" && var.recovery_mode == "same-cluster") ||
+      (var.deployment_mode == "full_backup_recovery" && var.recovery_mode == "cross-cluster" && var.target_cluster_resource_group_id != null)
+    )
+    error_message = "target_cluster_resource_group_id is required when deployment_mode is 'connected_component' or when recovery_mode is 'cross-cluster' in 'full_backup_recovery' mode."
   }
 }
 
