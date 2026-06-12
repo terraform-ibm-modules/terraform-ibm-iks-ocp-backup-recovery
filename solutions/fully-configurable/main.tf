@@ -93,6 +93,11 @@ module "protect_cluster" {
   # --- Resource Tags ---
   resource_tags = var.resource_tags
   access_tags   = var.access_tags
+  # --- Recovery Settings ---
+  enable_recovery                  = var.enable_recovery
+  recovery_mode                    = var.recovery_type
+  target_cluster_id                = var.target_cluster_id
+  target_cluster_resource_group_id = var.target_cluster_resource_group_id
 }
 
 
