@@ -912,7 +912,7 @@ resource "ibm_resource_tag" "cluster_brs_tag" {
 # local-exec provisioner to call a script that deletes the protection group.
 resource "terraform_data" "delete_auto_protect_pg" {
   depends_on = [terraform_data.install_dependencies]
-  count      = local.deploy_source_registration && var.enable_auto_protect ? 1 : 0
+  count      = local.deploy_source_registration && var.enable_auto_protect && var.auto_protect_policy_name != null ? 1 : 0
 
   input = {
     url                 = local.backup_recovery_instance_url
