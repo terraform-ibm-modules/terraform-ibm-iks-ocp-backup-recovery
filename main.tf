@@ -10,11 +10,11 @@ locals {
   # --- Deployment mode flags ---
   # Determine what components should be deployed based on deployment_mode
   # backup_only: Everything except target cluster & recovery (DSC + source + protection groups + backups)
-  # connected_component: Everything except backups & recovery (DSC + source + target registrations, NO protection groups)
+  # connected_component: Source + target cluster registration with backups (DSC + source + target + protection groups + backups, NO recovery)
   # full_backup_recovery: Everything (complete end-to-end with backup and recovery)
-  deploy_dsc                 = true                                         # Always deploy DSC in all modes
-  deploy_source_registration = true                                         # Always deploy source registration in all modes
-  deploy_protection_groups   = var.deployment_mode != "connected_component" # backup_only and full_backup_recovery
+  deploy_dsc                 = true # Always deploy DSC in all modes
+  deploy_source_registration = true # Always deploy source registration in all modes
+  deploy_protection_groups   = true # Deploy protection groups in all modes
   deploy_recovery            = var.deployment_mode == "full_backup_recovery" && var.enable_recovery
 
   # --- BRS region: cluster region for new instances, existing instance region otherwise ---
