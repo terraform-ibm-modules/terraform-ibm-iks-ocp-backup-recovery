@@ -318,13 +318,17 @@ variable "deployment_mode" {
 ##############################################################################
 
 variable "auto_protect_policy_name" {
-  description = "Name of an existing protection policy to use for auto-protect. Required when `enable_auto_protect` is `true`. The policy must already exist in the BRS instance (create it using the `terraform-ibm-backup-recovery` module)."
+  description = "Name of an existing protection policy to use for auto-protect. Required when `enable_auto_protect` is `true` and deployment_mode is 'backup_only' or 'full_backup_recovery'. The policy must already exist in the BRS instance (create it using the `terraform-ibm-backup-recovery` module)."
   type        = string
   default     = null
 
   validation {
-    condition     = var.enable_auto_protect == false || (var.enable_auto_protect == true && var.auto_protect_policy_name != null)
-    error_message = "auto_protect_policy_name is required when enable_auto_protect is true."
+    condition = (
+      var.deployment_mode == "connected_component" ||
+      var.enable_auto_protect == false ||
+      (var.enable_auto_protect == true && var.auto_protect_policy_name != null)
+    )
+    error_message = "auto_protect_policy_name is required when enable_auto_protect is true in 'backup_only' or 'full_backup_recovery' modes."
   }
 }
 
