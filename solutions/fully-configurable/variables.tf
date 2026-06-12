@@ -78,9 +78,18 @@ variable "deployment_mode" {
 # Backup Related
 ##############################################################
 variable "auto_protect_policy_name" {
-  description = "Name of the existing protection policy to use for auto-protect. Required when enable_auto_protect is true."
+  description = "Name of the existing protection policy to use for auto-protect. Required when enable_auto_protect is true and deployment_mode is 'backup_only' or 'full_backup_recovery'."
   type        = string
   default     = null
+
+  validation {
+    condition = (
+      var.deployment_mode == "connected_component" ||
+      var.enable_auto_protect == false ||
+      (var.enable_auto_protect == true && var.auto_protect_policy_name != null)
+    )
+    error_message = "auto_protect_policy_name is required when enable_auto_protect is true in 'backup_only' or 'full_backup_recovery' modes."
+  }
 }
 
 variable "dsc_chart_uri" {
