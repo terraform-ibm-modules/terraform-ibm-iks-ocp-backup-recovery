@@ -74,10 +74,11 @@ module "backup_recovery" {
 **What Gets Deployed**:
 
 - ✅ Data Source Connector (DSC) via Helm on source cluster
+- ✅ Data Source Connector (DSC) via Helm on target cluster
 - ✅ Cluster source registration with BRS
-- ✅ Target cluster registration with BRS (if provided)
+- ✅ Target cluster registration with BRS (required)
 - ✅ Security group rules (if VPC)
-- ✅ BRS agent service account and RBAC
+- ✅ BRS agent service account and RBAC on both clusters
 
 **What's NOT Deployed**:
 
@@ -99,7 +100,7 @@ module "backup_recovery" {
   cluster_resource_group_id = "source-rg-id"
   brs_connection_name       = "source-connection"
 
-  # Target cluster (optional)
+  # Target cluster (REQUIRED for connected_component mode)
   target_cluster_id                = "target-cluster-id"
   target_cluster_resource_group_id = "target-rg-id"
   target_brs_connection_name       = "target-connection"
@@ -183,15 +184,15 @@ module "backup_recovery" {
 
 | Feature              | backup_only | connected_component | full_backup_recovery  |
 | -------------------- | ----------- | ------------------- | --------------------- |
-| DSC Installation     | ✅          | ✅                  | ✅                    |
+| DSC Installation     | ✅          | ✅ (both clusters)  | ✅                    |
 | Source Registration  | ✅          | ✅                  | ✅                    |
-| Target Registration  | ❌          | ✅ (optional)       | ✅ (if cross-cluster) |
+| Target Registration  | ❌          | ✅ (required)       | ✅ (if cross-cluster) |
 | Protection Groups    | ✅          | ❌                  | ✅                    |
 | Backup Operations    | ✅          | ❌                  | ✅                    |
 | Recovery Support     | ❌          | ❌                  | ✅ (optional)         |
-| Security Group Rules | ✅          | ✅                  | ✅                    |
-| BRS Agent RBAC       | ✅          | ✅                  | ✅                    |
-| Connection Setup     | ✅          | ✅                  | ✅                    |
+| Security Group Rules | ✅          | ✅ (both clusters)  | ✅                    |
+| BRS Agent RBAC       | ✅          | ✅ (both clusters)  | ✅                    |
+| Connection Setup     | ✅          | ✅ (both clusters)  | ✅                    |
 
 ---
 
@@ -256,15 +257,19 @@ enable_recovery         = true
 
 The module includes validation to ensure correct configuration:
 
-1. **Target Cluster Validation**: `target_cluster_id` is only required when:
-   - `deployment_mode = "full_backup_recovery"` AND
-   - `recovery_mode = "cross-cluster"`
+1. **Target Cluster Validation**: `target_cluster_id` is required when:
+   - `deployment_mode = "connected_component"` OR
+   - (`deployment_mode = "full_backup_recovery"` AND `recovery_mode = "cross-cluster"`)
 
-2. **Recovery Validation**: Recovery is only enabled when:
+2. **Target Resource Group Validation**: `target_cluster_resource_group_id` is required when:
+   - `deployment_mode = "connected_component"` OR
+   - (`deployment_mode = "full_backup_recovery"` AND `recovery_mode = "cross-cluster"`)
+
+3. **Recovery Validation**: Recovery is only enabled when:
    - `deployment_mode = "full_backup_recovery"` AND
    - `enable_recovery = true`
 
-3. **Protection Groups**: Only created when:
+4. **Protection Groups**: Only created when:
    - `deployment_mode = "backup_only"` OR
    - `deployment_mode = "full_backup_recovery"`
 

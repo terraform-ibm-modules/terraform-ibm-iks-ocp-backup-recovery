@@ -118,12 +118,21 @@ locals {
 }
 
 ##############################################################################
-# Cross-Cluster Recovery: Target Cluster Registration
+# Target Cluster Registration
 ##############################################################################
 
-# Only needed for cross-cluster recovery in full_backup_recovery mode
+# Needed for:
+# 1. connected_component mode - to register both source and target clusters
+# 2. full_backup_recovery mode with cross-cluster recovery
+locals {
+  deploy_target_cluster = (
+    var.deployment_mode == "connected_component" ||
+    (var.deployment_mode == "full_backup_recovery" && var.enable_recovery && var.recovery_type == "cross-cluster")
+  )
+}
+
 data "ibm_container_vpc_cluster" "target_cluster" {
-  count             = var.deployment_mode == "full_backup_recovery" && var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
+  count             = local.deploy_target_cluster ? 1 : 0
   name              = var.target_cluster_id
   resource_group_id = var.target_cluster_resource_group_id
   wait_till         = var.wait_till
@@ -133,7 +142,7 @@ data "ibm_container_vpc_cluster" "target_cluster" {
 data "ibm_container_cluster_config" "target_cluster_config" {
   depends_on = [data.ibm_container_vpc_cluster.target_cluster]
 
-  count             = var.deployment_mode == "full_backup_recovery" && var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
+  count             = local.deploy_target_cluster ? 1 : 0
   cluster_name_id   = var.target_cluster_id
   resource_group_id = var.target_cluster_resource_group_id
   config_dir        = "${path.module}/kubeconfig"
@@ -141,9 +150,9 @@ data "ibm_container_cluster_config" "target_cluster_config" {
   admin             = true
 }
 
-# Register target cluster with BRS for cross-cluster recovery
+# Register target cluster with BRS
 module "target_cluster_registration" {
-  count  = var.deployment_mode == "full_backup_recovery" && var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
+  count  = local.deploy_target_cluster ? 1 : 0
   source = "../.."
 
   providers = {
@@ -198,7 +207,7 @@ module "target_cluster_registration" {
 
 # Wait for target registration to propagate
 resource "time_sleep" "wait_for_target_registration" {
-  count = var.deployment_mode == "full_backup_recovery" && var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
+  count = local.deploy_target_cluster ? 1 : 0
 
   depends_on = [module.target_cluster_registration]
 
