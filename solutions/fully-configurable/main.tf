@@ -114,6 +114,12 @@ locals {
     var.enable_auto_protect ? "auto-protect" : null # Use special marker for auto-protect
   ) : null
 
+  # Check if we should trigger backup based on configuration (not computed values)
+  should_trigger_backup = (
+    var.deployment_mode == "full_backup_recovery" &&
+    (var.enable_auto_protect || try(length(var.protection_groups), 0) > 0)
+  )
+
   # Extract protection group ID for backup/recovery.
   # For auto-protect, use the auto_protect_group_id output directly
   # For manual protection groups, look up by name
@@ -227,7 +233,7 @@ resource "time_sleep" "wait_for_target_registration" {
 
 # Trigger an immediate on-demand backup run for the protection group in full_backup_recovery mode.
 resource "ibm_backup_recovery_protection_group_run_request" "recovery_backup_run" {
-  count = var.deployment_mode == "full_backup_recovery" && local.recovery_pg_id != null ? 1 : 0
+  count = local.should_trigger_backup ? 1 : 0
 
   x_ibm_tenant_id = module.protect_cluster.brs_tenant_id
   group_id        = local.recovery_pg_id
