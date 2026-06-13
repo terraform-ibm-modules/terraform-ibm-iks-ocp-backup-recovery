@@ -97,6 +97,8 @@ module "protect_cluster" {
   recovery_mode                    = var.recovery_type
   target_cluster_id                = var.target_cluster_id
   target_cluster_resource_group_id = var.target_cluster_resource_group_id
+  # DA solution handles backup triggering and recovery, not the root module
+  recoveries = []
 }
 
 
