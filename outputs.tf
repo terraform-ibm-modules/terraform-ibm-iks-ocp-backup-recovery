@@ -43,7 +43,7 @@ output "recovery_ids" {
 }
 
 output "recovery_status" {
-  description = "Map of recovery operation names to their status information. Empty if `var.enable_recovery` is `false`."
+  description = "Map of recovery operation names to their status information. Empty if recovery is not enabled by the calling module."
   value = {
     for k, v in ibm_backup_recovery.recover_snapshot : k => {
       id     = v.id
@@ -54,7 +54,7 @@ output "recovery_status" {
 }
 
 output "latest_snapshots" {
-  description = "Map of protection group names to the most recent successful snapshot ID per protection group. Populated only when `var.enable_recovery` is `true`, because snapshot discovery relies on the backup-polling infrastructure (`terraform_data.wait_for_backup_run` and `data.ibm_backup_recovery_protection_group_runs`) that is activated by that flag. Use the snapshot IDs from this output as explicit `snapshot_id` values in a recovery's `kubernetes_params.objects` to target a specific backup rather than always recovering the latest."
+  description = "Map of protection group names to the most recent successful snapshot ID per protection group. Populated only when recovery is enabled by the calling module, because snapshot discovery relies on the backup-polling infrastructure (`terraform_data.wait_for_backup_run` and `data.ibm_backup_recovery_protection_group_runs`) that is activated when recovery is enabled. Use the snapshot IDs from this output as explicit `snapshot_id` values in a recovery's `kubernetes_params.objects` to target a specific backup rather than always recovering the latest."
   value       = local.latest_snapshots
 }
 
@@ -64,7 +64,7 @@ output "target_cluster_id" {
 }
 
 output "backup_runs_summary" {
-  description = "Summary of backup runs per protection group. Shows run count and latest run status. Empty if `var.enable_recovery` is `false`."
+  description = "Summary of backup runs per protection group. Shows run count and latest run status. Empty if recovery is not enabled by the calling module."
   value = {
     for pg_name, runs in data.ibm_backup_recovery_protection_group_runs.backup_runs : pg_name => {
       total_runs          = length(try(runs.runs, []))

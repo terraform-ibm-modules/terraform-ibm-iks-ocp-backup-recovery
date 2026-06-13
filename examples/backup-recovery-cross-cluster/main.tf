@@ -386,8 +386,7 @@ module "source_backup_recovery" {
     }]
   }]
 
-  # Disable recovery in source module - will be handled separately
-  enable_recovery                  = false
+  # Recovery will be handled separately via scripts
   recovery_mode                    = var.recovery_mode
   target_cluster_id                = local.target_cluster_id
   target_cluster_resource_group_id = module.resource_group.resource_group_id
@@ -438,8 +437,7 @@ module "target_backup_recovery" {
   protection_groups = []
 
   # No recovery operations on target cluster
-  enable_recovery = false
-  recoveries      = []
+  recoveries = []
 
   resource_tags = var.resource_tags
   access_tags   = var.access_tags

@@ -429,17 +429,6 @@
               "display_name": "Resource Tags"
             },
             {
-              "key": "enable_recovery",
-              "display_name": "Enable Automatic Recovery Testing",
-              "description": "Enable automatic recovery testing after backup completes.",
-              "hidden": {
-                "deployment_mode": [
-                  "backup_only",
-                  "connected_component"
-                ]
-              }
-            },
-            {
               "key": "recovery_type",
               "display_name": "Recovery Type",
               "description": "Type of recovery: 'same-cluster' or 'cross-cluster'.",

@@ -929,25 +929,14 @@ variable "policies" {
 # Recovery Variables
 ##############################################################################
 
-variable "enable_recovery" {
-  description = "Enable automatic recovery after backup completion. When true, recovery operations defined in `recoveries` will be triggered automatically after successful backup. Set to false to only perform backups without recovery."
-  type        = bool
-  default     = false
-}
-
 variable "recovery_mode" {
-  description = "Recovery mode: 'same-cluster' to restore within the same cluster, or 'cross-cluster' to restore to a different target cluster. Required when `var.enable_recovery` is `true`."
+  description = "Recovery mode: 'same-cluster' to restore within the same cluster, or 'cross-cluster' to restore to a different target cluster. This is used when recovery is enabled by the calling module."
   type        = string
   default     = "same-cluster"
 
   validation {
     condition     = contains(["same-cluster", "cross-cluster"], var.recovery_mode)
     error_message = "recovery_mode must be either 'same-cluster' or 'cross-cluster'."
-  }
-
-  validation {
-    condition     = !var.enable_recovery || var.recovery_mode != null
-    error_message = "recovery_mode must be set when enable_recovery is true."
   }
 }
 
@@ -995,7 +984,7 @@ variable "wait_for_backup_completion" {
 }
 
 variable "recoveries" {
-  description = "List of recovery operations to restore backups. When `enable_recovery` is `true`, these operations are triggered automatically after a backup run completes. Each entry's `kubernetes_params.objects[*].snapshot_id` controls which backup is restored: supply an explicit snapshot ID to recover from any specific backup (not necessarily the one taken in the current apply), or use the `latest_snapshots` output to reference the most recent run. Supports multiple environments: Kubernetes, VMware, Physical, AWS, Azure, GCP, SQL, Oracle, and more. This variable follows the official IBM Backup Recovery provider schema. For IKS/ROKS recovery use `kubernetes_params`. See the Usage section in the README for examples."
+  description = "List of recovery operations to restore backups. These operations are triggered automatically after a backup run completes when recovery is enabled by the calling module. Each entry's `kubernetes_params.objects[*].snapshot_id` controls which backup is restored: supply an explicit snapshot ID to recover from any specific backup (not necessarily the one taken in the current apply), or use the `latest_snapshots` output to reference the most recent run. Supports multiple environments: Kubernetes, VMware, Physical, AWS, Azure, GCP, SQL, Oracle, and more. This variable follows the official IBM Backup Recovery provider schema. For IKS/ROKS recovery use `kubernetes_params`. See the Usage section in the README for examples."
   type = list(object({
     name                 = string
     snapshot_environment = string # kKubernetes, kVMware, kPhysical, kAWS, kAzure, kGCP, kSQL, kOracle, kView, etc.

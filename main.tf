@@ -15,7 +15,7 @@ locals {
   deploy_dsc                 = true # Always deploy DSC in all modes
   deploy_source_registration = true # Always deploy source registration in all modes
   deploy_protection_groups   = true # Deploy protection groups in all modes
-  deploy_recovery            = var.deployment_mode == "full_backup_recovery" && var.enable_recovery
+  deploy_recovery            = var.deployment_mode == "full_backup_recovery"
 
   # --- BRS region: cluster region for new instances, existing instance region otherwise ---
   brs_region = var.existing_brs_instance_crn != null ? module.crn_parser.region : var.region
@@ -1088,13 +1088,12 @@ resource "ibm_backup_recovery" "recover_snapshot" {
 
   lifecycle {
     precondition {
-      condition     = !var.enable_recovery || length(local.latest_snapshots) > 0
+      condition     = length(local.latest_snapshots) > 0
       error_message = <<-EOT
         No backup snapshots found. Recovery cannot proceed without completed backups.
         Either:
         1. Increase wait_for_backup_completion to allow more time for backups to complete
         2. Ensure protection groups have run at least one successful backup
-        3. Set enable_recovery = false to skip automatic recovery
       EOT
     }
 

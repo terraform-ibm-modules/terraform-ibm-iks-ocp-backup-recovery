@@ -853,13 +853,6 @@ variable "policies" {
 # Recovery Configuration
 ##############################################################################
 
-variable "enable_recovery" {
-  description = "Enable automatic recovery testing after backup completes. When enabled, the solution will wait for a backup to complete and then trigger a recovery operation to validate the backup."
-  type        = bool
-  default     = false
-  nullable    = false
-}
-
 variable "recovery_type" {
   description = "Type of recovery to perform. 'same-cluster' restores to the original cluster with a namespace prefix. 'cross-cluster' restores to a different target cluster."
   type        = string
