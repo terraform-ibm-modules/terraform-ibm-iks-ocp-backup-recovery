@@ -951,11 +951,21 @@ resource "time_sleep" "wait_for_pg_registration" {
     time_sleep.wait_for_source_discovery
   ]
 
-  create_duration = "30s"
+  create_duration = "90s" # Increased to 90s to match solution wrapper
 
   triggers = {
     protection_group_ids = join(",", [for pg in ibm_backup_recovery_protection_group.protection_group : pg.id])
   }
+}
+
+# Extract numeric protection group IDs for backup trigger
+# Format: "clusterid/::timestamp:id:id" -> "timestamp:id:id"
+# The API expects numeric format, not the full ID with cluster prefix
+locals {
+  trigger_pg_ids = local.deploy_recovery ? {
+    for pg_name, pg_resource in ibm_backup_recovery_protection_group.protection_group :
+    pg_name => split("::", pg_resource.id)[1]
+  } : {}
 }
 
 # Trigger an immediate on-demand backup run for each protection group in recovery mode
@@ -964,7 +974,7 @@ resource "ibm_backup_recovery_protection_group_run_request" "trigger_backup_run"
   for_each = local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
 
   x_ibm_tenant_id = local.brs_tenant_id
-  group_id        = ibm_backup_recovery_protection_group.protection_group[each.key].id
+  group_id        = local.trigger_pg_ids[each.key] # Use numeric ID (timestamp:id:id format)
   run_type        = "kRegular"
   endpoint_type   = var.brs_endpoint_type
   instance_id     = local.brs_instance_guid
