@@ -250,7 +250,7 @@ resource "ibm_backup_recovery_protection_group_run_request" "recovery_backup_run
 
 # Poll for backup completion before attempting recovery
 resource "terraform_data" "wait_for_backup" {
-  count = var.deployment_mode == "full_backup_recovery" && local.recovery_pg_id != null ? 1 : 0
+  count = local.should_trigger_backup ? 1 : 0
 
   depends_on = [
     module.protect_cluster,
