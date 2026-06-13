@@ -114,10 +114,12 @@ locals {
     var.auto_protect_policy_name
   ) : null
 
-  # Extract protection group ID for recovery.
-  # Keep the full ID returned by the module because downstream resources/scripts
-  # expect the protection group identifier in that format.
-  recovery_pg_id = var.deployment_mode == "full_backup_recovery" && var.enable_recovery && local.recovery_pg_name != null ? (
+  # Extract protection group ID for backup/recovery.
+  # For auto-protect, use the auto_protect_group_id output directly
+  # For manual protection groups, look up by name
+  recovery_pg_id = var.deployment_mode == "full_backup_recovery" && local.recovery_pg_name != null ? (
+    local.recovery_pg_name == "auto-protect" ?
+    try(split("::", module.protect_cluster.auto_protect_group_id)[1], null) :
     try(split("::", module.protect_cluster.protection_group_ids[local.recovery_pg_name])[1], null)
   ) : null
 }
@@ -225,7 +227,7 @@ resource "time_sleep" "wait_for_target_registration" {
 
 # Trigger an immediate on-demand backup run for the recovery protection group.
 resource "ibm_backup_recovery_protection_group_run_request" "recovery_backup_run" {
-  count = var.deployment_mode == "full_backup_recovery" && var.enable_recovery ? 1 : 0
+  count = var.deployment_mode == "full_backup_recovery" && local.recovery_pg_id != null ? 1 : 0
 
   x_ibm_tenant_id = module.protect_cluster.brs_tenant_id
   group_id        = local.recovery_pg_id
