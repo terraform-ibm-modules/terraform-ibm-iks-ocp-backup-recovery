@@ -109,41 +109,6 @@ latest_run_id() {
   echo "$body" | jq -r '.runs[0].id // empty'
 }
 
-# Check if the latest backup run has failed
-# Returns: "failed" if run failed, "running" if in progress, "succeeded" if completed successfully, "unknown" otherwise
-check_run_status() {
-  local body=$1
-  echo "$body" | jq -r '
-    if (.runs | length) == 0 then
-      "unknown"
-    else
-      .runs[0] |
-      if .localBackupInfo.status == "kFailure" or
-         .localBackupInfo.status == "kCanceled" or
-         .localBackupInfo.status == "kCancelled" or
-         (.objects[]?.localSnapshotInfo?.snapshotInfo?.status // "" | test("^(kFailure|kCanceled|kCancelled)$")) or
-         (.archivalInfo?.archivalTargetResults[]?.status // "" | test("^(Failed|Canceled|Cancelled)$")) or
-         (.replicationInfo?.replicationTargetResults[]?.status // "" | test("^(Failed|Canceled|Cancelled)$")) or
-         (.objects[]?.archivalInfo?.archivalTargetResults[]?.status // "" | test("^(Failed|Canceled|Cancelled)$")) or
-         (.objects[]?.replicationInfo?.replicationTargetResults[]?.status // "" | test("^(Failed|Canceled|Cancelled)$"))
-      then
-        "failed"
-      elif .localBackupInfo.status == "kRunning" or
-           .localBackupInfo.status == "kAccepted" or
-           (.objects[]?.localSnapshotInfo?.snapshotInfo?.status // "" | test("^(kRunning|kAccepted)$"))
-      then
-        "running"
-      elif .localBackupInfo.status == "kSuccess" or
-           (.objects[]?.localSnapshotInfo?.snapshotInfo?.status // "" | test("^kSuccess$"))
-      then
-        "succeeded"
-      else
-        "unknown"
-      end
-    end
-  '
-}
-
 main() {
   local debug_file="/tmp/backup_poll_debug_${PROTECTION_GROUP_ID##*:}.log"
 
@@ -209,18 +174,6 @@ main() {
       echo "=== Poll at $(date) ===" | tee -a "$debug_file" >&2
       echo "$run_response" | jq '.' >> "$debug_file" 2>&1
 
-      # Check run status first to detect failures early
-      local run_status
-      run_status=$(check_run_status "$run_response")
-      echo "Run status: ${run_status}" | tee -a "$debug_file" >&2
-
-      if [[ "$run_status" == "failed" ]]; then
-        echo "✗ Backup run failed or was canceled" | tee -a "$debug_file" >&2
-        echo "ERROR: Backup run for protection group ${PROTECTION_GROUP_ID} has failed or been canceled." >&2
-        echo "Check the debug log for details: ${debug_file}" >&2
-        exit 1
-      fi
-
       local snapshot_id
       snapshot_id=$(latest_snapshot_id "$run_response")
 
@@ -238,11 +191,7 @@ main() {
           '{snapshot_id: $snapshot_id, run_id: $run_id, protection_group_id: $protection_group_id}'
         exit 0
       else
-        if [[ "$run_status" == "running" ]]; then
-          echo "Backup run in progress, waiting ${POLL_INTERVAL_SECONDS}s..." | tee -a "$debug_file" >&2
-        else
-          echo "No snapshot found yet (status: ${run_status}), waiting ${POLL_INTERVAL_SECONDS}s..." | tee -a "$debug_file" >&2
-        fi
+        echo "No snapshot found yet, waiting ${POLL_INTERVAL_SECONDS}s..." | tee -a "$debug_file" >&2
       fi
     else
       echo "Protection group not found (404), waiting ${POLL_INTERVAL_SECONDS}s..." | tee -a "$debug_file" >&2

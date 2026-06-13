@@ -94,7 +94,7 @@ module "protect_cluster" {
   resource_tags = var.resource_tags
   access_tags   = var.access_tags
   # --- Recovery Settings ---
-  enable_recovery                  = var.deployment_mode == "full_backup_recovery" ? true : false
+  enable_recovery                  = var.enable_recovery
   recovery_mode                    = var.recovery_type
   target_cluster_id                = var.target_cluster_id
   target_cluster_resource_group_id = var.target_cluster_resource_group_id
@@ -106,26 +106,18 @@ module "protect_cluster" {
 ##############################################################################
 
 locals {
-  # Determine which protection group to use for backup/recovery
-  # Applicable in full_backup_recovery mode
-  recovery_pg_name = var.deployment_mode == "full_backup_recovery" ? (
+  # Determine which protection group to use for recovery
+  # Only applicable in full_backup_recovery mode
+  recovery_pg_name = var.deployment_mode == "full_backup_recovery" && var.enable_recovery ? (
     var.recovery_protection_group_name != null ? var.recovery_protection_group_name :
     try(length(var.protection_groups), 0) > 0 ? var.protection_groups[0].name :
-    var.enable_auto_protect ? "auto-protect" : null # Use special marker for auto-protect
+    var.auto_protect_policy_name
   ) : null
 
-  # Check if we should trigger backup based on configuration (not computed values)
-  should_trigger_backup = (
-    var.deployment_mode == "full_backup_recovery" &&
-    (var.enable_auto_protect || try(length(var.protection_groups), 0) > 0)
-  )
-
-  # Extract protection group ID for backup/recovery.
-  # For auto-protect, use the auto_protect_group_id output directly
-  # For manual protection groups, look up by name
-  recovery_pg_id = var.deployment_mode == "full_backup_recovery" && local.recovery_pg_name != null ? (
-    local.recovery_pg_name == "auto-protect" ?
-    try(split("::", module.protect_cluster.auto_protect_group_id)[1], null) :
+  # Extract protection group ID for recovery.
+  # Keep the full ID returned by the module because downstream resources/scripts
+  # expect the protection group identifier in that format.
+  recovery_pg_id = var.deployment_mode == "full_backup_recovery" && var.enable_recovery && local.recovery_pg_name != null ? (
     try(split("::", module.protect_cluster.protection_group_ids[local.recovery_pg_name])[1], null)
   ) : null
 }
@@ -140,7 +132,7 @@ locals {
 locals {
   deploy_target_cluster = (
     var.deployment_mode == "connected_component" ||
-    (var.deployment_mode == "full_backup_recovery" && var.recovery_type == "cross-cluster")
+    (var.deployment_mode == "full_backup_recovery" && var.enable_recovery && var.recovery_type == "cross-cluster")
   )
 }
 
@@ -231,9 +223,9 @@ resource "time_sleep" "wait_for_target_registration" {
 # Immediate Backup Trigger and Completion Polling
 ##############################################################################
 
-# Trigger an immediate on-demand backup run for the protection group in full_backup_recovery mode.
+# Trigger an immediate on-demand backup run for the recovery protection group.
 resource "ibm_backup_recovery_protection_group_run_request" "recovery_backup_run" {
-  count = local.should_trigger_backup ? 1 : 0
+  count = var.deployment_mode == "full_backup_recovery" && var.enable_recovery ? 1 : 0
 
   x_ibm_tenant_id = module.protect_cluster.brs_tenant_id
   group_id        = local.recovery_pg_id
@@ -250,7 +242,7 @@ resource "ibm_backup_recovery_protection_group_run_request" "recovery_backup_run
 
 # Poll for backup completion before attempting recovery
 resource "terraform_data" "wait_for_backup" {
-  count = local.should_trigger_backup ? 1 : 0
+  count = var.deployment_mode == "full_backup_recovery" && var.enable_recovery ? 1 : 0
 
   depends_on = [
     module.protect_cluster,
@@ -284,7 +276,7 @@ resource "terraform_data" "wait_for_backup" {
 ##############################################################################
 
 resource "terraform_data" "same_cluster_recovery" {
-  count = var.deployment_mode == "full_backup_recovery" && var.recovery_type == "same-cluster" ? 1 : 0
+  count = var.deployment_mode == "full_backup_recovery" && var.enable_recovery && var.recovery_type == "same-cluster" ? 1 : 0
 
   input = {
     url              = module.protect_cluster.brs_instance_url
@@ -329,7 +321,7 @@ resource "terraform_data" "same_cluster_recovery" {
 ##############################################################################
 
 resource "terraform_data" "cross_cluster_recovery" {
-  count = var.deployment_mode == "full_backup_recovery" && var.recovery_type == "cross-cluster" ? 1 : 0
+  count = var.deployment_mode == "full_backup_recovery" && var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
 
   input = {
     url              = module.protect_cluster.brs_instance_url

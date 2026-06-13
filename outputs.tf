@@ -32,11 +32,6 @@ output "protection_group_ids" {
   value       = { for k, v in ibm_backup_recovery_protection_group.protection_group : k => v.id }
 }
 
-output "auto_protect_group_id" {
-  description = "ID of the auto-protect protection group. Null if auto-protect is not enabled."
-  value       = var.enable_auto_protect && var.auto_protect_policy_name != null && length(ibm_backup_recovery_source_registration.source_registration) > 0 ? try(ibm_backup_recovery_source_registration.source_registration[0].kubernetes_params[0].auto_protect_config[0].protection_group_id, null) : null
-}
-
 output "protection_sources" {
   description = "List of protection sources. Null if protection groups are not deployed."
   value       = length(data.ibm_backup_recovery_protection_sources.sources) > 0 ? data.ibm_backup_recovery_protection_sources.sources[0] : null
