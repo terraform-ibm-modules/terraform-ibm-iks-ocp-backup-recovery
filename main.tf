@@ -942,6 +942,22 @@ resource "terraform_data" "delete_auto_protect_pg" {
 # Immediate Backup Trigger for Recovery Mode
 ##############################################################################
 
+# Small delay to ensure protection group is fully registered before triggering backup
+resource "time_sleep" "wait_for_pg_registration" {
+  count = local.deploy_recovery ? 1 : 0
+
+  depends_on = [
+    ibm_backup_recovery_protection_group.protection_group,
+    time_sleep.wait_for_source_discovery
+  ]
+
+  create_duration = "30s"
+
+  triggers = {
+    protection_group_ids = join(",", [for pg in ibm_backup_recovery_protection_group.protection_group : pg.id])
+  }
+}
+
 # Trigger an immediate on-demand backup run for each protection group in recovery mode
 # This ensures backups are available for recovery without waiting for scheduled runs
 resource "ibm_backup_recovery_protection_group_run_request" "trigger_backup_run" {
@@ -956,7 +972,8 @@ resource "ibm_backup_recovery_protection_group_run_request" "trigger_backup_run"
 
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
-    time_sleep.wait_for_source_discovery
+    time_sleep.wait_for_source_discovery,
+    time_sleep.wait_for_pg_registration
   ]
 }
 
