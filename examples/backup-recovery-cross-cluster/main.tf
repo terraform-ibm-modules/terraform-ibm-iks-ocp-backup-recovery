@@ -390,7 +390,6 @@ module "source_backup_recovery" {
   recovery_mode                    = var.recovery_mode
   target_cluster_id                = local.target_cluster_id
   target_cluster_resource_group_id = module.resource_group.resource_group_id
-  wait_for_backup_completion       = var.wait_for_backup_completion
   recoveries                       = []
 
   resource_tags = var.resource_tags

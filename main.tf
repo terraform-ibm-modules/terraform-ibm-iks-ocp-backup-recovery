@@ -939,33 +939,40 @@ resource "terraform_data" "delete_auto_protect_pg" {
 
 
 ##############################################################################
-# Wait for Backup Completion (Single-Shot Execution Critical)
+# Immediate Backup Trigger for Recovery Mode
 ##############################################################################
 
-# Wait for initial backup to complete before attempting recovery
-# This ensures snapshots are available for the recovery operation
-resource "time_sleep" "wait_for_backup_completion" {
-  count = local.deploy_recovery && var.wait_for_backup_completion != "0s" ? 1 : 0
+# Trigger an immediate on-demand backup run for each protection group in recovery mode
+# This ensures backups are available for recovery without waiting for scheduled runs
+resource "ibm_backup_recovery_protection_group_run_request" "trigger_backup_run" {
+  for_each = local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
+
+  x_ibm_tenant_id = local.brs_tenant_id
+  group_id        = ibm_backup_recovery_protection_group.protection_group[each.key].id
+  run_type        = "kRegular"
+  endpoint_type   = var.brs_endpoint_type
+  instance_id     = local.brs_instance_guid
+  region          = local.brs_instance_region
 
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
     time_sleep.wait_for_source_discovery
   ]
-
-  create_duration = var.wait_for_backup_completion
-
-  triggers = {
-    protection_group_ids = join(",", [for pg in ibm_backup_recovery_protection_group.protection_group : pg.id])
-  }
 }
 
+##############################################################################
+# Active Backup Polling (Replaces Blind Wait)
+##############################################################################
+
+# Actively poll for backup completion instead of blind waiting
+# This script checks backup status every 30 seconds until completion or timeout
 resource "terraform_data" "wait_for_backup_run" {
   for_each = local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
 
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
     time_sleep.wait_for_source_discovery,
-    time_sleep.wait_for_backup_completion,
+    ibm_backup_recovery_protection_group_run_request.trigger_backup_run,
     terraform_data.install_dependencies
   ]
 
@@ -1091,9 +1098,10 @@ resource "ibm_backup_recovery" "recover_snapshot" {
       condition     = length(local.latest_snapshots) > 0
       error_message = <<-EOT
         No backup snapshots found. Recovery cannot proceed without completed backups.
+        The module actively polls for backup completion (up to backup_run_poll_timeout_minutes).
         Either:
-        1. Increase wait_for_backup_completion to allow more time for backups to complete
-        2. Ensure protection groups have run at least one successful backup
+        1. Increase backup_run_poll_timeout_minutes to allow more time for backups to complete
+        2. Ensure protection groups have run at least one successful backup before recovery
       EOT
     }
 

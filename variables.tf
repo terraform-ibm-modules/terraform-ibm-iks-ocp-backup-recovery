@@ -972,16 +972,6 @@ variable "target_cluster_resource_group_id" {
   }
 }
 
-variable "wait_for_backup_completion" {
-  description = "Wait duration for initial backup to complete before attempting recovery. Specify with time unit suffix (e.g., '5m', '10m', '30m'). Increase this value for large clusters or slow networks. Set to '0s' to disable waiting (recovery will use existing snapshots only)."
-  type        = string
-  default     = "30m"
-
-  validation {
-    condition     = can(regex("^[0-9]+(s|m|h)$", var.wait_for_backup_completion))
-    error_message = "wait_for_backup_completion must be a duration string with unit suffix (e.g., '5m', '10m', '30m')."
-  }
-}
 
 variable "recoveries" {
   description = "List of recovery operations to restore backups. These operations are triggered automatically after a backup run completes when recovery is enabled by the calling module. Each entry's `kubernetes_params.objects[*].snapshot_id` controls which backup is restored: supply an explicit snapshot ID to recover from any specific backup (not necessarily the one taken in the current apply), or use the `latest_snapshots` output to reference the most recent run. Supports multiple environments: Kubernetes, VMware, Physical, AWS, Azure, GCP, SQL, Oracle, and more. This variable follows the official IBM Backup Recovery provider schema. For IKS/ROKS recovery use `kubernetes_params`. See the Usage section in the README for examples."

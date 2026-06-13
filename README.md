@@ -322,6 +322,7 @@ You need the following permissions to run this module:
 | [helm_release.data_source_connector](https://registry.terraform.io/providers/hashicorp/helm/latest/docs/resources/release) | resource |
 | [ibm_backup_recovery.recover_snapshot](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery) | resource |
 | [ibm_backup_recovery_protection_group.protection_group](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery_protection_group) | resource |
+| [ibm_backup_recovery_protection_group_run_request.trigger_backup_run](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery_protection_group_run_request) | resource |
 | [ibm_backup_recovery_source_registration.source_registration](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery_source_registration) | resource |
 | [ibm_container_vpc_worker_pool.data_source_connector](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/container_vpc_worker_pool) | resource |
 | [ibm_resource_tag.cluster_brs_tag](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/resource_tag) | resource |
@@ -335,7 +336,6 @@ You need the following permissions to run this module:
 | [terraform_data.wait_before_helm_destroy](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 | [terraform_data.wait_for_backup_run](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 | [time_sleep.brs_source_deregistration_wait](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
-| [time_sleep.wait_for_backup_completion](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
 | [time_sleep.wait_for_dsc_stabilization](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
 | [time_sleep.wait_for_source_discovery](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
 | [ibm_backup_recovery_protection_group_runs.backup_runs](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/data-sources/backup_recovery_protection_group_runs) | data source |
@@ -394,7 +394,6 @@ You need the following permissions to run this module:
 | <a name="input_rollback_on_failure"></a> [rollback\_on\_failure](#input\_rollback\_on\_failure) | Flag to automatically rollback the helm chart on installation failure. | `bool` | `true` | no |
 | <a name="input_target_cluster_id"></a> [target\_cluster\_id](#input\_target\_cluster\_id) | Target cluster ID for cross-cluster recovery or connected component setup. Required when `var.recovery_mode` is 'cross-cluster' or when `deployment_mode` is 'connected\_component'. Must be a cluster already registered with the BRS instance. | `string` | `null` | no |
 | <a name="input_target_cluster_resource_group_id"></a> [target\_cluster\_resource\_group\_id](#input\_target\_cluster\_resource\_group\_id) | Resource group ID of the target cluster for cross-cluster recovery or connected component setup. Required when recovery\_mode is 'cross-cluster' or when `deployment_mode` is 'connected\_component'. | `string` | `null` | no |
-| <a name="input_wait_for_backup_completion"></a> [wait\_for\_backup\_completion](#input\_wait\_for\_backup\_completion) | Wait duration for initial backup to complete before attempting recovery. Specify with time unit suffix (e.g., '5m', '10m', '30m'). Increase this value for large clusters or slow networks. Set to '0s' to disable waiting (recovery will use existing snapshots only). | `string` | `"30m"` | no |
 | <a name="input_wait_till"></a> [wait\_till](#input\_wait\_till) | To avoid long wait times when you run your Terraform code, you can specify the stage when you want Terraform to mark the cluster resource creation as completed. Depending on what stage you choose, the cluster creation might not be fully completed and continues to run in the background. However, your Terraform code can continue to run without waiting for the cluster to be fully created. Supported args are `MasterNodeReady`, `OneWorkerNodeReady`, `IngressReady` and `Normal` | `string` | `"Normal"` | no |
 | <a name="input_wait_till_timeout"></a> [wait\_till\_timeout](#input\_wait\_till\_timeout) | Timeout for wait\_till in minutes. | `number` | `90` | no |
 
