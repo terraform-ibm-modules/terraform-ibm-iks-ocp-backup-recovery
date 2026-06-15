@@ -69,7 +69,7 @@ module "backup_recovery" {
 
 ### 2. Connected Component
 
-**Use Case**: For connected component UI integration where BRS connection setup is needed for both backup and recovery clusters. DSC is deployed on both clusters, but no backup or recovery operations are triggered.
+**Use Case**: For connected component UI integration where BRS connection setup is needed for both backup and recovery clusters. DSC is deployed on both clusters, protection groups are configured, and backups can be triggered, but recovery operations are not performed.
 
 **What Gets Deployed**:
 
@@ -77,15 +77,16 @@ module "backup_recovery" {
 - ✅ Data Source Connector (DSC) via Helm on target cluster
 - ✅ Cluster source registration with BRS
 - ✅ Target cluster registration with BRS (required)
+- ✅ Protection groups for backup
+- ✅ Backup operations (if protection groups configured)
 - ✅ Security group rules (if VPC)
 - ✅ BRS agent service account and RBAC on both clusters
 
 **What's NOT Deployed**:
 
-- ❌ Protection groups
-- ❌ Backup operations
 - ❌ Recovery resources
-- ❌ Backup run polling
+- ❌ Backup run polling for recovery
+- ❌ Snapshot discovery for recovery
 
 **Configuration**:
 
@@ -105,17 +106,26 @@ module "backup_recovery" {
   target_cluster_resource_group_id = "target-rg-id"
   target_brs_connection_name       = "target-connection"
 
-  # No protection groups or policies needed
-  # Only connection setup is performed
+  # Protection groups can be configured
+  enable_auto_protect      = true
+  auto_protect_policy_name = "daily-retention"
+
+  # Or use granular protection groups
+  protection_groups = [{
+    name        = "production-backup"
+    policy_name = "daily-retention"
+    objects     = [{ name = "production-namespace" }]
+  }]
 }
 ```
 
 **Benefits**:
 
-- Prepares infrastructure without triggering backups
-- Ideal for UI-driven workflows where backup/recovery is triggered separately
 - Both clusters are registered and ready for operations
+- Protection groups configured for backup operations
+- Ideal for UI-driven workflows where recovery is managed separately
 - Connection can be reused by other components
+- Backups can be triggered without recovery overhead
 
 ---
 
@@ -187,9 +197,11 @@ module "backup_recovery" {
 | DSC Installation     | ✅          | ✅ (both clusters)  | ✅                    |
 | Source Registration  | ✅          | ✅                  | ✅                    |
 | Target Registration  | ❌          | ✅ (required)       | ✅ (if cross-cluster) |
-| Protection Groups    | ✅          | ❌                  | ✅                    |
-| Backup Operations    | ✅          | ❌                  | ✅                    |
+| Protection Groups    | ✅          | ✅                  | ✅                    |
+| Backup Operations    | ✅          | ✅                  | ✅                    |
 | Recovery Support     | ❌          | ❌                  | ✅ (optional)         |
+| Backup Run Polling   | ❌          | ❌                  | ✅                    |
+| Snapshot Discovery   | ❌          | ❌                  | ✅                    |
 | Security Group Rules | ✅          | ✅ (both clusters)  | ✅                    |
 | BRS Agent RBAC       | ✅          | ✅ (both clusters)  | ✅                    |
 | Connection Setup     | ✅          | ✅ (both clusters)  | ✅                    |
@@ -269,8 +281,15 @@ The module includes validation to ensure correct configuration:
    - `deployment_mode = "full_backup_recovery"` AND
    - `enable_recovery = true`
 
-4. **Protection Groups**: Only created when:
-   - `deployment_mode = "backup_only"` OR
+4. **Protection Groups**: Created in all deployment modes when configured:
+   - `deployment_mode = "backup_only"`
+   - `deployment_mode = "connected_component"`
+   - `deployment_mode = "full_backup_recovery"`
+
+5. **Backup Run Polling**: Only enabled when:
+   - `deployment_mode = "full_backup_recovery"`
+
+6. **Snapshot Discovery**: Only enabled when:
    - `deployment_mode = "full_backup_recovery"`
 
 ---
@@ -281,8 +300,8 @@ Outputs adapt based on deployment mode:
 
 - `source_registration_id`: Available in all modes
 - `target_registration_id`: `null` in `backup_only` mode
-- `protection_group_ids`: Empty map in `connected_component` mode
-- `protection_sources`: `null` in `connected_component` mode
+- `protection_group_ids`: Available in all modes when protection groups are configured
+- `protection_sources`: Available in all modes when protection groups are configured
 - `recovery_ids`: Empty map when recovery is disabled
 - `latest_snapshots`: Empty map when recovery is disabled
 
@@ -316,8 +335,7 @@ Outputs adapt based on deployment mode:
 
 ### Protection Groups Not Created
 
-- Confirm `deployment_mode` is NOT `"connected_component"`
-- Verify protection group configuration is valid
+- Verify protection group configuration is valid (applies to all modes)
 - Check policy names exist in BRS instance
 - Review namespace names are correct
 
