@@ -88,7 +88,7 @@ module "crn_parser" {
 
 module "backup_recovery_instance" {
   source                    = "terraform-ibm-modules/backup-recovery/ibm"
-  version                   = "v1.10.2"
+  version                   = "v1.10.4"
   region                    = local.brs_region
   resource_group_id         = var.cluster_resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
@@ -1138,4 +1138,26 @@ resource "ibm_backup_recovery" "recover_snapshot" {
       error_message = "For cross-cluster recovery, both target_cluster_id and target_cluster_resource_group_id must be provided."
     }
   }
+
+}
+
+##############################################################################
+# Refresh Protection Source After Recovery
+##############################################################################
+
+# Refresh the protection source after recovery to make recovered namespaces
+# visible in the protection source without manual refresh
+resource "ibm_backup_recovery_protection_source_refresh" "post_recovery_refresh" {
+  for_each = local.deploy_recovery && local.deploy_source_registration ? { for recovery in var.recoveries : recovery.name => recovery } : {}
+
+  x_ibm_tenant_id                      = local.brs_tenant_id
+  backup_recovery_protection_source_id = ibm_backup_recovery_source_registration.source_registration[0].id
+  endpoint_type                        = var.brs_endpoint_type
+  instance_id                          = local.brs_instance_guid
+  region                               = local.brs_instance_region
+
+  depends_on = [
+    ibm_backup_recovery.recover_snapshot,
+    ibm_backup_recovery_source_registration.source_registration
+  ]
 }

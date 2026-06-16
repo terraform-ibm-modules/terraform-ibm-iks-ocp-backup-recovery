@@ -303,7 +303,7 @@ You need the following permissions to run this module:
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.9.0 |
 | <a name="requirement_helm"></a> [helm](#requirement\_helm) | >=3.1.0, <4.0.0 |
-| <a name="requirement_ibm"></a> [ibm](#requirement\_ibm) | >= 1.88.3, < 3.0.0 |
+| <a name="requirement_ibm"></a> [ibm](#requirement\_ibm) | >= 2.2.2, < 3.0.0 |
 | <a name="requirement_kubernetes"></a> [kubernetes](#requirement\_kubernetes) | >=3.0.1, <4.0.0 |
 | <a name="requirement_time"></a> [time](#requirement\_time) | >=0.12.1, <1.0.0 |
 
@@ -311,7 +311,7 @@ You need the following permissions to run this module:
 
 | Name | Source | Version |
 |------|--------|---------|
-| <a name="module_backup_recovery_instance"></a> [backup\_recovery\_instance](#module\_backup\_recovery\_instance) | terraform-ibm-modules/backup-recovery/ibm | v1.10.2 |
+| <a name="module_backup_recovery_instance"></a> [backup\_recovery\_instance](#module\_backup\_recovery\_instance) | terraform-ibm-modules/backup-recovery/ibm | v1.10.4 |
 | <a name="module_crn_parser"></a> [crn\_parser](#module\_crn\_parser) | terraform-ibm-modules/common-utilities/ibm//modules/crn-parser | 1.5.0 |
 | <a name="module_dsc_sg_rule"></a> [dsc\_sg\_rule](#module\_dsc\_sg\_rule) | terraform-ibm-modules/security-group/ibm | v2.9.1 |
 
@@ -323,6 +323,7 @@ You need the following permissions to run this module:
 | [ibm_backup_recovery.recover_snapshot](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery) | resource |
 | [ibm_backup_recovery_protection_group.protection_group](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery_protection_group) | resource |
 | [ibm_backup_recovery_protection_group_run_request.trigger_backup_run](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery_protection_group_run_request) | resource |
+| [ibm_backup_recovery_protection_source_refresh.post_recovery_refresh](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery_protection_source_refresh) | resource |
 | [ibm_backup_recovery_source_registration.source_registration](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery_source_registration) | resource |
 | [ibm_container_vpc_worker_pool.data_source_connector](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/container_vpc_worker_pool) | resource |
 | [ibm_resource_tag.cluster_brs_tag](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/resource_tag) | resource |
