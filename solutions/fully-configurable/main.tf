@@ -373,7 +373,7 @@ resource "ibm_backup_recovery_protection_source_refresh" "post_recovery_refresh"
   count = var.deployment_mode == "full_backup_recovery" ? 1 : 0
 
   x_ibm_tenant_id                      = module.protect_cluster.brs_tenant_id
-  backup_recovery_protection_source_id = module.protect_cluster.source_registration_id
+  backup_recovery_protection_source_id = tonumber(split("::", module.protect_cluster.source_registration_id)[1])
   endpoint_type                        = var.brs_endpoint_type
   instance_id                          = module.protect_cluster.brs_instance_guid
   region                               = local.region
