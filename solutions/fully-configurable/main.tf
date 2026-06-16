@@ -363,6 +363,26 @@ resource "terraform_data" "cross_cluster_recovery" {
     time_sleep.wait_for_target_registration
   ]
 }
+
+##############################################################################
+# Wait for Recovery Completion
+##############################################################################
+
+# Wait for recovery operation to complete before refreshing the protection source
+# Recovery operations are asynchronous and take time to complete
+# This ensures namespaces are fully restored before we refresh the source
+resource "time_sleep" "wait_for_recovery_completion" {
+  count = var.deployment_mode == "full_backup_recovery" ? 1 : 0
+
+  depends_on = [
+    terraform_data.same_cluster_recovery,
+    terraform_data.cross_cluster_recovery
+  ]
+
+  # Wait 5 minutes for recovery to complete
+  create_duration = "300s"
+}
+
 ##############################################################################
 # Refresh Protection Source After Recovery
 ##############################################################################
@@ -380,7 +400,6 @@ resource "ibm_backup_recovery_protection_source_refresh" "post_recovery_refresh"
   region                               = local.region
 
   depends_on = [
-    terraform_data.same_cluster_recovery,
-    terraform_data.cross_cluster_recovery
+    time_sleep.wait_for_recovery_completion
   ]
 }
