@@ -367,13 +367,14 @@ resource "terraform_data" "cross_cluster_recovery" {
 # Refresh Protection Source After Recovery
 ##############################################################################
 
-# Refresh the source cluster after recovery (both same-cluster and cross-cluster)
-# to make recovered namespaces visible in the protection source UI without manual refresh
+# Refresh the appropriate cluster after recovery to make recovered namespaces visible in the protection source UI
+# - For same-cluster recovery: refresh the source cluster (where recovery happened)
+# - For cross-cluster recovery: refresh the target cluster (where recovery happened)
 resource "ibm_backup_recovery_protection_source_refresh" "post_recovery_refresh" {
   count = var.deployment_mode == "full_backup_recovery" ? 1 : 0
 
   x_ibm_tenant_id                      = module.protect_cluster.brs_tenant_id
-  backup_recovery_protection_source_id = tonumber(split("::", module.protect_cluster.source_registration_id)[1])
+  backup_recovery_protection_source_id = var.recovery_type == "cross-cluster" ? tonumber(split("::", module.target_cluster_registration[0].source_registration_id)[1]) : tonumber(split("::", module.protect_cluster.source_registration_id)[1])
   endpoint_type                        = var.brs_endpoint_type
   instance_id                          = module.protect_cluster.brs_instance_guid
   region                               = local.region

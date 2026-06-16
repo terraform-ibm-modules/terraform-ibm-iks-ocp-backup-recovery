@@ -1140,24 +1140,3 @@ resource "ibm_backup_recovery" "recover_snapshot" {
   }
 
 }
-
-##############################################################################
-# Refresh Protection Source After Recovery
-##############################################################################
-
-# Refresh the protection source after recovery to make recovered namespaces
-# visible in the protection source without manual refresh
-resource "ibm_backup_recovery_protection_source_refresh" "post_recovery_refresh" {
-  for_each = local.deploy_recovery && local.deploy_source_registration ? { for recovery in var.recoveries : recovery.name => recovery } : {}
-
-  x_ibm_tenant_id                      = local.brs_tenant_id
-  backup_recovery_protection_source_id = ibm_backup_recovery_source_registration.source_registration[0].id
-  endpoint_type                        = var.brs_endpoint_type
-  instance_id                          = local.brs_instance_guid
-  region                               = local.brs_instance_region
-
-  depends_on = [
-    ibm_backup_recovery.recover_snapshot,
-    ibm_backup_recovery_source_registration.source_registration
-  ]
-}
