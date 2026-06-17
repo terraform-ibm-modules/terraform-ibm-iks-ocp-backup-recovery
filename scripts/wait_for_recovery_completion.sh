@@ -20,6 +20,7 @@ fi
 URL=$1
 TENANT=$2
 ENDPOINT_TYPE=$3
+# shellcheck disable=SC2034  # Used in error messages and file paths
 INSTANCE_ID=$4
 RECOVERY_ID=$5
 TIMEOUT_MINUTES=${6:-30}
@@ -40,33 +41,33 @@ ELAPSED=0
 
 while [ $ELAPSED -lt $TIMEOUT_SECONDS ]; do
   echo "Checking recovery status (elapsed: ${ELAPSED}s)..." >&2
-  
+
   # Get recovery status
   response=$(curl --retry 3 -s -w "\n%{http_code}" -X GET "${URL}/v2/data-protect/recoveries/${RECOVERY_ID}" \
     -H "Authorization: Bearer ${IAM_TOKEN}" \
     -H "X-IBM-Tenant-Id: ${TENANT}" \
     -H "Accept: application/json")
-  
+
   http_code=$(echo "$response" | tail -n1)
   body=$(echo "$response" | sed '$d')
-  
+
   if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
     echo "Recovery Status API Error: HTTP $http_code" >&2
     echo "Response: $body" >&2
     exit 1
   fi
-  
+
   # Extract status from response
   status=$(echo "$body" | jq -r '.status // empty')
-  
+
   if [ -z "$status" ]; then
     echo "ERROR: Could not extract status from response" >&2
     echo "Response: $body" >&2
     exit 1
   fi
-  
+
   echo "Recovery status: $status" >&2
-  
+
   # Check if recovery is complete
   # Possible statuses: Running, Succeeded, Failed, Canceled, etc.
   case "$status" in
@@ -92,7 +93,7 @@ while [ $ELAPSED -lt $TIMEOUT_SECONDS ]; do
       echo "Unknown recovery status: $status" >&2
       ;;
   esac
-  
+
   sleep "$POLL_INTERVAL_SECONDS"
   ELAPSED=$((ELAPSED + POLL_INTERVAL_SECONDS))
 done
