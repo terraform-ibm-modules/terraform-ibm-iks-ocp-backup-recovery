@@ -201,6 +201,8 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 	options.IgnoreUpdates = testhelper.Exemptions{
 		List: []string{
 			"module.protect_cluster.kubernetes_namespace_v1.dsc_namespace",
+			"module.protect_cluster.time_sleep.wait_for_source_discovery",
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 		},
 	}
 	options.IgnoreDestroys = testhelper.Exemptions{
@@ -244,6 +246,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			"module.protect_cluster.kubernetes_cluster_role_binding_v1.brsagent_admin",
 			"module.protect_cluster.kubernetes_namespace_v1.dsc_namespace",
 			"module.protect_cluster.time_sleep.wait_for_source_discovery",
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 		},
 	}
 	options.IgnoreDestroys = testhelper.Exemptions{
