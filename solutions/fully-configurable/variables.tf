@@ -288,17 +288,7 @@ variable "protection_groups" {
     abort_in_blackouts = optional(bool, false)
     pause_in_blackouts = optional(bool, false)
   }))
-  default = [
-    {
-      name        = "pg-test-backup"
-      policy_name = "Basic"
-      objects = [
-        {
-          name = "backup-test-ns"
-        }
-      ]
-    }
-  ]
+  default  = null
   nullable = true
 }
 
