@@ -3,8 +3,8 @@
 ##############################################################################
 
 output "source_registration_id" {
-  description = "ID of the registered Kubernetes source"
-  value       = ibm_backup_recovery_source_registration.source_registration.id
+  description = "ID of the registered Kubernetes source. Null if source registration is skipped."
+  value       = length(ibm_backup_recovery_source_registration.source_registration) > 0 ? ibm_backup_recovery_source_registration.source_registration[0].id : null
 }
 
 output "brs_instance_crn" {
@@ -28,22 +28,22 @@ output "connection_id" {
 }
 
 output "protection_group_ids" {
-  description = "Map of protection group names to their IDs"
+  description = "Map of protection group names to their IDs. Empty if protection groups are not deployed."
   value       = { for k, v in ibm_backup_recovery_protection_group.protection_group : k => v.id }
 }
 
 output "protection_sources" {
-  description = "List of protection sources"
-  value       = data.ibm_backup_recovery_protection_sources.sources
+  description = "List of protection sources. Null if protection groups are not deployed."
+  value       = length(data.ibm_backup_recovery_protection_sources.sources) > 0 ? data.ibm_backup_recovery_protection_sources.sources[0] : null
 }
 
 output "recovery_ids" {
-  description = "Map of recovery operation names to their IDs. Empty if `var.enable_recovery` is `false`."
+  description = "Map of recovery operation names to their IDs. Empty if recovery is not enabled."
   value       = { for k, v in ibm_backup_recovery.recover_snapshot : k => v.id }
 }
 
 output "recovery_status" {
-  description = "Map of recovery operation names to their status information. Empty if `var.enable_recovery` is `false`."
+  description = "Map of recovery operation names to their status information. Empty if recovery is not enabled by the calling module."
   value = {
     for k, v in ibm_backup_recovery.recover_snapshot : k => {
       id     = v.id
@@ -54,7 +54,7 @@ output "recovery_status" {
 }
 
 output "latest_snapshots" {
-  description = "Map of protection group names to the most recent successful snapshot ID per protection group. Populated only when `var.enable_recovery` is `true`, because snapshot discovery relies on the backup-polling infrastructure (`terraform_data.wait_for_backup_run` and `data.ibm_backup_recovery_protection_group_runs`) that is activated by that flag. Use the snapshot IDs from this output as explicit `snapshot_id` values in a recovery's `kubernetes_params.objects` to target a specific backup rather than always recovering the latest."
+  description = "Map of protection group names to the most recent successful snapshot ID per protection group. Populated only when recovery is enabled by the calling module, because snapshot discovery relies on the backup-polling infrastructure (`terraform_data.wait_for_backup_run` and `data.ibm_backup_recovery_protection_group_runs`) that is activated when recovery is enabled. Use the snapshot IDs from this output as explicit `snapshot_id` values in a recovery's `kubernetes_params.objects` to target a specific backup rather than always recovering the latest."
   value       = local.latest_snapshots
 }
 
@@ -64,7 +64,7 @@ output "target_cluster_id" {
 }
 
 output "backup_runs_summary" {
-  description = "Summary of backup runs per protection group. Shows run count and latest run status. Empty if `var.enable_recovery` is `false`."
+  description = "Summary of backup runs per protection group. Shows run count and latest run status. Empty if recovery is not enabled by the calling module."
   value = {
     for pg_name, runs in data.ibm_backup_recovery_protection_group_runs.backup_runs : pg_name => {
       total_runs          = length(try(runs.runs, []))

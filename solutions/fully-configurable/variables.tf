@@ -56,12 +56,40 @@ variable "wait_till_timeout" {
 }
 
 ##############################################################
+# Deployment Mode Control
+##############################################################
+variable "deployment_mode" {
+  description = <<-DESC
+    Deployment mode to control what components are deployed:
+    - 'backup_only' (default): Registers source cluster with BRS, configures protection groups. No target cluster, no recovery.
+    - 'connected_component': Registers both source + target clusters with BRS for cluster connection setup only. No backup or recovery triggered.
+    - 'full_backup_recovery': End-to-end: registers clusters, triggers on-demand backup, waits for completion, executes recovery to validate.
+  DESC
+  type        = string
+  default     = "backup_only"
+
+  validation {
+    condition     = contains(["backup_only", "connected_component", "full_backup_recovery"], var.deployment_mode)
+    error_message = "`deployment_mode` must be one of 'backup_only', 'connected_component', or 'full_backup_recovery'."
+  }
+}
+
+##############################################################
 # Backup Related
 ##############################################################
 variable "auto_protect_policy_name" {
-  description = "Name of the existing protection policy to use for auto-protect. Required when enable_auto_protect is true."
+  description = "Name of the existing protection policy to use for auto-protect. Required when enable_auto_protect is true and deployment_mode is 'backup_only' or 'full_backup_recovery'."
   type        = string
   default     = null
+
+  validation {
+    condition = (
+      var.deployment_mode == "connected_component" ||
+      var.enable_auto_protect == false ||
+      (var.enable_auto_protect == true && var.auto_protect_policy_name != null)
+    )
+    error_message = "auto_protect_policy_name is required when enable_auto_protect is true in 'backup_only' or 'full_backup_recovery' modes."
+  }
 }
 
 variable "dsc_chart_uri" {
@@ -260,7 +288,17 @@ variable "protection_groups" {
     abort_in_blackouts = optional(bool, false)
     pause_in_blackouts = optional(bool, false)
   }))
-  default  = null
+  default = [
+    {
+      name        = "pg-test-backup"
+      policy_name = "Basic"
+      objects = [
+        {
+          name = "backup-test-ns"
+        }
+      ]
+    }
+  ]
   nullable = true
 }
 
@@ -824,13 +862,6 @@ variable "policies" {
 ##############################################################################
 # Recovery Configuration
 ##############################################################################
-
-variable "enable_recovery" {
-  description = "Enable automatic recovery testing after backup completes. When enabled, the solution will wait for a backup to complete and then trigger a recovery operation to validate the backup."
-  type        = bool
-  default     = false
-  nullable    = false
-}
 
 variable "recovery_type" {
   description = "Type of recovery to perform. 'same-cluster' restores to the original cluster with a namespace prefix. 'cross-cluster' restores to a different target cluster."

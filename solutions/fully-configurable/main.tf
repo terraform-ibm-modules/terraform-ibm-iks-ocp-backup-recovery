@@ -54,6 +54,8 @@ module "protect_cluster" {
   add_dsc_rules_to_cluster_sg  = var.add_dsc_rules_to_cluster_sg
   kube_type                    = var.kube_type
   ibmcloud_api_key             = var.ibmcloud_api_key
+  # --- Deployment Mode ---
+  deployment_mode = var.deployment_mode
   # --- BRS Instance Details---
   brs_endpoint_type         = var.brs_endpoint_type
   existing_brs_instance_crn = var.existing_brs_instance_crn
@@ -91,6 +93,10 @@ module "protect_cluster" {
   # --- Resource Tags ---
   resource_tags = var.resource_tags
   access_tags   = var.access_tags
+  # --- Recovery Settings ---
+  recovery_mode                    = var.recovery_type
+  target_cluster_id                = var.target_cluster_id
+  target_cluster_resource_group_id = var.target_cluster_resource_group_id
 }
 
 
@@ -100,7 +106,8 @@ module "protect_cluster" {
 
 locals {
   # Determine which protection group to use for recovery
-  recovery_pg_name = var.enable_recovery ? (
+  # Only applicable in full_backup_recovery mode
+  recovery_pg_name = var.deployment_mode == "full_backup_recovery" ? (
     var.recovery_protection_group_name != null ? var.recovery_protection_group_name :
     try(length(var.protection_groups), 0) > 0 ? var.protection_groups[0].name :
     var.auto_protect_policy_name
@@ -109,18 +116,27 @@ locals {
   # Extract protection group ID for recovery.
   # Keep the full ID returned by the module because downstream resources/scripts
   # expect the protection group identifier in that format.
-  recovery_pg_id = var.enable_recovery && local.recovery_pg_name != null ? (
+  recovery_pg_id = var.deployment_mode == "full_backup_recovery" && local.recovery_pg_name != null ? (
     try(split("::", module.protect_cluster.protection_group_ids[local.recovery_pg_name])[1], null)
   ) : null
 }
 
 ##############################################################################
-# Cross-Cluster Recovery: Target Cluster Registration
+# Target Cluster Registration
 ##############################################################################
 
-# Only needed for cross-cluster recovery
+# Needed for:
+# 1. connected_component mode - to register both source and target clusters
+# 2. full_backup_recovery mode with cross-cluster recovery
+locals {
+  deploy_target_cluster = (
+    var.deployment_mode == "connected_component" ||
+    (var.deployment_mode == "full_backup_recovery" && var.recovery_type == "cross-cluster")
+  )
+}
+
 data "ibm_container_vpc_cluster" "target_cluster" {
-  count             = var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
+  count             = local.deploy_target_cluster ? 1 : 0
   name              = var.target_cluster_id
   resource_group_id = var.target_cluster_resource_group_id
   wait_till         = var.wait_till
@@ -130,7 +146,7 @@ data "ibm_container_vpc_cluster" "target_cluster" {
 data "ibm_container_cluster_config" "target_cluster_config" {
   depends_on = [data.ibm_container_vpc_cluster.target_cluster]
 
-  count             = var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
+  count             = local.deploy_target_cluster ? 1 : 0
   cluster_name_id   = var.target_cluster_id
   resource_group_id = var.target_cluster_resource_group_id
   config_dir        = "${path.module}/kubeconfig"
@@ -138,9 +154,9 @@ data "ibm_container_cluster_config" "target_cluster_config" {
   admin             = true
 }
 
-# Register target cluster with BRS for cross-cluster recovery
+# Register target cluster with BRS
 module "target_cluster_registration" {
-  count  = var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
+  count  = local.deploy_target_cluster ? 1 : 0
   source = "../.."
 
   providers = {
@@ -195,7 +211,7 @@ module "target_cluster_registration" {
 
 # Wait for target registration to propagate
 resource "time_sleep" "wait_for_target_registration" {
-  count = var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
+  count = local.deploy_target_cluster ? 1 : 0
 
   depends_on = [module.target_cluster_registration]
 
@@ -208,7 +224,7 @@ resource "time_sleep" "wait_for_target_registration" {
 
 # Trigger an immediate on-demand backup run for the recovery protection group.
 resource "ibm_backup_recovery_protection_group_run_request" "recovery_backup_run" {
-  count = var.enable_recovery ? 1 : 0
+  count = var.deployment_mode == "full_backup_recovery" ? 1 : 0
 
   x_ibm_tenant_id = module.protect_cluster.brs_tenant_id
   group_id        = local.recovery_pg_id
@@ -225,7 +241,7 @@ resource "ibm_backup_recovery_protection_group_run_request" "recovery_backup_run
 
 # Poll for backup completion before attempting recovery
 resource "terraform_data" "wait_for_backup" {
-  count = var.enable_recovery ? 1 : 0
+  count = var.deployment_mode == "full_backup_recovery" ? 1 : 0
 
   depends_on = [
     module.protect_cluster,
@@ -259,7 +275,7 @@ resource "terraform_data" "wait_for_backup" {
 ##############################################################################
 
 resource "terraform_data" "same_cluster_recovery" {
-  count = var.enable_recovery && var.recovery_type == "same-cluster" ? 1 : 0
+  count = var.deployment_mode == "full_backup_recovery" && var.recovery_type == "same-cluster" ? 1 : 0
 
   input = {
     url              = module.protect_cluster.brs_instance_url
@@ -304,7 +320,7 @@ resource "terraform_data" "same_cluster_recovery" {
 ##############################################################################
 
 resource "terraform_data" "cross_cluster_recovery" {
-  count = var.enable_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
+  count = var.deployment_mode == "full_backup_recovery" && var.recovery_type == "cross-cluster" ? 1 : 0
 
   input = {
     url              = module.protect_cluster.brs_instance_url
@@ -345,5 +361,68 @@ resource "terraform_data" "cross_cluster_recovery" {
     terraform_data.wait_for_backup,
     module.target_cluster_registration,
     time_sleep.wait_for_target_registration
+  ]
+}
+
+##############################################################################
+# Wait for Recovery Completion
+##############################################################################
+
+# Poll recovery status and wait for completion before refreshing the protection source
+# Recovery operations are asynchronous - this ensures namespaces are fully restored
+resource "terraform_data" "wait_for_recovery_completion" {
+  count = var.deployment_mode == "full_backup_recovery" ? 1 : 0
+
+  input = {
+    url           = module.protect_cluster.brs_instance_url
+    tenant        = module.protect_cluster.brs_tenant_id
+    endpoint_type = var.brs_endpoint_type
+    instance_id   = module.protect_cluster.brs_instance_guid
+    api_key       = sensitive(var.ibmcloud_api_key)
+    binaries_path = "/tmp"
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      RECOVERY_ID=$(cat /tmp/recovery_id_${self.input.instance_id}.txt)
+      ${path.module}/../../scripts/wait_for_recovery_completion.sh \
+        '${self.input.url}' \
+        '${self.input.tenant}' \
+        '${self.input.endpoint_type}' \
+        '${self.input.instance_id}' \
+        "$RECOVERY_ID" \
+        '30' \
+        '30' \
+        '${self.input.binaries_path}'
+    EOT
+    environment = {
+      IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
+    }
+  }
+
+  depends_on = [
+    terraform_data.same_cluster_recovery,
+    terraform_data.cross_cluster_recovery
+  ]
+}
+
+##############################################################################
+# Refresh Protection Source After Recovery
+##############################################################################
+
+# Refresh the appropriate cluster after recovery to make recovered namespaces visible in the protection source UI
+# - For same-cluster recovery: refresh the source cluster (where recovery happened)
+# - For cross-cluster recovery: refresh the target cluster (where recovery happened)
+resource "ibm_backup_recovery_protection_source_refresh" "post_recovery_refresh" {
+  count = var.deployment_mode == "full_backup_recovery" ? 1 : 0
+
+  x_ibm_tenant_id                      = module.protect_cluster.brs_tenant_id
+  backup_recovery_protection_source_id = var.recovery_type == "cross-cluster" ? tonumber(split("::", module.target_cluster_registration[0].source_registration_id)[1]) : tonumber(split("::", module.protect_cluster.source_registration_id)[1])
+  endpoint_type                        = var.brs_endpoint_type
+  instance_id                          = module.protect_cluster.brs_instance_guid
+  region                               = local.region
+
+  depends_on = [
+    terraform_data.wait_for_recovery_completion
   ]
 }
