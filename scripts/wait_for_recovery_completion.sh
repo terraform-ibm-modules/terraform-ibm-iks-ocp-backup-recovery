@@ -100,5 +100,3 @@ done
 
 echo "ERROR: Recovery did not complete within ${TIMEOUT_MINUTES} minutes" >&2
 exit 1
-
-# Made with Bob
