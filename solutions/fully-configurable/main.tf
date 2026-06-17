@@ -368,19 +368,42 @@ resource "terraform_data" "cross_cluster_recovery" {
 # Wait for Recovery Completion
 ##############################################################################
 
-# Wait for recovery operation to complete before refreshing the protection source
-# Recovery operations are asynchronous and take time to complete
-# This ensures namespaces are fully restored before we refresh the source
-resource "time_sleep" "wait_for_recovery_completion" {
+# Poll recovery status and wait for completion before refreshing the protection source
+# Recovery operations are asynchronous - this ensures namespaces are fully restored
+resource "terraform_data" "wait_for_recovery_completion" {
   count = var.deployment_mode == "full_backup_recovery" ? 1 : 0
+
+  input = {
+    url           = module.protect_cluster.brs_instance_url
+    tenant        = module.protect_cluster.brs_tenant_id
+    endpoint_type = var.brs_endpoint_type
+    instance_id   = module.protect_cluster.brs_instance_guid
+    api_key       = sensitive(var.ibmcloud_api_key)
+    binaries_path = "/tmp"
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      RECOVERY_ID=$(cat /tmp/recovery_id_${self.input.instance_id}.txt)
+      ${path.module}/../../scripts/wait_for_recovery_completion.sh \
+        '${self.input.url}' \
+        '${self.input.tenant}' \
+        '${self.input.endpoint_type}' \
+        '${self.input.instance_id}' \
+        "$RECOVERY_ID" \
+        '30' \
+        '30' \
+        '${self.input.binaries_path}'
+    EOT
+    environment = {
+      IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
+    }
+  }
 
   depends_on = [
     terraform_data.same_cluster_recovery,
     terraform_data.cross_cluster_recovery
   ]
-
-  # Wait 5 minutes for recovery to complete
-  create_duration = "300s"
 }
 
 ##############################################################################
@@ -400,6 +423,6 @@ resource "ibm_backup_recovery_protection_source_refresh" "post_recovery_refresh"
   region                               = local.region
 
   depends_on = [
-    time_sleep.wait_for_recovery_completion
+    terraform_data.wait_for_recovery_completion
   ]
 }

@@ -93,5 +93,14 @@ if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
   exit 1
 fi
 
+# Extract and save recovery ID for status polling
+recovery_id=$(echo "$body" | jq -r '.id // empty')
+if [ -n "$recovery_id" ]; then
+  echo "$recovery_id" > "/tmp/recovery_id_${INSTANCE_ID}.txt"
+  echo "Recovery ID: ${recovery_id}" >&2
+else
+  echo "WARNING: Could not extract recovery ID from response" >&2
+fi
+
 echo "✓ Recovery triggered successfully!" >&2
 echo "$body" | jq '.'
