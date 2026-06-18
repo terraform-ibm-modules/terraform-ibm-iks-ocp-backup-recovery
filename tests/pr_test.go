@@ -202,17 +202,17 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 		List: []string{
 			"module.protect_cluster.kubernetes_namespace_v1.dsc_namespace",
 			"module.protect_cluster.time_sleep.wait_for_source_discovery",
-			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
 		},
 	}
 	options.IgnoreDestroys = testhelper.Exemptions{
 		List: []string{
-			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
 		},
 	}
 	options.IgnoreAdds = testhelper.Exemptions{
 		List: []string{
-			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
 		},
 	}
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
@@ -251,7 +251,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			"module.protect_cluster.kubernetes_cluster_role_binding_v1.brsagent_admin",
 			"module.protect_cluster.kubernetes_namespace_v1.dsc_namespace",
 			"module.protect_cluster.time_sleep.wait_for_source_discovery",
-			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
 		},
 	}
 	options.IgnoreDestroys = testhelper.Exemptions{
@@ -260,13 +260,13 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			"module.protect_cluster.kubernetes_service_account_v1.brsagent",
 			"module.protect_cluster.time_rotating.token_rotation",
 			"module.protect_cluster.ibm_backup_recovery_connection_registration_token.registration_token",
-			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
 			"module.protect_cluster.terraform_data.cleanup_brs_agent_resources",
 		},
 	}
 	options.IgnoreAdds = testhelper.Exemptions{
 		List: []string{
-			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
 		},
 	}
 
