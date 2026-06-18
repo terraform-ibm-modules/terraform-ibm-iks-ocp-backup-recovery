@@ -247,11 +247,11 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 	// Also exempt service_name parameter addition in backup recovery resources
 	options.IgnoreUpdates = testhelper.Exemptions{
 		List: []string{
-			"module.protect_cluster.helm_release.data_source_connector",
-			"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration",
+			"module.protect_cluster.helm_release.data_source_connector[0]",
+			"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration[0]",
 			"module.protect_cluster.kubernetes_cluster_role_binding_v1.brsagent_admin",
 			"module.protect_cluster.kubernetes_namespace_v1.dsc_namespace",
-			"module.protect_cluster.time_sleep.wait_for_source_discovery",
+			"module.protect_cluster.time_sleep.wait_for_source_discovery[0]",
 			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
 		},
 	}
