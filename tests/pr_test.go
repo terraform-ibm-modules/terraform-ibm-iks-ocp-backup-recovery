@@ -244,6 +244,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 
 	// Exempt expected resource changes from image version update (7.2.16 -> 7.2.17)
 	// and chart rename (cohesity-dsc-chart -> brs-ds-connector-chart)
+	// Also exempt service_name parameter addition in backup recovery resources
 	options.IgnoreUpdates = testhelper.Exemptions{
 		List: []string{
 			"module.protect_cluster.helm_release.data_source_connector",
@@ -262,11 +263,17 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			"module.protect_cluster.ibm_backup_recovery_connection_registration_token.registration_token",
 			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
 			"module.protect_cluster.terraform_data.cleanup_brs_agent_resources",
+			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
+			"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration[0]",
+			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy[*]",
 		},
 	}
 	options.IgnoreAdds = testhelper.Exemptions{
 		List: []string{
 			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
+			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
+			"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration[0]",
+			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy[*]",
 		},
 	}
 
