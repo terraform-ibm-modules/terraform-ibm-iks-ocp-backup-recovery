@@ -210,6 +210,11 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 		},
 	}
+	options.IgnoreAdds = testhelper.Exemptions{
+		List: []string{
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
+		},
+	}
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
 }
 
@@ -257,6 +262,11 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			"module.protect_cluster.ibm_backup_recovery_connection_registration_token.registration_token",
 			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 			"module.protect_cluster.terraform_data.cleanup_brs_agent_resources",
+		},
+	}
+	options.IgnoreAdds = testhelper.Exemptions{
+		List: []string{
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 		},
 	}
 
