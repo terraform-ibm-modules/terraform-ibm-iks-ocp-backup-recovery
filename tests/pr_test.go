@@ -265,7 +265,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			"module.protect_cluster.terraform_data.cleanup_brs_agent_resources",
 			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
 			"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration[0]",
-			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy[*]",
+			fmt.Sprintf(`module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-test-policy"]`, prefix),
 		},
 	}
 	options.IgnoreAdds = testhelper.Exemptions{
@@ -273,7 +273,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
 			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
 			"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration[0]",
-			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy[*]",
+			fmt.Sprintf(`module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-test-policy"]`, prefix),
 		},
 	}
 
