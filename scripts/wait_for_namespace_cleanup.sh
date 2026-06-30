@@ -34,10 +34,19 @@ while [[ $COUNTER -lt $MAX_ATTEMPTS ]]; do
   COUNTER=$((COUNTER + 1))
   echo "Attempt $COUNTER/$MAX_ATTEMPTS: Checking for BRS-managed resources..."
 
-  VELERO_BACKUPS=$(kubectl get backups.velero.io -n "$DSC_NAMESPACE" --no-headers 2>/dev/null | wc -l | xargs || echo "0")
-  VELERO_RESTORES=$(kubectl get restores.velero.io -n "$DSC_NAMESPACE" --no-headers 2>/dev/null | wc -l | xargs || echo "0")
+  BRS_AGENT_NAMESPACES=$(kubectl get namespaces --no-headers 2>/dev/null | awk '{print $1}' | grep '^brs-backup-agent-' || true)
+  BRS_AGENT_NS=$(echo "$BRS_AGENT_NAMESPACES" | grep -c . || echo "0")
+
+  VELERO_BACKUPS=0
+  VELERO_RESTORES=0
+  for ns in $BRS_AGENT_NAMESPACES; do
+    NS_BACKUPS=$(kubectl get backups.velero.io -n "$ns" --no-headers 2>/dev/null | wc -l | xargs || echo "0")
+    NS_RESTORES=$(kubectl get restores.velero.io -n "$ns" --no-headers 2>/dev/null | wc -l | xargs || echo "0")
+    VELERO_BACKUPS=$((VELERO_BACKUPS + NS_BACKUPS))
+    VELERO_RESTORES=$((VELERO_RESTORES + NS_RESTORES))
+  done
+
   PROTECTED_NS=$(kubectl get namespaces -l cohesity.com/backup-enabled=true --no-headers 2>/dev/null | wc -l | xargs || echo "0")
-  BRS_AGENT_NS=$(kubectl get namespaces --no-headers 2>/dev/null | awk '{print $1}' | grep -c '^brs-backup-agent-' | xargs || echo "0")
 
   TOTAL=$((VELERO_BACKUPS + VELERO_RESTORES + PROTECTED_NS + BRS_AGENT_NS))
 
