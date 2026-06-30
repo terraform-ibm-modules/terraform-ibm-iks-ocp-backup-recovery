@@ -498,7 +498,7 @@ variable "access_tags" {
 variable "connection_env_type" {
   type        = string
   description = "Type of environment for the connection. Allowed values are 'kIksVpc', 'kIksClassic', 'kRoksVpc', 'kRoksClassic'."
-  default     = "kRoksVpc"
+  default     = "kIksVpc"
 
   validation {
     condition     = contains(["kIksVpc", "kIksClassic", "kRoksVpc", "kRoksClassic"], var.connection_env_type)

@@ -285,7 +285,7 @@ variable "brs_create_new_connection" {
 variable "connection_env_type" {
   description = "Connection environment type to determine the required parameters for creating a new connection. Allowed values are 'kIksVpc', 'kRoksVpc', 'kRoksClassic', and 'kIksClassic'."
   type        = string
-  default     = "kIksVpc"
+  default     = "kRoksVpc"
 
   validation {
     condition     = contains(["kIksVpc", "kRoksVpc", "kRoksClassic", "kIksClassic"], var.connection_env_type)
