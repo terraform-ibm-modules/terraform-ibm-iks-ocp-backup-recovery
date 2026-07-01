@@ -3,8 +3,8 @@
 ##############################################################################
 
 output "source_registration_id" {
-  description = "ID of the registered Kubernetes source. Null if source registration is skipped."
-  value       = length(ibm_backup_recovery_source_registration.source_registration) > 0 ? ibm_backup_recovery_source_registration.source_registration[0].id : null
+  description = "ID of the registered Kubernetes source."
+  value       = ibm_backup_recovery_source_registration.source_registration.id
 }
 
 output "brs_instance_crn" {
@@ -33,8 +33,8 @@ output "protection_group_ids" {
 }
 
 output "protection_sources" {
-  description = "List of protection sources. Null if protection groups are not deployed."
-  value       = length(data.ibm_backup_recovery_protection_sources.sources) > 0 ? data.ibm_backup_recovery_protection_sources.sources[0] : null
+  description = "List of protection sources."
+  value       = data.ibm_backup_recovery_protection_sources.sources
 }
 
 output "recovery_ids" {

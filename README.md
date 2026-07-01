@@ -410,10 +410,10 @@ You need the following permissions to run this module:
 | <a name="output_connection_id"></a> [connection\_id](#output\_connection\_id) | ID of the data source connection to the Backup & Recovery Service instance |
 | <a name="output_latest_snapshots"></a> [latest\_snapshots](#output\_latest\_snapshots) | Map of protection group names to the most recent successful snapshot ID per protection group. Populated only when recovery is enabled by the calling module, because snapshot discovery relies on the backup-polling infrastructure (`terraform_data.wait_for_backup_run` and `data.ibm_backup_recovery_protection_group_runs`) that is activated when recovery is enabled. Use the snapshot IDs from this output as explicit `snapshot_id` values in a recovery's `kubernetes_params.objects` to target a specific backup rather than always recovering the latest. |
 | <a name="output_protection_group_ids"></a> [protection\_group\_ids](#output\_protection\_group\_ids) | Map of protection group names to their IDs. Empty if protection groups are not deployed. |
-| <a name="output_protection_sources"></a> [protection\_sources](#output\_protection\_sources) | List of protection sources. Null if protection groups are not deployed. |
+| <a name="output_protection_sources"></a> [protection\_sources](#output\_protection\_sources) | List of protection sources. |
 | <a name="output_recovery_ids"></a> [recovery\_ids](#output\_recovery\_ids) | Map of recovery operation names to their IDs. Empty if recovery is not enabled. |
 | <a name="output_recovery_status"></a> [recovery\_status](#output\_recovery\_status) | Map of recovery operation names to their status information. Empty if recovery is not enabled by the calling module. |
-| <a name="output_source_registration_id"></a> [source\_registration\_id](#output\_source\_registration\_id) | ID of the registered Kubernetes source. Null if source registration is skipped. |
+| <a name="output_source_registration_id"></a> [source\_registration\_id](#output\_source\_registration\_id) | ID of the registered Kubernetes source. |
 | <a name="output_target_cluster_id"></a> [target\_cluster\_id](#output\_target\_cluster\_id) | Target cluster ID for recovery operations. Same as source cluster for `same-cluster` recovery mode. |
 <!-- END OF PRE-COMMIT-TERRAFORM DOCS HOOK -->
 
