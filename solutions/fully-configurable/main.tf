@@ -2,6 +2,9 @@ locals {
   # --- Environment type detection ---
   is_vpc     = length(regexall("Vpc$", var.connection_env_type)) > 0
   is_classic = length(regexall("Classic$", var.connection_env_type)) > 0
+
+  # --- Recovery mode detection ---
+  is_full_recovery = var.deployment_mode == "full_backup_recovery"
 }
 # Retrieve information about an existing VPC cluster
 data "ibm_container_vpc_cluster" "vpc_cluster" {
@@ -107,7 +110,7 @@ module "protect_cluster" {
 locals {
   # Determine which protection group to use for recovery
   # Only applicable in full_backup_recovery mode
-  recovery_pg_name = var.deployment_mode == "full_backup_recovery" ? (
+  recovery_pg_name = local.is_full_recovery ? (
     var.recovery_protection_group_name != null ? var.recovery_protection_group_name :
     try(length(var.protection_groups), 0) > 0 ? var.protection_groups[0].name :
     var.auto_protect_policy_name
@@ -116,7 +119,7 @@ locals {
   # Extract protection group ID for recovery.
   # Keep the full ID returned by the module because downstream resources/scripts
   # expect the protection group identifier in that format.
-  recovery_pg_id = var.deployment_mode == "full_backup_recovery" && local.recovery_pg_name != null ? (
+  recovery_pg_id = local.is_full_recovery && local.recovery_pg_name != null ? (
     try(split("::", module.protect_cluster.protection_group_ids[local.recovery_pg_name])[1], null)
   ) : null
 }
@@ -131,7 +134,7 @@ locals {
 locals {
   deploy_target_cluster = (
     var.deployment_mode == "connected_component" ||
-    (var.deployment_mode == "full_backup_recovery" && var.recovery_type == "cross-cluster")
+    (local.is_full_recovery && var.recovery_type == "cross-cluster")
   )
 }
 
@@ -219,34 +222,20 @@ resource "time_sleep" "wait_for_target_registration" {
 }
 
 ##############################################################################
-# Immediate Backup Trigger and Completion Polling
+# Backup Completion Polling
 ##############################################################################
 
-# Trigger an immediate on-demand backup run for the recovery protection group.
-resource "ibm_backup_recovery_protection_group_run_request" "recovery_backup_run" {
-  count = var.deployment_mode == "full_backup_recovery" ? 1 : 0
-
-  x_ibm_tenant_id = module.protect_cluster.brs_tenant_id
-  group_id        = local.recovery_pg_id
-  run_type        = "kRegular"
-  endpoint_type   = var.brs_endpoint_type
-  instance_id     = module.protect_cluster.brs_instance_guid
-  region          = local.region
-
-  # Only depends on source cluster - backup triggers immediately when PG is ready
-  depends_on = [
-    module.protect_cluster
-  ]
-}
-
-# Poll for backup completion before attempting recovery
+# module.protect_cluster already triggers an on-demand backup run for every
+# protection group when deployment_mode is "full_backup_recovery" (see
+# ibm_backup_recovery_protection_group_run_request.trigger_backup_run in the
+# root module). Triggering a second run here would race with that one, so
+# this only polls for the backup that module.protect_cluster already started.
 resource "terraform_data" "wait_for_backup" {
-  count = var.deployment_mode == "full_backup_recovery" ? 1 : 0
+  count = local.is_full_recovery ? 1 : 0
 
   depends_on = [
     module.protect_cluster,
-    time_sleep.wait_for_target_registration,
-    ibm_backup_recovery_protection_group_run_request.recovery_backup_run
+    time_sleep.wait_for_target_registration
   ]
 
   input = {
@@ -275,7 +264,7 @@ resource "terraform_data" "wait_for_backup" {
 ##############################################################################
 
 resource "terraform_data" "same_cluster_recovery" {
-  count = var.deployment_mode == "full_backup_recovery" && var.recovery_type == "same-cluster" ? 1 : 0
+  count = local.is_full_recovery && var.recovery_type == "same-cluster" ? 1 : 0
 
   input = {
     url              = module.protect_cluster.brs_instance_url
@@ -320,7 +309,7 @@ resource "terraform_data" "same_cluster_recovery" {
 ##############################################################################
 
 resource "terraform_data" "cross_cluster_recovery" {
-  count = var.deployment_mode == "full_backup_recovery" && var.recovery_type == "cross-cluster" ? 1 : 0
+  count = local.is_full_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
 
   input = {
     url              = module.protect_cluster.brs_instance_url
@@ -371,15 +360,17 @@ resource "terraform_data" "cross_cluster_recovery" {
 # Poll recovery status and wait for completion before refreshing the protection source
 # Recovery operations are asynchronous - this ensures namespaces are fully restored
 resource "terraform_data" "wait_for_recovery_completion" {
-  count = var.deployment_mode == "full_backup_recovery" ? 1 : 0
+  count = local.is_full_recovery ? 1 : 0
 
   input = {
-    url           = module.protect_cluster.brs_instance_url
-    tenant        = module.protect_cluster.brs_tenant_id
-    endpoint_type = var.brs_endpoint_type
-    instance_id   = module.protect_cluster.brs_instance_guid
-    api_key       = sensitive(var.ibmcloud_api_key)
-    binaries_path = "/tmp"
+    url                   = module.protect_cluster.brs_instance_url
+    tenant                = module.protect_cluster.brs_tenant_id
+    endpoint_type         = var.brs_endpoint_type
+    instance_id           = module.protect_cluster.brs_instance_guid
+    api_key               = sensitive(var.ibmcloud_api_key)
+    timeout_minutes       = var.recovery_wait_timeout_minutes
+    poll_interval_seconds = var.recovery_poll_interval_seconds
+    binaries_path         = "/tmp"
   }
 
   provisioner "local-exec" {
@@ -391,8 +382,8 @@ resource "terraform_data" "wait_for_recovery_completion" {
         '${self.input.endpoint_type}' \
         '${self.input.instance_id}' \
         "$RECOVERY_ID" \
-        '30' \
-        '30' \
+        '${self.input.timeout_minutes}' \
+        '${self.input.poll_interval_seconds}' \
         '${self.input.binaries_path}'
     EOT
     environment = {
@@ -414,7 +405,7 @@ resource "terraform_data" "wait_for_recovery_completion" {
 # - For same-cluster recovery: refresh the source cluster (where recovery happened)
 # - For cross-cluster recovery: refresh the target cluster (where recovery happened)
 resource "ibm_backup_recovery_protection_source_refresh" "post_recovery_refresh" {
-  count = var.deployment_mode == "full_backup_recovery" ? 1 : 0
+  count = local.is_full_recovery ? 1 : 0
 
   x_ibm_tenant_id                      = module.protect_cluster.brs_tenant_id
   backup_recovery_protection_source_id = var.recovery_type == "cross-cluster" ? tonumber(split("::", module.target_cluster_registration[0].source_registration_id)[1]) : tonumber(split("::", module.protect_cluster.source_registration_id)[1])

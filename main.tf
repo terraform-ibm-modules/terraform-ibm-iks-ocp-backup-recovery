@@ -487,7 +487,7 @@ resource "time_sleep" "wait_for_source_discovery" {
     dsc_version   = var.dsc_image_version
   }
 
-  create_duration = "5m"
+  create_duration = "10m"
 }
 
 data "ibm_backup_recovery_protection_sources" "sources" {
@@ -955,23 +955,13 @@ resource "time_sleep" "wait_for_pg_registration" {
   }
 }
 
-# Extract numeric protection group IDs for backup trigger
-# Format: "clusterid/::timestamp:id:id" -> "timestamp:id:id"
-# The API expects numeric format, not the full ID with cluster prefix
-locals {
-  trigger_pg_ids = local.deploy_recovery ? {
-    for pg_name, pg_resource in ibm_backup_recovery_protection_group.protection_group :
-    pg_name => split("::", pg_resource.id)[1]
-  } : {}
-}
-
 # Trigger an immediate on-demand backup run for each protection group in recovery mode
 # This ensures backups are available for recovery without waiting for scheduled runs
 resource "ibm_backup_recovery_protection_group_run_request" "trigger_backup_run" {
   for_each = local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
 
   x_ibm_tenant_id = local.brs_tenant_id
-  group_id        = local.trigger_pg_ids[each.key] # Use numeric ID (timestamp:id:id format)
+  group_id        = local.numeric_pg_ids[each.key] # Use numeric ID (timestamp:id:id format)
   run_type        = "kRegular"
   endpoint_type   = var.brs_endpoint_type
   instance_id     = local.brs_instance_guid
@@ -1139,4 +1129,67 @@ resource "ibm_backup_recovery" "recover_snapshot" {
     }
   }
 
+}
+
+##############################################################################
+# State Migration
+##############################################################################
+
+# These resources gained a `count` (gated on locals that are always true today)
+# so that they can later be turned off per deployment_mode. The count moves
+# each resource from a bare address to index [0]; without a moved block,
+# existing deployments would see these destroyed and recreated on upgrade.
+moved {
+  from = kubernetes_namespace_v1.dsc_namespace
+  to   = kubernetes_namespace_v1.dsc_namespace[0]
+}
+
+moved {
+  from = helm_release.data_source_connector
+  to   = helm_release.data_source_connector[0]
+}
+
+moved {
+  from = kubernetes_service_account_v1.brsagent
+  to   = kubernetes_service_account_v1.brsagent[0]
+}
+
+moved {
+  from = kubernetes_cluster_role_binding_v1.brsagent_admin
+  to   = kubernetes_cluster_role_binding_v1.brsagent_admin[0]
+}
+
+moved {
+  from = kubernetes_secret_v1.brsagent_token
+  to   = kubernetes_secret_v1.brsagent_token[0]
+}
+
+moved {
+  from = time_sleep.wait_for_dsc_stabilization
+  to   = time_sleep.wait_for_dsc_stabilization[0]
+}
+
+moved {
+  from = ibm_backup_recovery_source_registration.source_registration
+  to   = ibm_backup_recovery_source_registration.source_registration[0]
+}
+
+moved {
+  from = time_sleep.brs_source_deregistration_wait
+  to   = time_sleep.brs_source_deregistration_wait[0]
+}
+
+moved {
+  from = terraform_data.wait_before_helm_destroy
+  to   = terraform_data.wait_before_helm_destroy[0]
+}
+
+moved {
+  from = time_sleep.wait_for_source_discovery
+  to   = time_sleep.wait_for_source_discovery[0]
+}
+
+moved {
+  from = data.ibm_backup_recovery_protection_sources.sources
+  to   = data.ibm_backup_recovery_protection_sources.sources[0]
 }

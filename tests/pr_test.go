@@ -198,23 +198,6 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 	})
 
 	options.TerraformVars = getSchematicTerraformVars(t, prefix, options, existingTerraformOptions)
-	options.IgnoreUpdates = testhelper.Exemptions{
-		List: []string{
-			"module.protect_cluster.kubernetes_namespace_v1.dsc_namespace",
-			"module.protect_cluster.time_sleep.wait_for_source_discovery",
-			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
-		},
-	}
-	options.IgnoreDestroys = testhelper.Exemptions{
-		List: []string{
-			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
-		},
-	}
-	options.IgnoreAdds = testhelper.Exemptions{
-		List: []string{
-			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
-		},
-	}
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
 }
 
@@ -242,37 +225,18 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 
 	options.TerraformVars = getSchematicTerraformVars(t, prefix, options, existingTerraformOptions)
 
-	// Exempt expected resource changes from image version update (7.2.16 -> 7.2.17)
-	// and chart rename (cohesity-dsc-chart -> brs-ds-connector-chart)
-	// Also exempt service_name parameter addition in backup recovery resources
-	options.IgnoreUpdates = testhelper.Exemptions{
-		List: []string{
-			"module.protect_cluster.helm_release.data_source_connector[0]",
-			"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration[0]",
-			"module.protect_cluster.kubernetes_cluster_role_binding_v1.brsagent_admin",
-			"module.protect_cluster.kubernetes_namespace_v1.dsc_namespace",
-			"module.protect_cluster.time_sleep.wait_for_source_discovery[0]",
-			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
-		},
-	}
 	options.IgnoreDestroys = testhelper.Exemptions{
 		List: []string{
-			"module.protect_cluster.kubernetes_secret_v1.brsagent_token",
-			"module.protect_cluster.kubernetes_service_account_v1.brsagent",
 			"module.protect_cluster.time_rotating.token_rotation",
 			"module.protect_cluster.ibm_backup_recovery_connection_registration_token.registration_token",
-			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
 			"module.protect_cluster.terraform_data.cleanup_brs_agent_resources",
 			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-			"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration[0]",
 			fmt.Sprintf(`module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-test-policy"]`, prefix),
 		},
 	}
 	options.IgnoreAdds = testhelper.Exemptions{
 		List: []string{
-			"module.protect_cluster.terraform_data.wait_before_helm_destroy[0]",
 			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-			"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration[0]",
 			fmt.Sprintf(`module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-test-policy"]`, prefix),
 		},
 	}

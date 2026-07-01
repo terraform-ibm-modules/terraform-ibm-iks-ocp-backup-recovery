@@ -45,12 +45,12 @@ output "protection_group_ids" {
 
 output "recovery_type" {
   description = "Type of recovery configured (`same-cluster` or `cross-cluster`)"
-  value       = var.deployment_mode == "full_backup_recovery" ? var.recovery_type : null
+  value       = local.is_full_recovery ? var.recovery_type : null
 }
 
 output "recovery_protection_group_name" {
   description = "Name of the protection group used for recovery"
-  value       = var.deployment_mode == "full_backup_recovery" ? local.recovery_pg_name : null
+  value       = local.is_full_recovery ? local.recovery_pg_name : null
 }
 
 output "recovery_snapshot_id" {
@@ -61,24 +61,24 @@ output "recovery_snapshot_id" {
 
 output "recovery_namespace_prefix" {
   description = "Prefix used for recovered namespaces"
-  value       = var.deployment_mode == "full_backup_recovery" ? var.recovery_namespace_prefix : null
+  value       = local.is_full_recovery ? var.recovery_namespace_prefix : null
 }
 
 # Cross-Cluster Recovery Outputs
 output "target_cluster_registration_id" {
   description = "Registration ID of the target cluster (cross-cluster recovery only)"
-  value       = var.deployment_mode == "full_backup_recovery" && var.recovery_type == "cross-cluster" ? module.target_cluster_registration[0].source_registration_id : null
+  value       = local.is_full_recovery && var.recovery_type == "cross-cluster" ? module.target_cluster_registration[0].source_registration_id : null
 }
 
 output "target_cluster_connection_id" {
   description = "Connection ID for the target cluster (cross-cluster recovery only)"
-  value       = var.deployment_mode == "full_backup_recovery" && var.recovery_type == "cross-cluster" ? module.target_cluster_registration[0].connection_id : null
+  value       = local.is_full_recovery && var.recovery_type == "cross-cluster" ? module.target_cluster_registration[0].connection_id : null
   sensitive   = true
 }
 
 output "recovery_status" {
   description = "Status message about recovery configuration"
-  value = var.deployment_mode == "full_backup_recovery" ? (
+  value = local.is_full_recovery ? (
     var.recovery_type == "same-cluster" ?
     "Same-cluster recovery enabled. Namespaces will be restored with prefix '${var.recovery_namespace_prefix}' to the source cluster." :
     "Cross-cluster recovery enabled. Namespaces will be restored with prefix '${var.recovery_namespace_prefix}' to target cluster '${var.target_cluster_id}'."
