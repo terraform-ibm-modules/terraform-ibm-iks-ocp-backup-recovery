@@ -469,17 +469,14 @@ resource "terraform_data" "wait_before_helm_destroy" {
     kubernetes_secret_v1.brsagent_token,
   ]
 
-  # Only the helm release identity should force this resource (and its destroy
-  # provisioner) to be recreated.
-  triggers_replace = {
-    helm_release_id = helm_release.data_source_connector.id
-  }
-
-  # Values needed by the destroy-time provisioner are kept in input, not
-  # triggers_replace. input is available via self.input at destroy time but does
-  # not force replacement, so the environment-dependent kubeconfig path (which
-  # differs between Schematics plan/apply jobs) no longer causes spurious
-  # replacements that fail the post-apply consistency check.
+  # This resource exists solely to run a destroy-time provisioner (namespace
+  # cleanup) before the helm release is destroyed; it has no create/update
+  # behavior, so it never needs to be replaced. Values needed by the destroy
+  # provisioner are stored in input (available via self.input at destroy time).
+  # No triggers_replace: a helm release update (e.g. the by-design registration
+  # token rotation) would make helm_release.id "known after apply" and cascade
+  # into a spurious replacement. An input change is only ever an in-place update
+  # that runs no provisioner, so it is side-effect free.
   input = {
     kubeconfig_path = data.ibm_container_cluster_config.cluster_config.config_file_path
     dsc_namespace   = var.dsc_namespace

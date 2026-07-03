@@ -204,6 +204,11 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 			// registration token rotates by design and the chart version resolves
 			// dynamically. This is expected, non-destructive churn.
 			"module.protect_cluster.helm_release.data_source_connector",
+			// wait_before_helm_destroy stores the kubeconfig path in input for its
+			// destroy-time provisioner. That path differs between Schematics jobs
+			// (each runs in a fresh temp dir), causing a side-effect-free in-place
+			// update (no provisioner runs on update).
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 		},
 	}
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
@@ -254,6 +259,11 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// registration token rotates by design and the chart version resolves
 			// dynamically. This is expected, non-destructive churn.
 			"module.protect_cluster.helm_release.data_source_connector",
+			// wait_before_helm_destroy stores the kubeconfig path in input for its
+			// destroy-time provisioner. That path differs between Schematics jobs
+			// (each runs in a fresh temp dir), causing a side-effect-free in-place
+			// update (no provisioner runs on update).
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 		},
 	}
 
