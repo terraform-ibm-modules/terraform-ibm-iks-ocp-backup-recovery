@@ -436,6 +436,16 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
     time_sleep.brs_source_deregistration_wait,
     module.backup_recovery_instance,
   ]
+
+  # service_name is an undocumented, provider-computed attribute. The provider
+  # applies a default ("backup-recovery") at plan time but stores null in state,
+  # so every re-plan shows a null -> "backup-recovery" diff. Because the field is
+  # ForceNew, that spurious diff forces a full replacement on each apply (and
+  # fails the post-apply consistency check). Ignore it so registration stays
+  # stable.
+  lifecycle {
+    ignore_changes = [service_name]
+  }
 }
 
 # BRS source deregistration is async on the backend. Without this sleep,
@@ -459,17 +469,27 @@ resource "terraform_data" "wait_before_helm_destroy" {
     kubernetes_secret_v1.brsagent_token,
   ]
 
+  # Only the helm release identity should force this resource (and its destroy
+  # provisioner) to be recreated.
   triggers_replace = {
     helm_release_id = helm_release.data_source_connector.id
+  }
+
+  # Values needed by the destroy-time provisioner are kept in input, not
+  # triggers_replace. input is available via self.input at destroy time but does
+  # not force replacement, so the environment-dependent kubeconfig path (which
+  # differs between Schematics plan/apply jobs) no longer causes spurious
+  # replacements that fail the post-apply consistency check.
+  input = {
     kubeconfig_path = data.ibm_container_cluster_config.cluster_config.config_file_path
     dsc_namespace   = var.dsc_namespace
   }
 
   provisioner "local-exec" {
     when    = destroy
-    command = "${path.module}/scripts/wait_for_namespace_cleanup.sh '${self.triggers_replace.dsc_namespace}'"
+    command = "${path.module}/scripts/wait_for_namespace_cleanup.sh '${self.input.dsc_namespace}'"
     environment = {
-      KUBECONFIG = self.triggers_replace.kubeconfig_path
+      KUBECONFIG = self.input.kubeconfig_path
     }
   }
 }

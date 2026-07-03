@@ -198,6 +198,14 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 	})
 
 	options.TerraformVars = getSchematicTerraformVars(t, prefix, options, existingTerraformOptions)
+	options.IgnoreUpdates = testhelper.Exemptions{
+		List: []string{
+			// The DSC helm release re-updates on every plan because the BRS
+			// registration token rotates by design and the chart version resolves
+			// dynamically. This is expected, non-destructive churn.
+			"module.protect_cluster.helm_release.data_source_connector",
+		},
+	}
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
 }
 
@@ -238,6 +246,14 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		List: []string{
 			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
 			fmt.Sprintf(`module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-test-policy"]`, prefix),
+		},
+	}
+	options.IgnoreUpdates = testhelper.Exemptions{
+		List: []string{
+			// The DSC helm release re-updates on every plan because the BRS
+			// registration token rotates by design and the chart version resolves
+			// dynamically. This is expected, non-destructive churn.
+			"module.protect_cluster.helm_release.data_source_connector",
 		},
 	}
 
