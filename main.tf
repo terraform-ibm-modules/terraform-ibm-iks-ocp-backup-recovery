@@ -262,9 +262,9 @@ resource "kubernetes_manifest" "anyuid_scc_rolebinding" {
     }
     subjects = [
       {
-        apiGroup  = "rbac.authorization.k8s.io"
-        kind      = "Group"
-        name      = "system:serviceaccounts:${kubernetes_namespace_v1.dsc_namespace.metadata[0].name}"
+        apiGroup = "rbac.authorization.k8s.io"
+        kind     = "Group"
+        name     = "system:serviceaccounts:${kubernetes_namespace_v1.dsc_namespace.metadata[0].name}"
       }
     ]
   }
