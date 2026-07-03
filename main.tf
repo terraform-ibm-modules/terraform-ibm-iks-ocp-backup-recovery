@@ -243,6 +243,33 @@ resource "kubernetes_namespace_v1" "dsc_namespace" {
   }
 }
 
+# On OpenShift (ROKS), grant anyuid SCC to all service accounts in the DSC
+# namespace so that DSC pods can run with the UID specified in their image.
+resource "kubernetes_manifest" "anyuid_scc_rolebinding" {
+  count = var.kube_type == "openshift" ? 1 : 0
+
+  manifest = {
+    apiVersion = "rbac.authorization.k8s.io/v1"
+    kind       = "RoleBinding"
+    metadata = {
+      name      = "dsc-anyuid-scc"
+      namespace = kubernetes_namespace_v1.dsc_namespace.metadata[0].name
+    }
+    roleRef = {
+      apiGroup = "rbac.authorization.k8s.io"
+      kind     = "ClusterRole"
+      name     = "system:openshift:scc:anyuid"
+    }
+    subjects = [
+      {
+        apiGroup  = "rbac.authorization.k8s.io"
+        kind      = "Group"
+        name      = "system:serviceaccounts:${kubernetes_namespace_v1.dsc_namespace.metadata[0].name}"
+      }
+    ]
+  }
+}
+
 ##############################################################################
 # Data Source Connector Helm Release
 ##############################################################################
@@ -301,6 +328,7 @@ resource "helm_release" "data_source_connector" {
   depends_on = [
     ibm_container_vpc_worker_pool.data_source_connector,
     kubernetes_namespace_v1.dsc_namespace,
+    kubernetes_manifest.anyuid_scc_rolebinding,
   ]
 
   lifecycle {
