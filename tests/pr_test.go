@@ -245,6 +245,11 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			"module.protect_cluster.terraform_data.cleanup_brs_agent_resources",
 			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
 			fmt.Sprintf(`module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-test-policy"]`, prefix),
+			// wait_before_helm_destroy moved from triggers_replace to input, which
+			// is a one-time structural change that forces a replace when upgrading
+			// from the base version. Post-merge this becomes a plain in-place update
+			// (covered by IgnoreUpdates below).
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 		},
 	}
 	options.IgnoreAdds = testhelper.Exemptions{
