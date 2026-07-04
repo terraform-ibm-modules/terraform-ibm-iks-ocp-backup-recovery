@@ -482,11 +482,16 @@ resource "terraform_data" "wait_before_helm_destroy" {
     dsc_namespace   = var.dsc_namespace
   }
 
+  # self.input is wrapped in try() so the destroy provisioner stays safe when the
+  # resource instance was created by an older module version that stored these
+  # values in triggers_replace instead of input (in that case self.input is null
+  # in state). An empty KUBECONFIG makes the script skip the namespace wait and
+  # exit cleanly, which is the correct behaviour during that one-time migration.
   provisioner "local-exec" {
     when    = destroy
-    command = "${path.module}/scripts/wait_for_namespace_cleanup.sh '${self.input.dsc_namespace}'"
+    command = "${path.module}/scripts/wait_for_namespace_cleanup.sh '${try(self.input.dsc_namespace, "ibm-brs-data-source-connector")}'"
     environment = {
-      KUBECONFIG = self.input.kubeconfig_path
+      KUBECONFIG = try(self.input.kubeconfig_path, "")
     }
   }
 }

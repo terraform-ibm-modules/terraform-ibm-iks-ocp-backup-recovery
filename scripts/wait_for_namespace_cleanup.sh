@@ -35,7 +35,10 @@ while [[ $COUNTER -lt $MAX_ATTEMPTS ]]; do
   echo "Attempt $COUNTER/$MAX_ATTEMPTS: Checking for BRS-managed resources..."
 
   BRS_AGENT_NAMESPACES=$(kubectl get namespaces --no-headers 2>/dev/null | awk '{print $1}' | grep '^brs-backup-agent-' || true)
-  BRS_AGENT_NS=$(echo "$BRS_AGENT_NAMESPACES" | grep -c . || echo "0")
+  # grep -c already prints 0 on no match (and exits non-zero); use `|| true` so
+  # set -e doesn't abort. Using `|| echo "0"` here would append a second line,
+  # producing "0\n0" and breaking the arithmetic below.
+  BRS_AGENT_NS=$(echo "$BRS_AGENT_NAMESPACES" | grep -c . || true)
 
   VELERO_BACKUPS=0
   VELERO_RESTORES=0
