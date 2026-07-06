@@ -88,7 +88,7 @@ variable "auto_protect_policy_name" {
       var.enable_auto_protect == false ||
       (var.enable_auto_protect == true && var.auto_protect_policy_name != null)
     )
-    error_message = "auto_protect_policy_name is required when enable_auto_protect is true in 'backup_only' or 'full_backup_recovery' modes."
+    error_message = "`auto_protect_policy_name` is required when `enable_auto_protect` is true in 'backup_only' or 'full_backup_recovery' modes."
   }
 }
 
@@ -497,8 +497,7 @@ variable "access_tags" {
 
 variable "connection_env_type" {
   type        = string
-  description = "Type of environment for the connection. Allowed values are 'kIksVpc', 'kIksClassic', 'kRoksVpc', 'kRoksClassic'."
-  default     = "kIksVpc"
+  description = "Type of environment for the connection. Must be consistent with `kube_type` (use `kIks*` for `kubernetes`, `kRoks*` for `openshift`). Allowed values are 'kIksVpc', 'kIksClassic', 'kRoksVpc', 'kRoksClassic'."
 
   validation {
     condition     = contains(["kIksVpc", "kIksClassic", "kRoksVpc", "kRoksClassic"], var.connection_env_type)

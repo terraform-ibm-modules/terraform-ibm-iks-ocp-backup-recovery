@@ -496,7 +496,7 @@
             {
               "key": "target_cluster_id",
               "display_name": "Target Cluster",
-              "description": "Target cluster for 'connected_component' mode or cross-cluster recovery in 'full_backup_recovery' mode.",
+              "description": "Target cluster for 'connected_component' mode or `cross-cluster` recovery in 'full_backup_recovery' mode.",
               "custom_config": {
                 "type": "cluster_var",
                 "grouping": "deployment",
@@ -509,7 +509,7 @@
             {
               "key": "target_cluster_resource_group_id",
               "display_name": "Target Cluster Resource Group",
-              "description": "Resource group of the target cluster. Required for 'connected_component' and cross-cluster recovery.",
+              "description": "Resource group of the target cluster. Required for 'connected_component' and `cross-cluster` recovery.",
               "custom_config": {
                 "type": "resource_group",
                 "grouping": "deployment",

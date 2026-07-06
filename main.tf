@@ -974,6 +974,16 @@ resource "time_sleep" "wait_for_pg_registration" {
   }
 }
 
+# Extract numeric protection group IDs for API calls
+locals {
+  # Convert full PG ID format (clusterid/::timestamp:id:id) to numeric format (timestamp:id:id)
+  # Example: "5n3kwor5cb/::8009179080677672:1753125047518:126734" -> "8009179080677672:1753125047518:126734"
+  numeric_pg_ids = local.deploy_recovery ? {
+    for pg_name, pg_resource in ibm_backup_recovery_protection_group.protection_group :
+    pg_name => split("::", pg_resource.id)[1]
+  } : {}
+}
+
 # Trigger an immediate on-demand backup run for each protection group in recovery mode
 # This ensures backups are available for recovery without waiting for scheduled runs
 resource "ibm_backup_recovery_protection_group_run_request" "trigger_backup_run" {
@@ -1032,8 +1042,6 @@ resource "terraform_data" "wait_for_backup_run" {
     interpreter = ["/bin/bash", "-c"]
     environment = {
       IBMCLOUD_API_KEY = self.input.api_key
-      # Don't pass IAM_TOKEN - let script get fresh token via API key
-      # The token from data source may be stale after the 90s PG registration wait
     }
   }
 }
@@ -1043,16 +1051,6 @@ resource "terraform_data" "wait_for_backup_run" {
 ##############################################################################
 
 # Data source to discover completed backup snapshots after polling confirms they exist
-# Extract numeric protection group IDs for API calls
-locals {
-  # Convert full PG ID format (clusterid/::timestamp:id:id) to numeric format (timestamp:id:id)
-  # Example: "5n3kwor5cb/::8009179080677672:1753125047518:126734" -> "8009179080677672:1753125047518:126734"
-  numeric_pg_ids = local.deploy_recovery ? {
-    for pg_name, pg_resource in ibm_backup_recovery_protection_group.protection_group :
-    pg_name => split("::", pg_resource.id)[1]
-  } : {}
-}
-
 data "ibm_backup_recovery_protection_group_runs" "backup_runs" {
   for_each = local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
 
