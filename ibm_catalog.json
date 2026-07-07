@@ -281,6 +281,26 @@
               "display_name": "Create New Connection"
             },
             {
+              "key": "deployment_mode",
+              "display_name": "Deployment Mode",
+              "required": true,
+              "description": "Select the deployment scenario: 'Backup Only' for backup without recovery, 'Connected Component' for connection setup only, or 'Full Backup and Recovery' for end-to-end validation with backup and recovery.",
+              "options": [
+                {
+                  "displayname": "Backup Only (Default)",
+                  "value": "backup_only"
+                },
+                {
+                  "displayname": "Connected Component",
+                  "value": "connected_component"
+                },
+                {
+                  "displayname": "Full Backup and Recovery",
+                  "value": "full_backup_recovery"
+                }
+              ]
+            },
+            {
               "key": "connection_env_type",
               "display_name": "Connection Environment Type",
               "options": [
@@ -318,15 +338,24 @@
             },
             {
               "key": "enable_auto_protect",
-              "display_name": "Enable Auto-Protect"
+              "display_name": "Enable Auto-Protect",
+              "description": "Enable auto-protect for automatic backup of all namespaces. Only applicable in 'backup_only' and 'full_backup_recovery' modes.",
+              "hidden": {
+                "deployment_mode": "connected_component"
+              }
             },
             {
               "key": "auto_protect_policy_name",
-              "display_name": "Auto-Protect Policy Name"
+              "display_name": "Auto-Protect Policy Name",
+              "description": "Name of the protection policy to use for auto-protect. Only applicable in 'backup_only' and 'full_backup_recovery' modes.",
+              "hidden": {
+                "deployment_mode": "connected_component"
+              }
             },
             {
               "key": "protection_groups",
               "display_name": "Protection Groups",
+              "description": "Define granular protection groups for specific namespaces. Only applicable in 'backup_only' and 'full_backup_recovery' modes.",
               "custom_config": {
                 "type": "code_editor",
                 "grouping": "deployment",
@@ -336,6 +365,9 @@
                     "hcl"
                   ]
                 }
+              },
+              "hidden": {
+                "deployment_mode": "connected_component"
               }
             },
             {
@@ -397,14 +429,9 @@
               "display_name": "Resource Tags"
             },
             {
-              "key": "enable_recovery",
-              "display_name": "Enable Automatic Recovery Testing",
-              "description": "Enable automatic recovery testing after backup completes. When enabled, the solution will trigger an immediate backup, wait for completion, and then automatically restore the backup to validate data integrity. Default: false"
-            },
-            {
               "key": "recovery_type",
               "display_name": "Recovery Type",
-              "description": "Choose the recovery destination: 'Same Cluster' restores namespaces to the original cluster with a prefix (e.g., 'restored-myapp'). 'Cross Cluster' restores to a different target cluster for disaster recovery or migration scenarios. Default: same-cluster",
+              "description": "Type of recovery: 'same-cluster' or 'cross-cluster'.",
               "options": [
                 {
                   "displayname": "Same Cluster",
@@ -414,42 +441,75 @@
                   "displayname": "Cross Cluster",
                   "value": "cross-cluster"
                 }
-              ]
+              ],
+              "hidden": {
+                "deployment_mode": [
+                  "backup_only",
+                  "connected_component"
+                ]
+              }
             },
             {
               "key": "recovery_namespace_prefix",
               "display_name": "Recovery Namespace Prefix",
-              "description": "Prefix added to namespace names during recovery to avoid conflicts with existing namespaces. For example, 'restored-' will create 'restored-production' from 'production'. This allows you to test recovery without affecting running workloads. Default: 'restored-'"
+              "description": "Prefix for recovered namespace names.",
+              "hidden": {
+                "deployment_mode": [
+                  "backup_only",
+                  "connected_component"
+                ]
+              }
             },
             {
               "key": "recovery_protection_group_name",
               "display_name": "Recovery Protection Group Name",
-              "description": "Specify which protection group to recover from. Leave empty to automatically use the first protection group defined in your configuration. This is useful when you have multiple protection groups and want to test recovery of a specific one."
+              "description": "Name of protection group to recover from.",
+              "hidden": {
+                "deployment_mode": [
+                  "backup_only",
+                  "connected_component"
+                ]
+              }
             },
             {
               "key": "recovery_wait_timeout_minutes",
               "display_name": "Recovery Wait Timeout (Minutes)",
-              "description": "Maximum time to wait for the initial backup to complete before triggering recovery. The solution actively polls the backup status during this period. Increase this value for large clusters or slow networks. Valid range: 1-120 minutes. Default: 45 minutes"
+              "description": "Maximum time to wait for backup completion.",
+              "hidden": {
+                "deployment_mode": [
+                  "backup_only",
+                  "connected_component"
+                ]
+              }
             },
             {
               "key": "recovery_poll_interval_seconds",
               "display_name": "Recovery Poll Interval (Seconds)",
-              "description": "How often to check backup status while waiting for completion. Lower values provide faster detection of completed backups but increase API calls. Valid range: 10-300 seconds. Default: 30 seconds"
+              "description": "Interval between backup status checks.",
+              "hidden": {
+                "deployment_mode": [
+                  "backup_only",
+                  "connected_component"
+                ]
+              }
             },
             {
               "key": "target_cluster_id",
-              "display_name": "Target Cluster (Cross-Cluster Recovery)",
-              "description": "Select the target cluster where backups will be restored for cross-cluster recovery. This cluster must be in the same region as the BRS instance. Required when recovery_type is 'cross-cluster'. The target cluster will be automatically registered with the same BRS instance.",
+              "display_name": "Target Cluster",
+              "description": "Target cluster for 'connected_component' mode or `cross-cluster` recovery in 'full_backup_recovery' mode.",
               "custom_config": {
                 "type": "cluster_var",
                 "grouping": "deployment",
                 "original_grouping": "deployment"
+              },
+              "hidden": {
+                "deployment_mode": "backup_only"
               }
             },
             {
               "key": "target_cluster_resource_group_id",
-              "display_name": "Target Cluster Resource Group (Cross-Cluster)",
-              "description": "Resource group of the target cluster for cross-cluster recovery. Required when recovery_type is 'cross-cluster'. Must have appropriate permissions to access this resource group.",
+              "display_name": "Target Cluster Resource Group",
+              "description": "Resource group of the target cluster. Required for 'connected_component' and `cross-cluster` recovery.",
               "custom_config": {
                 "type": "resource_group",
                 "grouping": "deployment",
@@ -457,12 +517,15 @@
                 "config_constraints": {
                   "identifier": "rg_id"
                 }
+              },
+              "hidden": {
+                "deployment_mode": "backup_only"
               }
             },
             {
               "key": "target_cluster_config_endpoint_type",
-              "display_name": "Target Cluster Endpoint Type (Cross-Cluster)",
-              "description": "Endpoint type for accessing the target cluster configuration. 'Private' is recommended for security. 'Default' uses the cluster's default endpoint. 'VPE' and 'Link' are for advanced networking scenarios. Default: private",
+              "display_name": "Target Cluster Config Endpoint Type",
+              "description": "Endpoint type for target cluster config access.",
               "options": [
                 {
                   "displayname": "Default",
@@ -480,17 +543,26 @@
                   "displayname": "Link",
                   "value": "link"
                 }
-              ]
+              ],
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
             },
             {
               "key": "target_brs_connection_name",
-              "display_name": "Target BRS Connection Name (Cross-Cluster)",
-              "description": "Custom name for the BRS connection to the target cluster. Leave empty to auto-generate a name based on the cluster ID (format: '{cluster_id}-target-connection'). This connection is used to register the target cluster with the BRS instance."
+              "display_name": "Target BRS Connection Name",
+              "description": "Name for the BRS connection to the target cluster.",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
             },
             {
               "key": "target_create_dsc_worker_pool",
-              "display_name": "Create DSC Worker Pool on Target (Cross-Cluster)",
-              "description": "Create a dedicated worker pool for the Data Source Connector on the target cluster. Recommended for production to isolate backup operations from application workloads. Set to false to deploy DSC on existing worker nodes. Default: true"
+              "display_name": "Create DSC Worker Pool on Target",
+              "description": "Create dedicated worker pool for DSC on target cluster.",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
             }
           ],
           "dependencies": [],

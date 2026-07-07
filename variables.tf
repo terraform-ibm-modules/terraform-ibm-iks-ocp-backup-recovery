@@ -283,9 +283,8 @@ variable "brs_create_new_connection" {
 }
 
 variable "connection_env_type" {
-  description = "Connection environment type to determine the required parameters for creating a new connection. Allowed values are 'kIksVpc', 'kRoksVpc', 'kRoksClassic', and 'kIksClassic'."
+  description = "Connection environment type to determine the required parameters for creating a new connection. Must be consistent with `kube_type` (use `kIks*` for `kubernetes`, `kRoks*` for `openshift`). Allowed values are 'kIksVpc', 'kRoksVpc', 'kRoksClassic', and 'kIksClassic'."
   type        = string
-  default     = "kIksVpc"
 
   validation {
     condition     = contains(["kIksVpc", "kRoksVpc", "kRoksClassic", "kIksClassic"], var.connection_env_type)
@@ -294,17 +293,41 @@ variable "connection_env_type" {
 }
 
 ##############################################################################
+# Use Case Control Flags
+##############################################################################
+
+variable "deployment_mode" {
+  description = <<-DESC
+    Deployment mode to control what components are deployed:
+    - 'backup_only' (default): Registers source cluster with BRS, configures protection groups. No target cluster, no recovery.
+    - 'connected_component': Registers both source + target clusters with BRS for cluster connection setup only. No backup or recovery triggered.
+    - 'full_backup_recovery': End-to-end: registers clusters, triggers on-demand backup, waits for completion, executes recovery to validate.
+  DESC
+  type        = string
+  default     = "backup_only"
+
+  validation {
+    condition     = contains(["backup_only", "connected_component", "full_backup_recovery"], var.deployment_mode)
+    error_message = "`deployment_mode` must be one of 'backup_only', 'connected_component', or 'full_backup_recovery'."
+  }
+}
+
+##############################################################################
 # Protection Policy
 ##############################################################################
 
 variable "auto_protect_policy_name" {
-  description = "Name of an existing protection policy to use for auto-protect. Required when `enable_auto_protect` is `true`. The policy must already exist in the BRS instance (create it using the `terraform-ibm-backup-recovery` module)."
+  description = "Name of an existing protection policy to use for auto-protect. Required when `enable_auto_protect` is `true` and deployment_mode is 'backup_only' or 'full_backup_recovery'. The policy must already exist in the BRS instance (create it using the `terraform-ibm-backup-recovery` module)."
   type        = string
   default     = null
 
   validation {
-    condition     = var.enable_auto_protect == false || (var.enable_auto_protect == true && var.auto_protect_policy_name != null)
-    error_message = "auto_protect_policy_name is required when enable_auto_protect is true."
+    condition = (
+      var.deployment_mode == "connected_component" ||
+      var.enable_auto_protect == false ||
+      (var.enable_auto_protect == true && var.auto_protect_policy_name != null)
+    )
+    error_message = "auto_protect_policy_name is required when enable_auto_protect is true in 'backup_only' or 'full_backup_recovery' modes."
   }
 }
 
@@ -905,14 +928,8 @@ variable "policies" {
 # Recovery Variables
 ##############################################################################
 
-variable "enable_recovery" {
-  description = "Enable automatic recovery after backup completion. When true, recovery operations defined in `recoveries` will be triggered automatically after successful backup. Set to false to only perform backups without recovery."
-  type        = bool
-  default     = false
-}
-
 variable "recovery_mode" {
-  description = "Recovery mode: 'same-cluster' to restore within the same cluster, or 'cross-cluster' to restore to a different target cluster. Required when `var.enable_recovery` is `true`."
+  description = "Recovery mode: 'same-cluster' to restore within the same cluster, or 'cross-cluster' to restore to a different target cluster. This is used when recovery is enabled by the calling module."
   type        = string
   default     = "same-cluster"
 
@@ -920,48 +937,43 @@ variable "recovery_mode" {
     condition     = contains(["same-cluster", "cross-cluster"], var.recovery_mode)
     error_message = "recovery_mode must be either 'same-cluster' or 'cross-cluster'."
   }
-
-  validation {
-    condition     = !var.enable_recovery || var.recovery_mode != null
-    error_message = "recovery_mode must be set when enable_recovery is true."
-  }
 }
 
 variable "target_cluster_id" {
-  description = "Target cluster ID for cross-cluster recovery. Required when `var.recovery_mode` is 'cross-cluster'. Must be a cluster already registered with the BRS instance."
+  description = "Target cluster ID for cross-cluster recovery or connected component setup. Required when `var.recovery_mode` is 'cross-cluster' or when `deployment_mode` is 'connected_component'. Must be a cluster already registered with the BRS instance."
   type        = string
   default     = null
 
   validation {
-    condition     = var.recovery_mode == "same-cluster" || (var.recovery_mode == "cross-cluster" && var.target_cluster_id != null)
-    error_message = "target_cluster_id is required when recovery_mode is 'cross-cluster'."
+    condition = (
+      var.deployment_mode == "backup_only" ||
+      (var.deployment_mode == "connected_component" && var.target_cluster_id != null) ||
+      (var.deployment_mode == "full_backup_recovery" && var.recovery_mode == "same-cluster") ||
+      (var.deployment_mode == "full_backup_recovery" && var.recovery_mode == "cross-cluster" && var.target_cluster_id != null)
+    )
+    error_message = "target_cluster_id is required when deployment_mode is 'connected_component' or when recovery_mode is 'cross-cluster' in 'full_backup_recovery' mode."
   }
 }
 
 variable "target_cluster_resource_group_id" {
-  description = "Resource group ID of the target cluster for cross-cluster recovery. Required when recovery_mode is 'cross-cluster'."
+  description = "Resource group ID of the target cluster for cross-cluster recovery or connected component setup. Required when recovery_mode is 'cross-cluster' or when `deployment_mode` is 'connected_component'."
   type        = string
   default     = null
 
   validation {
-    condition     = var.recovery_mode == "same-cluster" || (var.recovery_mode == "cross-cluster" && var.target_cluster_resource_group_id != null)
-    error_message = "target_cluster_resource_group_id is required when recovery_mode is 'cross-cluster'."
+    condition = (
+      var.deployment_mode == "backup_only" ||
+      (var.deployment_mode == "connected_component" && var.target_cluster_resource_group_id != null) ||
+      (var.deployment_mode == "full_backup_recovery" && var.recovery_mode == "same-cluster") ||
+      (var.deployment_mode == "full_backup_recovery" && var.recovery_mode == "cross-cluster" && var.target_cluster_resource_group_id != null)
+    )
+    error_message = "target_cluster_resource_group_id is required when deployment_mode is 'connected_component' or when recovery_mode is 'cross-cluster' in 'full_backup_recovery' mode."
   }
 }
 
-variable "wait_for_backup_completion" {
-  description = "Wait duration for initial backup to complete before attempting recovery. Specify with time unit suffix (e.g., '5m', '10m', '30m'). Increase this value for large clusters or slow networks. Set to '0s' to disable waiting (recovery will use existing snapshots only)."
-  type        = string
-  default     = "30m"
-
-  validation {
-    condition     = can(regex("^[0-9]+(s|m|h)$", var.wait_for_backup_completion))
-    error_message = "wait_for_backup_completion must be a duration string with unit suffix (e.g., '5m', '10m', '30m')."
-  }
-}
 
 variable "recoveries" {
-  description = "List of recovery operations to restore backups. When `enable_recovery` is `true`, these operations are triggered automatically after a backup run completes. Each entry's `kubernetes_params.objects[*].snapshot_id` controls which backup is restored: supply an explicit snapshot ID to recover from any specific backup (not necessarily the one taken in the current apply), or use the `latest_snapshots` output to reference the most recent run. Supports multiple environments: Kubernetes, VMware, Physical, AWS, Azure, GCP, SQL, Oracle, and more. This variable follows the official IBM Backup Recovery provider schema. For IKS/ROKS recovery use `kubernetes_params`. See the Usage section in the README for examples."
+  description = "List of recovery operations to restore backups. These operations are triggered automatically after a backup run completes when recovery is enabled by the calling module. Each entry's `kubernetes_params.objects[*].snapshot_id` controls which backup is restored: supply an explicit snapshot ID to recover from any specific backup (not necessarily the one taken in the current apply), or use the `latest_snapshots` output to reference the most recent run. Supports multiple environments: Kubernetes, VMware, Physical, AWS, Azure, GCP, SQL, Oracle, and more. This variable follows the official IBM Backup Recovery provider schema. For IKS/ROKS recovery use `kubernetes_params`. See the Usage section in the README for examples."
   type = list(object({
     name                 = string
     snapshot_environment = string # kKubernetes, kVMware, kPhysical, kAWS, kAzure, kGCP, kSQL, kOracle, kView, etc.

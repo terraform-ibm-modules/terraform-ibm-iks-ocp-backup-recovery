@@ -155,37 +155,23 @@ resource "time_sleep" "wait_clusters" {
 # Test Workload Namespace (Source Cluster)
 ##############################################################################
 
-# Create namespace using null_resource with kubectl
-# This avoids Kubernetes provider initialization timing issues with aliased providers
-resource "null_resource" "create_source_namespace" {
-  provisioner "local-exec" {
-    command = <<-EOT
-      export KUBECONFIG="${data.ibm_container_cluster_config.source_cluster_config.config_file_path}"
-      kubectl create namespace ${var.prefix}-source-app --dry-run=client -o yaml | kubectl apply -f -
-      kubectl label namespace ${var.prefix}-source-app backup-enabled=true environment=production --overwrite
-      # Wait for namespace to be fully ready
-      kubectl wait --for=jsonpath='{.status.phase}'=Active --timeout=60s namespace/${var.prefix}-source-app
-    EOT
-  }
+resource "kubernetes_namespace" "create_source_namespace" {
+  provider = kubernetes.source
 
-  provisioner "local-exec" {
-    when    = destroy
-    command = <<-EOT
-      export KUBECONFIG="${self.triggers.kubeconfig}"
-      kubectl delete namespace ${self.triggers.namespace} --ignore-not-found=true || true
-    EOT
-  }
+  metadata {
+    name = "${var.prefix}-source-app"
 
-  triggers = {
-    namespace  = "${var.prefix}-source-app"
-    kubeconfig = data.ibm_container_cluster_config.source_cluster_config.config_file_path
+    labels = {
+      backup-enabled = "true"
+      environment    = "production"
+    }
   }
 
   depends_on = [time_sleep.wait_clusters]
 }
 
 locals {
-  source_namespace = "${var.prefix}-source-app"
+  source_namespace = kubernetes_namespace.create_source_namespace.metadata[0].name
 }
 
 # StatefulSet with volumeClaimTemplates for BRS-compatible recovery
@@ -206,7 +192,7 @@ resource "kubernetes_stateful_set_v1" "source_app" {
   }
 
   depends_on = [
-    null_resource.create_source_namespace
+    kubernetes_namespace.create_source_namespace
   ]
 
   spec {
@@ -311,7 +297,7 @@ resource "terraform_data" "wait_for_source_workload" {
 
   depends_on = [
     kubernetes_stateful_set_v1.source_app,
-    null_resource.create_source_namespace
+    kubernetes_namespace.create_source_namespace
   ]
 }
 
@@ -386,12 +372,10 @@ module "source_backup_recovery" {
     }]
   }]
 
-  # Disable recovery in source module - will be handled separately
-  enable_recovery                  = false
+  # Recovery will be handled separately via scripts
   recovery_mode                    = var.recovery_mode
   target_cluster_id                = local.target_cluster_id
   target_cluster_resource_group_id = module.resource_group.resource_group_id
-  wait_for_backup_completion       = var.wait_for_backup_completion
   recoveries                       = []
 
   resource_tags = var.resource_tags
@@ -438,8 +422,7 @@ module "target_backup_recovery" {
   protection_groups = []
 
   # No recovery operations on target cluster
-  enable_recovery = false
-  recoveries      = []
+  recoveries = []
 
   resource_tags = var.resource_tags
   access_tags   = var.access_tags

@@ -109,6 +109,31 @@ latest_run_id() {
   echo "$body" | jq -r '.runs[0].id // empty'
 }
 
+check_for_failed_run() {
+  local body=$1
+  # Check if the latest run has failed
+  # Returns "FAILED" if any run has a failed status, empty otherwise
+  echo "$body" | jq -r '
+    .runs[0]? |
+    if .localBackupInfo?.status == "kFailure" or
+       .localBackupInfo?.status == "kCanceled" or
+       (.objects[]?.localSnapshotInfo?.snapshotInfo?.status // "" | test("^(kFailure|kCanceled)$")) or
+       (.objects[]?.archivalInfo?.archivalTargetResults[]?.status // "" | test("^(Failed|Canceled)$")) or
+       (.objects[]?.replicationInfo?.replicationTargetResults[]?.status // "" | test("^(Failed|Canceled)$")) or
+       (.archivalInfo?.archivalTargetResults[]?.status // "" | test("^(Failed|Canceled)$")) or
+       (.replicationInfo?.replicationTargetResults[]?.status // "" | test("^(Failed|Canceled)$"))
+    then "FAILED"
+    else empty
+    end
+  '
+}
+
+get_run_status() {
+  local body=$1
+  # Get the status of the latest run for logging
+  echo "$body" | jq -r '.runs[0]?.localBackupInfo?.status // "Unknown"'
+}
+
 main() {
   local debug_file="/tmp/backup_poll_debug_${PROTECTION_GROUP_ID##*:}.log"
 
@@ -174,6 +199,25 @@ main() {
       echo "=== Poll at $(date) ===" | tee -a "$debug_file" >&2
       echo "$run_response" | jq '.' >> "$debug_file" 2>&1
 
+      # Check for failed backup run first
+      local failed_status
+      failed_status=$(check_for_failed_run "$run_response")
+
+      if [[ -n "$failed_status" ]]; then
+        local run_status
+        run_status=$(get_run_status "$run_response")
+        local run_id
+        run_id=$(latest_run_id "$run_response")
+        echo "✗ Backup run failed with status: ${run_status}" | tee -a "$debug_file" >&2
+        echo "Run ID: ${run_id}" | tee -a "$debug_file" >&2
+        echo "ERROR: Backup job failed for protection group ${PROTECTION_GROUP_ID}." >&2
+        echo "Status: ${run_status}" >&2
+        echo "Run ID: ${run_id}" >&2
+        echo "Check the BRS instance logs for detailed error information." >&2
+        echo "Debug log: ${debug_file}" >&2
+        exit 1
+      fi
+
       local snapshot_id
       snapshot_id=$(latest_snapshot_id "$run_response")
 
@@ -191,7 +235,9 @@ main() {
           '{snapshot_id: $snapshot_id, run_id: $run_id, protection_group_id: $protection_group_id}'
         exit 0
       else
-        echo "No snapshot found yet, waiting ${POLL_INTERVAL_SECONDS}s..." | tee -a "$debug_file" >&2
+        local run_status
+        run_status=$(get_run_status "$run_response")
+        echo "No snapshot found yet (run status: ${run_status}), waiting ${POLL_INTERVAL_SECONDS}s..." | tee -a "$debug_file" >&2
       fi
     else
       echo "Protection group not found (404), waiting ${POLL_INTERVAL_SECONDS}s..." | tee -a "$debug_file" >&2
