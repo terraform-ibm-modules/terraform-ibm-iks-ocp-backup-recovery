@@ -200,11 +200,14 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 	options.TerraformVars = getSchematicTerraformVars(t, prefix, options, existingTerraformOptions)
 	options.IgnoreUpdates = testhelper.Exemptions{
 		List: []string{
-			"module.protect_cluster.kubernetes_namespace_v1.dsc_namespace",
-		},
-	}
-	options.IgnoreDestroys = testhelper.Exemptions{
-		List: []string{
+			// The DSC helm release re-updates on every plan because the BRS
+			// registration token rotates by design and the chart version resolves
+			// dynamically. This is expected, non-destructive churn.
+			"module.protect_cluster.helm_release.data_source_connector",
+			// wait_before_helm_destroy stores the kubeconfig path in input for its
+			// destroy-time provisioner. That path differs between Schematics jobs
+			// (each runs in a fresh temp dir), causing a side-effect-free in-place
+			// update (no provisioner runs on update).
 			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 		},
 	}
@@ -235,25 +238,37 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 
 	options.TerraformVars = getSchematicTerraformVars(t, prefix, options, existingTerraformOptions)
 
-	// Exempt expected resource changes from image version update (7.2.16 -> 7.2.17)
-	// and chart rename (cohesity-dsc-chart -> brs-ds-connector-chart)
-	options.IgnoreUpdates = testhelper.Exemptions{
-		List: []string{
-			"module.protect_cluster.helm_release.data_source_connector",
-			"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration",
-			"module.protect_cluster.kubernetes_cluster_role_binding_v1.brsagent_admin",
-			"module.protect_cluster.kubernetes_namespace_v1.dsc_namespace",
-			"module.protect_cluster.time_sleep.wait_for_source_discovery",
-		},
-	}
 	options.IgnoreDestroys = testhelper.Exemptions{
 		List: []string{
-			"module.protect_cluster.kubernetes_secret_v1.brsagent_token",
-			"module.protect_cluster.kubernetes_service_account_v1.brsagent",
 			"module.protect_cluster.time_rotating.token_rotation",
 			"module.protect_cluster.ibm_backup_recovery_connection_registration_token.registration_token",
-			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 			"module.protect_cluster.terraform_data.cleanup_brs_agent_resources",
+			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
+			fmt.Sprintf(`module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-test-policy"]`, prefix),
+			// wait_before_helm_destroy moved from triggers_replace to input, which
+			// is a one-time structural change that forces a replace when upgrading
+			// from the base version. Post-merge this becomes a plain in-place update
+			// (covered by IgnoreUpdates below).
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
+		},
+	}
+	options.IgnoreAdds = testhelper.Exemptions{
+		List: []string{
+			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
+			fmt.Sprintf(`module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-test-policy"]`, prefix),
+		},
+	}
+	options.IgnoreUpdates = testhelper.Exemptions{
+		List: []string{
+			// The DSC helm release re-updates on every plan because the BRS
+			// registration token rotates by design and the chart version resolves
+			// dynamically. This is expected, non-destructive churn.
+			"module.protect_cluster.helm_release.data_source_connector",
+			// wait_before_helm_destroy stores the kubeconfig path in input for its
+			// destroy-time provisioner. That path differs between Schematics jobs
+			// (each runs in a fresh temp dir), causing a side-effect-free in-place
+			// update (no provisioner runs on update).
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 		},
 	}
 

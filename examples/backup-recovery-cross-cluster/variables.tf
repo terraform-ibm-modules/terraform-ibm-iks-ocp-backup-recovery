@@ -84,14 +84,3 @@ variable "recovery_mode" {
     error_message = "recovery_mode must be either 'same-cluster' or 'cross-cluster'."
   }
 }
-
-variable "wait_for_backup_completion" {
-  description = "Initial wait duration before polling for backup completion. Specify with time unit suffix (e.g., '5m', '10m', '1h'). The module will then actively poll until a backup completes (up to backup_run_poll_timeout_minutes). Set to '0s' to start polling immediately."
-  type        = string
-  default     = "5m" # Short initial wait, then active polling takes over
-
-  validation {
-    condition     = can(regex("^[0-9]+(s|m|h)$", var.wait_for_backup_completion))
-    error_message = "wait_for_backup_completion must be a duration string with unit suffix (e.g., '5m', '10m', '1h')."
-  }
-}

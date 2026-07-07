@@ -7,6 +7,11 @@ locals {
   is_vpc     = length(regexall("Vpc$", var.connection_env_type)) > 0
   is_classic = length(regexall("Classic$", var.connection_env_type)) > 0
 
+  # --- Deployment mode flags ---
+  # DSC, source registration, and protection groups are always deployed in every
+  # deployment_mode. deploy_recovery is the only mode-gated flag.
+  deploy_recovery = var.deployment_mode == "full_backup_recovery"
+
   # --- BRS region: cluster region for new instances, existing instance region otherwise ---
   brs_region = var.existing_brs_instance_crn != null ? module.crn_parser.region : var.region
 
@@ -62,9 +67,6 @@ resource "terraform_data" "install_dependencies" {
 # IAM Auth Token (retrieved from provider credentials)
 ##############################################################################
 
-# Retrieves the IAM access token from the IBM Cloud provider configuration.
-data "ibm_iam_auth_token" "iam_token" {}
-
 ##############################################################################
 # CRN Parser (for existing BRS instance)
 ##############################################################################
@@ -81,7 +83,7 @@ module "crn_parser" {
 
 module "backup_recovery_instance" {
   source                    = "terraform-ibm-modules/backup-recovery/ibm"
-  version                   = "v1.10.2"
+  version                   = "v1.10.4"
   region                    = local.brs_region
   resource_group_id         = var.cluster_resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
@@ -241,6 +243,30 @@ resource "kubernetes_namespace_v1" "dsc_namespace" {
   }
 }
 
+# On OpenShift (ROKS), grant anyuid SCC to all service accounts in the DSC
+# namespace so that DSC pods can run with the UID specified in their image.
+# Uses the typed kubernetes_role_binding_v1 resource (not kubernetes_manifest)
+# because kubernetes_manifest requires a live cluster API connection at plan
+# time, which is not available when the cluster is created in the same apply.
+resource "kubernetes_role_binding_v1" "anyuid_scc_rolebinding" {
+  count = var.kube_type == "openshift" ? 1 : 0
+
+  metadata {
+    name      = "dsc-anyuid-scc"
+    namespace = kubernetes_namespace_v1.dsc_namespace.metadata[0].name
+  }
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "ClusterRole"
+    name      = "system:openshift:scc:anyuid"
+  }
+  subject {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Group"
+    name      = "system:serviceaccounts:${kubernetes_namespace_v1.dsc_namespace.metadata[0].name}"
+  }
+}
+
 ##############################################################################
 # Data Source Connector Helm Release
 ##############################################################################
@@ -299,6 +325,7 @@ resource "helm_release" "data_source_connector" {
   depends_on = [
     ibm_container_vpc_worker_pool.data_source_connector,
     kubernetes_namespace_v1.dsc_namespace,
+    kubernetes_role_binding_v1.anyuid_scc_rolebinding,
   ]
 
   lifecycle {
@@ -409,6 +436,16 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
     time_sleep.brs_source_deregistration_wait,
     module.backup_recovery_instance,
   ]
+
+  # service_name is an undocumented, provider-computed attribute. The provider
+  # applies a default ("backup-recovery") at plan time but stores null in state,
+  # so every re-plan shows a null -> "backup-recovery" diff. Because the field is
+  # ForceNew, that spurious diff forces a full replacement on each apply (and
+  # fails the post-apply consistency check). Ignore it so registration stays
+  # stable.
+  lifecycle {
+    ignore_changes = [service_name]
+  }
 }
 
 # BRS source deregistration is async on the backend. Without this sleep,
@@ -432,17 +469,29 @@ resource "terraform_data" "wait_before_helm_destroy" {
     kubernetes_secret_v1.brsagent_token,
   ]
 
-  triggers_replace = {
-    helm_release_id = helm_release.data_source_connector.id
+  # This resource exists solely to run a destroy-time provisioner (namespace
+  # cleanup) before the helm release is destroyed; it has no create/update
+  # behavior, so it never needs to be replaced. Values needed by the destroy
+  # provisioner are stored in input (available via self.input at destroy time).
+  # No triggers_replace: a helm release update (e.g. the by-design registration
+  # token rotation) would make helm_release.id "known after apply" and cascade
+  # into a spurious replacement. An input change is only ever an in-place update
+  # that runs no provisioner, so it is side-effect free.
+  input = {
     kubeconfig_path = data.ibm_container_cluster_config.cluster_config.config_file_path
     dsc_namespace   = var.dsc_namespace
   }
 
+  # self.input is wrapped in try() so the destroy provisioner stays safe when the
+  # resource instance was created by an older module version that stored these
+  # values in triggers_replace instead of input (in that case self.input is null
+  # in state). An empty KUBECONFIG makes the script skip the namespace wait and
+  # exit cleanly, which is the correct behaviour during that one-time migration.
   provisioner "local-exec" {
     when    = destroy
-    command = "${path.module}/scripts/wait_for_namespace_cleanup.sh '${self.triggers_replace.dsc_namespace}'"
+    command = "${path.module}/scripts/wait_for_namespace_cleanup.sh '${try(self.input.dsc_namespace, "ibm-brs-data-source-connector")}'"
     environment = {
-      KUBECONFIG = self.triggers_replace.kubeconfig_path
+      KUBECONFIG = try(self.input.kubeconfig_path, "")
     }
   }
 }
@@ -831,7 +880,7 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
 # Must depend on the protection group so Terraform destroys this resource first,
 # running the cancel provisioner before the provider attempts to delete the group.
 resource "terraform_data" "cancel_pg_runs" {
-  for_each = var.recovery_mode == "cross-cluster" ? { for pg in var.protection_groups : pg.name => pg } : {}
+  for_each = { for pg in var.protection_groups : pg.name => pg }
 
   input = {
     url                 = local.backup_recovery_instance_url
@@ -879,7 +928,7 @@ resource "ibm_resource_tag" "cluster_brs_tag" {
 # local-exec provisioner to call a script that deletes the protection group.
 resource "terraform_data" "delete_auto_protect_pg" {
   depends_on = [terraform_data.install_dependencies]
-  count      = var.enable_auto_protect ? 1 : 0
+  count      = var.enable_auto_protect && var.auto_protect_policy_name != null ? 1 : 0
 
   input = {
     url                 = local.backup_recovery_instance_url
@@ -906,33 +955,67 @@ resource "terraform_data" "delete_auto_protect_pg" {
 
 
 ##############################################################################
-# Wait for Backup Completion (Single-Shot Execution Critical)
+# Immediate Backup Trigger for Recovery Mode
 ##############################################################################
 
-# Wait for initial backup to complete before attempting recovery
-# This ensures snapshots are available for the recovery operation
-resource "time_sleep" "wait_for_backup_completion" {
-  count = var.enable_recovery && var.wait_for_backup_completion != "0s" ? 1 : 0
+# Small delay to ensure protection group is fully registered before triggering backup
+resource "time_sleep" "wait_for_pg_registration" {
+  count = local.deploy_recovery ? 1 : 0
 
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
     time_sleep.wait_for_source_discovery
   ]
 
-  create_duration = var.wait_for_backup_completion
+  create_duration = "90s" # Increased to 90s to match solution wrapper
 
   triggers = {
     protection_group_ids = join(",", [for pg in ibm_backup_recovery_protection_group.protection_group : pg.id])
   }
 }
 
-resource "terraform_data" "wait_for_backup_run" {
-  for_each = var.enable_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
+# Extract numeric protection group IDs for API calls
+locals {
+  # Convert full PG ID format (clusterid/::timestamp:id:id) to numeric format (timestamp:id:id)
+  # Example: "5n3kwor5cb/::8009179080677672:1753125047518:126734" -> "8009179080677672:1753125047518:126734"
+  numeric_pg_ids = local.deploy_recovery ? {
+    for pg_name, pg_resource in ibm_backup_recovery_protection_group.protection_group :
+    pg_name => split("::", pg_resource.id)[1]
+  } : {}
+}
+
+# Trigger an immediate on-demand backup run for each protection group in recovery mode
+# This ensures backups are available for recovery without waiting for scheduled runs
+resource "ibm_backup_recovery_protection_group_run_request" "trigger_backup_run" {
+  for_each = local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
+
+  x_ibm_tenant_id = local.brs_tenant_id
+  group_id        = local.numeric_pg_ids[each.key] # Use numeric ID (timestamp:id:id format)
+  run_type        = "kRegular"
+  endpoint_type   = var.brs_endpoint_type
+  instance_id     = local.brs_instance_guid
+  region          = local.brs_instance_region
 
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
     time_sleep.wait_for_source_discovery,
-    time_sleep.wait_for_backup_completion,
+    time_sleep.wait_for_pg_registration
+  ]
+}
+
+##############################################################################
+# Active Backup Polling (Replaces Blind Wait)
+##############################################################################
+
+# Actively poll for backup completion instead of blind waiting
+# This script checks backup status every 30 seconds until completion or timeout
+resource "terraform_data" "wait_for_backup_run" {
+  for_each = local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
+
+  depends_on = [
+    ibm_backup_recovery_protection_group.protection_group,
+    time_sleep.wait_for_source_discovery,
+    ibm_backup_recovery_protection_group_run_request.trigger_backup_run,
     terraform_data.install_dependencies
   ]
 
@@ -959,7 +1042,6 @@ resource "terraform_data" "wait_for_backup_run" {
     interpreter = ["/bin/bash", "-c"]
     environment = {
       IBMCLOUD_API_KEY = self.input.api_key
-      IAM_TOKEN        = data.ibm_iam_auth_token.iam_token.iam_access_token
     }
   }
 }
@@ -969,18 +1051,8 @@ resource "terraform_data" "wait_for_backup_run" {
 ##############################################################################
 
 # Data source to discover completed backup snapshots after polling confirms they exist
-# Extract numeric protection group IDs for API calls
-locals {
-  # Convert full PG ID format (clusterid/::timestamp:id:id) to numeric format (timestamp:id:id)
-  # Example: "5n3kwor5cb/::8009179080677672:1753125047518:126734" -> "8009179080677672:1753125047518:126734"
-  numeric_pg_ids = var.enable_recovery ? {
-    for pg_name, pg_resource in ibm_backup_recovery_protection_group.protection_group :
-    pg_name => split("::", pg_resource.id)[1]
-  } : {}
-}
-
 data "ibm_backup_recovery_protection_group_runs" "backup_runs" {
-  for_each = var.enable_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
+  for_each = local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
 
   x_ibm_tenant_id        = local.brs_tenant_id
   protection_group_id    = local.numeric_pg_ids[each.key]
@@ -999,7 +1071,7 @@ data "ibm_backup_recovery_protection_group_runs" "backup_runs" {
 # Local to extract latest successful snapshot IDs per protection group
 locals {
   # Map of protection group name to latest successful snapshot
-  latest_snapshots = var.enable_recovery ? {
+  latest_snapshots = local.deploy_recovery ? {
     for pg_name, runs in data.ibm_backup_recovery_protection_group_runs.backup_runs : pg_name => (
       length(try(runs.runs, [])) > 0 ? (
         try(runs.runs[0].local_backup_info[0].snapshot_info[0].snapshot_id, try(runs.runs[0].id, null))
@@ -1017,7 +1089,7 @@ locals {
 ##############################################################################
 
 resource "ibm_backup_recovery" "recover_snapshot" {
-  for_each = var.enable_recovery ? { for recovery in var.recoveries : recovery.name => recovery } : {}
+  for_each = local.deploy_recovery ? { for recovery in var.recoveries : recovery.name => recovery } : {}
 
   x_ibm_tenant_id      = local.brs_tenant_id
   name                 = each.value.name
@@ -1055,13 +1127,13 @@ resource "ibm_backup_recovery" "recover_snapshot" {
 
   lifecycle {
     precondition {
-      condition     = !var.enable_recovery || length(local.latest_snapshots) > 0
+      condition     = length(local.latest_snapshots) > 0
       error_message = <<-EOT
         No backup snapshots found. Recovery cannot proceed without completed backups.
+        The module actively polls for backup completion (up to backup_run_poll_timeout_minutes).
         Either:
-        1. Increase wait_for_backup_completion to allow more time for backups to complete
-        2. Ensure protection groups have run at least one successful backup
-        3. Set enable_recovery = false to skip automatic recovery
+        1. Increase backup_run_poll_timeout_minutes to allow more time for backups to complete
+        2. Ensure protection groups have run at least one successful backup before recovery
       EOT
     }
 
@@ -1073,4 +1145,5 @@ resource "ibm_backup_recovery" "recover_snapshot" {
       error_message = "For cross-cluster recovery, both target_cluster_id and target_cluster_resource_group_id must be provided."
     }
   }
+
 }
