@@ -123,7 +123,7 @@ cancel_and_wait_jobs() {
                  jq -r '.runs[0].archivalInfo.archivalTargetResults[0].status')
 
         echo "Job status: $status"
-        [[ "$status" == "Canceled" || "$status" == "Succeeded" || "$status" == "Failed" ]] && break
+        [[ "$status" == "Canceled" || "$status" == "Succeeded" || "$status" == "SucceededWithWarning" || "$status" == "Failed" || "$status" == "Skipped" ]] && break
         sleep 10
     done
 }

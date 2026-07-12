@@ -174,14 +174,18 @@ module "target_cluster_registration" {
   kube_type                    = var.kube_type
   ibmcloud_api_key             = var.ibmcloud_api_key
 
-  # Use same BRS instance as source
+  # Use same BRS instance as source. The source's BRS instance CRN is only known
+  # after apply when the source creates a new instance, so create_new_instance is
+  # set explicitly to false to keep the module's count/for_each gates from
+  # depending on that unknown value at plan time.
   existing_brs_instance_crn = module.protect_cluster.brs_instance_crn
+  create_new_brs_instance   = false
   brs_endpoint_type         = var.brs_endpoint_type
   region                    = local.region
 
   # Target connection configuration
   brs_connection_name       = var.target_brs_connection_name != null ? var.target_brs_connection_name : "${var.target_cluster_id}-target-connection"
-  brs_create_new_connection = true
+  brs_create_new_connection = var.target_brs_create_new_connection
   connection_env_type       = var.connection_env_type
 
   # DSC configuration for target

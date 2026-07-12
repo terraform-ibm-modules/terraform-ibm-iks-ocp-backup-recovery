@@ -557,6 +557,14 @@
               }
             },
             {
+              "key": "target_brs_create_new_connection",
+              "display_name": "Create New Target Connection",
+              "description": "Whether to create a new BRS connection for the target cluster. Set to `false` to reuse an existing connection matching `target_brs_connection_name`.",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
+            },
+            {
               "key": "target_create_dsc_worker_pool",
               "display_name": "Create DSC Worker Pool on Target",
               "description": "Create dedicated worker pool for DSC on target cluster.",

@@ -250,6 +250,12 @@ variable "existing_brs_instance_crn" {
   }
 }
 
+variable "create_new_brs_instance" {
+  description = "Whether to provision a new Backup & Recovery Service instance. Leave as `null` (default) to infer the behaviour from `existing_brs_instance_crn` (a new instance is created when the CRN is not provided). Set to `false` to reuse an existing instance whose CRN is only known after apply — for example, when this module registers a second cluster against an instance created by a first invocation in the same apply."
+  type        = bool
+  default     = null
+}
+
 variable "brs_instance_name" {
   description = "Name of the Backup & Recovery Service instance. Required only when `existing_brs_instance_crn` is not provided."
   type        = string

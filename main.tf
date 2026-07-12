@@ -83,12 +83,13 @@ module "crn_parser" {
 
 module "backup_recovery_instance" {
   source                    = "terraform-ibm-modules/backup-recovery/ibm"
-  version                   = "v1.10.4"
+  version                   = "v1.10.6"
   region                    = local.brs_region
   resource_group_id         = var.cluster_resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
   instance_name             = var.brs_instance_name
   existing_brs_instance_crn = var.existing_brs_instance_crn
+  create_new_instance       = var.create_new_brs_instance
   connection_name           = var.brs_connection_name
   create_new_connection     = var.brs_create_new_connection
   resource_tags             = var.resource_tags
@@ -509,7 +510,7 @@ resource "time_sleep" "wait_for_source_discovery" {
     dsc_version   = var.dsc_image_version
   }
 
-  create_duration = "10m"
+  create_duration = "5m"
 }
 
 data "ibm_backup_recovery_protection_sources" "sources" {
