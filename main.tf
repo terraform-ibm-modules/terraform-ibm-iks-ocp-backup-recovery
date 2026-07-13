@@ -985,23 +985,42 @@ locals {
   } : {}
 }
 
-# Trigger an immediate on-demand backup run for each protection group in recovery mode
-# This ensures backups are available for recovery without waiting for scheduled runs
-resource "ibm_backup_recovery_protection_group_run_request" "trigger_backup_run" {
+# Trigger an immediate on-demand backup run for each protection group in recovery mode,
+# but only if BRS has not already started one automatically (which it does as soon as a
+# protection group is registered against an active policy).
+# Blindly firing a second kRegular run while a CloudArchiveDirect archival task is in
+# progress causes: "CloudArchiveDirect job has an active archival task for primary target".
+resource "terraform_data" "trigger_backup_run" {
   for_each = local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
-
-  x_ibm_tenant_id = local.brs_tenant_id
-  group_id        = local.numeric_pg_ids[each.key] # Use numeric ID (timestamp:id:id format)
-  run_type        = "kRegular"
-  endpoint_type   = var.brs_endpoint_type
-  instance_id     = local.brs_instance_guid
-  region          = local.brs_instance_region
 
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
     time_sleep.wait_for_source_discovery,
-    time_sleep.wait_for_pg_registration
+    time_sleep.wait_for_pg_registration,
+    terraform_data.install_dependencies
   ]
+
+  input = {
+    url                 = "https://${local.backup_recovery_instance_url}"
+    tenant              = local.brs_tenant_id
+    endpoint_type       = var.brs_endpoint_type
+    instance_id         = local.brs_instance_guid
+    protection_group_id = ibm_backup_recovery_protection_group.protection_group[each.key].id
+    api_key             = sensitive(var.ibmcloud_api_key)
+    binaries_path       = local.binaries_path
+  }
+
+  triggers_replace = {
+    protection_group_id = ibm_backup_recovery_protection_group.protection_group[each.key].id
+  }
+
+  provisioner "local-exec" {
+    command     = "${path.module}/scripts/trigger_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' '${self.input.protection_group_id}'"
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
+    }
+  }
 }
 
 ##############################################################################
@@ -1016,7 +1035,7 @@ resource "terraform_data" "wait_for_backup_run" {
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
     time_sleep.wait_for_source_discovery,
-    ibm_backup_recovery_protection_group_run_request.trigger_backup_run,
+    terraform_data.trigger_backup_run,
     terraform_data.install_dependencies
   ]
 

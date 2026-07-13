@@ -231,9 +231,9 @@ resource "time_sleep" "wait_for_target_registration" {
 
 # module.protect_cluster already triggers an on-demand backup run for every
 # protection group when deployment_mode is "full_backup_recovery" (see
-# ibm_backup_recovery_protection_group_run_request.trigger_backup_run in the
-# root module). Triggering a second run here would race with that one, so
-# this only polls for the backup that module.protect_cluster already started.
+# terraform_data.trigger_backup_run in the root module). Triggering a second
+# run here would race with that one, so this only polls for the backup that
+# module.protect_cluster already started.
 resource "terraform_data" "wait_for_backup" {
   count = local.is_full_recovery ? 1 : 0
 
