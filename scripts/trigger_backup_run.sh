@@ -29,6 +29,7 @@ fi
 URL=$1
 TENANT=$2
 ENDPOINT_TYPE=$3
+# shellcheck disable=SC2034  # Accepted for signature parity with the other BRS scripts; not used here.
 INSTANCE_ID=$4
 PROTECTION_GROUP_ID=$5
 
