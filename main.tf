@@ -31,7 +31,7 @@ locals {
   dsc_chart_location = replace(local.uri_no_digest, "/${local.chart_with_version}", "")
 
   # --- BRS instance attributes ---
-  brs_tenant_id                        = module.backup_recovery_instance.tenant_id
+  brs_tenant_id                        = trimsuffix(module.backup_recovery_instance.tenant_id, "/")
   connection_id                        = module.backup_recovery_instance.connection_id
   registration_token                   = module.backup_recovery_instance.registration_token
   backup_recovery_instance_public_url  = module.backup_recovery_instance.brs_instance.extensions["endpoints.public"]
