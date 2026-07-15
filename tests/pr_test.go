@@ -149,7 +149,7 @@ func getSchematicTerraformVars(t *testing.T, prefix string, options *testschemat
 		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
 		{Name: "existing_brs_instance_crn", Value: permanentResources["brs_us_east_crn"], DataType: "string"},
 		{Name: "brs_connection_name", Value: terraform.OutputContext(t, context.Background(), existingTerraformOptions, "brs_connection_name"), DataType: "string"},
-		{Name: "brs_endpoint_type", Value: "private", DataType: "string"},
+		{Name: "brs_endpoint_type", Value: "public", DataType: "string"},
 		{Name: "cluster_config_endpoint_type", Value: "private", DataType: "string"},
 		{Name: "dsc_replicas", Value: "1", DataType: "number"},
 		{Name: "brs_create_new_connection", Value: "false", DataType: "bool"},

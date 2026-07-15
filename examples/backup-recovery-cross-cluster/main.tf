@@ -155,7 +155,7 @@ resource "time_sleep" "wait_clusters" {
 # Test Workload Namespace (Source Cluster)
 ##############################################################################
 
-resource "kubernetes_namespace" "create_source_namespace" {
+resource "kubernetes_namespace_v1" "create_source_namespace" {
   provider = kubernetes.source
 
   metadata {
@@ -171,7 +171,7 @@ resource "kubernetes_namespace" "create_source_namespace" {
 }
 
 locals {
-  source_namespace = kubernetes_namespace.create_source_namespace.metadata[0].name
+  source_namespace = kubernetes_namespace_v1.create_source_namespace.metadata[0].name
 }
 
 # StatefulSet with volumeClaimTemplates for BRS-compatible recovery
@@ -192,7 +192,7 @@ resource "kubernetes_stateful_set_v1" "source_app" {
   }
 
   depends_on = [
-    kubernetes_namespace.create_source_namespace
+    kubernetes_namespace_v1.create_source_namespace
   ]
 
   spec {
@@ -297,7 +297,7 @@ resource "terraform_data" "wait_for_source_workload" {
 
   depends_on = [
     kubernetes_stateful_set_v1.source_app,
-    kubernetes_namespace.create_source_namespace
+    kubernetes_namespace_v1.create_source_namespace
   ]
 }
 
