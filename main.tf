@@ -82,8 +82,8 @@ module "crn_parser" {
 ##############################################################################
 
 module "backup_recovery_instance" {
-  source = "github.com/NItishSh/terraform-ibm-backup-recovery?ref=5336ca8740552fe5f126d9752643794db4e6ab24"
-  # version                   = "v1.10.6"
+  source                    = "terraform-ibm-modules/backup-recovery/ibm"
+  version                   = "v1.10.7"
   region                    = local.brs_region
   resource_group_id         = var.cluster_resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
