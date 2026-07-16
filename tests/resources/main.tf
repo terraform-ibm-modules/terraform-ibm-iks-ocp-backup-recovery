@@ -98,9 +98,9 @@ module "crn_parser" {
   crn     = local.existing_brs_instance_crn
 }
 
+# checkov:skip=CKV_TF_2: temporary git ref pinned to SHA, pending merge of PR #80 into terraform-ibm-modules/terraform-ibm-backup-recovery
 module "backup_recovery_instance" {
-  source                    = "terraform-ibm-modules/backup-recovery/ibm"
-  version                   = "1.11.0"
+  source                    = "git::https://github.com/NItishSh/terraform-ibm-backup-recovery.git//.?ref=61c932ff5f0675cf477e6284254927cf796f474b"
   region                    = local.brs_region
   resource_group_id         = module.resource_group.resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
