@@ -34,8 +34,8 @@ locals {
   brs_tenant_id                        = module.backup_recovery_instance.tenant_id
   connection_id                        = module.backup_recovery_instance.connection_id
   registration_token                   = module.backup_recovery_instance.registration_token
-  backup_recovery_instance_public_url  = module.backup_recovery_instance.brs_instance.extensions["endpoints.public"]
-  backup_recovery_instance_private_url = module.backup_recovery_instance.brs_instance.extensions["endpoints.private"]
+  backup_recovery_instance_public_url  = nonsensitive(module.backup_recovery_instance.brs_instance.extensions["endpoints.public"])
+  backup_recovery_instance_private_url = nonsensitive(module.backup_recovery_instance.brs_instance.extensions["endpoints.private"])
   brs_instance_guid                    = module.backup_recovery_instance.brs_instance_guid
   brs_instance_region                  = element(split(":", module.backup_recovery_instance.brs_instance_crn), 5)
   backup_recovery_instance_url         = var.brs_endpoint_type == "public" ? local.backup_recovery_instance_public_url : local.backup_recovery_instance_private_url
