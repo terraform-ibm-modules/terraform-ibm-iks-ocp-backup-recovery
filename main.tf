@@ -286,7 +286,7 @@ resource "helm_release" "data_source_connector" {
   values = [
     yamlencode({
       secrets = {
-        registrationToken = local.registration_token
+        registrationToken = local.registration_token != null ? local.registration_token : ""
       }
       image = {
         registry   = element(split("/", var.dsc_image_version), 0)
@@ -1092,7 +1092,11 @@ data "ibm_backup_recovery_protection_group_runs" "backup_runs" {
 locals {
   # Map of protection group name to latest successful snapshot
   latest_snapshots = local.deploy_recovery ? {
-    for pg_name, runs in data.ibm_backup_recovery_protection_group_runs.backup_runs : pg_name => (
+    for pg_name, runs in data.ibm_backup_recovery_protection_group_runs
+
+
+
+    .backup_runs : pg_name => (
       length(try(runs.runs, [])) > 0 ? (
         try(runs.runs[0].local_backup_info[0].snapshot_info[0].snapshot_id, try(runs.runs[0].id, null))
       ) : null

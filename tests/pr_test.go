@@ -149,7 +149,7 @@ func getSchematicTerraformVars(t *testing.T, prefix string, options *testschemat
 		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
 		{Name: "existing_brs_instance_crn", Value: permanentResources["brs_us_east_crn"], DataType: "string"},
 		{Name: "brs_connection_name", Value: terraform.OutputContext(t, context.Background(), existingTerraformOptions, "brs_connection_name"), DataType: "string"},
-		{Name: "brs_endpoint_type", Value: "public", DataType: "string"},
+		{Name: "brs_endpoint_type", Value: "private", DataType: "string"},
 		{Name: "cluster_config_endpoint_type", Value: "private", DataType: "string"},
 		{Name: "dsc_replicas", Value: "1", DataType: "number"},
 		{Name: "brs_create_new_connection", Value: "false", DataType: "bool"},
@@ -244,6 +244,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			"module.protect_cluster.ibm_backup_recovery_connection_registration_token.registration_token",
 			"module.protect_cluster.terraform_data.cleanup_brs_agent_resources",
 			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
+			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]",
 			fmt.Sprintf(`module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-test-policy"]`, prefix),
 			// wait_before_helm_destroy moved from triggers_replace to input, which
 			// is a one-time structural change that forces a replace when upgrading
@@ -255,6 +256,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 	options.IgnoreAdds = testhelper.Exemptions{
 		List: []string{
 			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
+			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]",
 			fmt.Sprintf(`module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-test-policy"]`, prefix),
 		},
 	}
