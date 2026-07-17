@@ -215,6 +215,12 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 		},
 	}
+	// Skip refresh during Schematics DESTROY: the IBM provider hard-errors when a stale
+	// BRS connection ID is in state and BRS returns "does not exist" (not HTTP 404).
+	// TF_CLI_ARGS_destroy is honoured by Schematics the same way as a local CLI flag.
+	// Once https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906 is merged and
+	// a new provider version is released, this env var can be removed.
+	options.AddWorkspaceEnvVar("TF_CLI_ARGS_destroy", "-refresh=false", false, false)
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
 }
 
@@ -278,6 +284,12 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		},
 	}
 
+	// Skip refresh during Schematics DESTROY: the IBM provider hard-errors when a stale
+	// BRS connection ID is in state and BRS returns "does not exist" (not HTTP 404).
+	// TF_CLI_ARGS_destroy is honoured by Schematics the same way as a local CLI flag.
+	// Once https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906 is merged and
+	// a new provider version is released, this env var can be removed.
+	options.AddWorkspaceEnvVar("TF_CLI_ARGS_destroy", "-refresh=false", false, false)
 	require.NoError(t, options.RunSchematicUpgradeTest(), "This should not have errored")
 }
 
@@ -311,8 +323,16 @@ func TestRunIKSExample(t *testing.T) {
 		"ibm_container_vpc_cluster.vpc_cluster[0]",
 		"ibm_container_cluster.cluster[0]",
 	})
-	// Skip refresh on destroy: stale BRS connection IDs in state cause the provider
-	// to hard-error during the pre-destroy refresh. -refresh=false skips it.
+	// Skip refresh on consistency plan and destroy: stale BRS connection IDs in state
+	// cause the provider to hard-error when BRS returns "does not exist" (not HTTP 404).
+	// PostApplyHook fires after apply but before the consistency plan, so it can inject
+	// -refresh=false into Plan args. PreDestroyHook covers the destroy.
+	// Remove both once https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906
+	// is merged and a new provider version is released.
+	options.PostApplyHook = func(o *testhelper.TestOptions) error {
+		o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
+		return nil
+	}
 	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
 		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
 		return nil
@@ -331,8 +351,16 @@ func TestRunOCPExample(t *testing.T) {
 		"module.ocp_base[0].ibm_container_vpc_cluster.cluster[0]",
 		"ibm_container_cluster.cluster[0]",
 	})
-	// Skip refresh on destroy: stale BRS connection IDs in state cause the provider
-	// to hard-error during the pre-destroy refresh. -refresh=false skips it.
+	// Skip refresh on consistency plan and destroy: stale BRS connection IDs in state
+	// cause the provider to hard-error when BRS returns "does not exist" (not HTTP 404).
+	// PostApplyHook fires after apply but before the consistency plan, so it can inject
+	// -refresh=false into Plan args. PreDestroyHook covers the destroy.
+	// Remove both once https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906
+	// is merged and a new provider version is released.
+	options.PostApplyHook = func(o *testhelper.TestOptions) error {
+		o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
+		return nil
+	}
 	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
 		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
 		return nil
@@ -358,8 +386,16 @@ func TestRunCrossClusterExample(t *testing.T) {
 	options.IgnoreUpdates.List = append(options.IgnoreUpdates.List,
 		fmt.Sprintf(`module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-continuous-backup"]`, options.Prefix),
 	)
-	// Skip refresh on destroy: stale BRS connection IDs in state cause the provider
-	// to hard-error during the pre-destroy refresh. -refresh=false skips it.
+	// Skip refresh on consistency plan and destroy: stale BRS connection IDs in state
+	// cause the provider to hard-error when BRS returns "does not exist" (not HTTP 404).
+	// PostApplyHook fires after apply but before the consistency plan, so it can inject
+	// -refresh=false into Plan args. PreDestroyHook covers the destroy.
+	// Remove both once https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906
+	// is merged and a new provider version is released.
+	options.PostApplyHook = func(o *testhelper.TestOptions) error {
+		o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
+		return nil
+	}
 	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
 		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
 		return nil
