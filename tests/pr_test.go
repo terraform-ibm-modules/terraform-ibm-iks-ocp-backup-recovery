@@ -215,11 +215,12 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 		},
 	}
-	// Skip refresh during Schematics DESTROY: the IBM provider hard-errors when a stale
-	// BRS connection ID is in state and BRS returns "does not exist" (not HTTP 404).
-	// TF_CLI_ARGS_destroy is honoured by Schematics the same way as a local CLI flag.
+	// Skip refresh during Schematics PLAN and DESTROY: the IBM provider hard-errors when
+	// a stale BRS connection ID is in state and BRS returns "does not exist" (not 404).
+	// TF_CLI_ARGS_* env vars are honoured by Schematics the same way as local CLI flags.
 	// Once https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906 is merged and
-	// a new provider version is released, this env var can be removed.
+	// a new provider version is released, these env vars can be removed.
+	options.AddWorkspaceEnvVar("TF_CLI_ARGS_plan", "-refresh=false", false, false)
 	options.AddWorkspaceEnvVar("TF_CLI_ARGS_destroy", "-refresh=false", false, false)
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
 }
@@ -284,11 +285,12 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		},
 	}
 
-	// Skip refresh during Schematics DESTROY: the IBM provider hard-errors when a stale
-	// BRS connection ID is in state and BRS returns "does not exist" (not HTTP 404).
-	// TF_CLI_ARGS_destroy is honoured by Schematics the same way as a local CLI flag.
+	// Skip refresh during Schematics PLAN and DESTROY: the IBM provider hard-errors when
+	// a stale BRS connection ID is in state and BRS returns "does not exist" (not 404).
+	// TF_CLI_ARGS_* env vars are honoured by Schematics the same way as local CLI flags.
 	// Once https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906 is merged and
-	// a new provider version is released, this env var can be removed.
+	// a new provider version is released, these env vars can be removed.
+	options.AddWorkspaceEnvVar("TF_CLI_ARGS_plan", "-refresh=false", false, false)
 	options.AddWorkspaceEnvVar("TF_CLI_ARGS_destroy", "-refresh=false", false, false)
 	require.NoError(t, options.RunSchematicUpgradeTest(), "This should not have errored")
 }
