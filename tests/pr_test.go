@@ -136,6 +136,10 @@ func cleanupTerraform(t *testing.T, options *terraform.Options, prefix string) {
 		return
 	}
 	logger.Log(t, "START: Destroy (existing resources)")
+	// Skip refresh on destroy: stale BRS connection IDs in state cause the provider
+	// to hard-error during the pre-destroy refresh even when we only own the
+	// supporting cluster/VPC resources here.
+	options.ExtraArgs.Destroy = append(options.ExtraArgs.Destroy, "-refresh=false")
 	terraform.DestroyContext(t, context.Background(), options)
 	terraform.WorkspaceDeleteContext(t, context.Background(), options, prefix)
 	logger.Log(t, "END: Destroy (existing resources)")
@@ -307,6 +311,12 @@ func TestRunIKSExample(t *testing.T) {
 		"ibm_container_vpc_cluster.vpc_cluster[0]",
 		"ibm_container_cluster.cluster[0]",
 	})
+	// Skip refresh on destroy: stale BRS connection IDs in state cause the provider
+	// to hard-error during the pre-destroy refresh. -refresh=false skips it.
+	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
+		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
+		return nil
+	}
 
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
@@ -321,6 +331,12 @@ func TestRunOCPExample(t *testing.T) {
 		"module.ocp_base[0].ibm_container_vpc_cluster.cluster[0]",
 		"ibm_container_cluster.cluster[0]",
 	})
+	// Skip refresh on destroy: stale BRS connection IDs in state cause the provider
+	// to hard-error during the pre-destroy refresh. -refresh=false skips it.
+	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
+		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
+		return nil
+	}
 
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
@@ -342,6 +358,12 @@ func TestRunCrossClusterExample(t *testing.T) {
 	options.IgnoreUpdates.List = append(options.IgnoreUpdates.List,
 		fmt.Sprintf(`module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-continuous-backup"]`, options.Prefix),
 	)
+	// Skip refresh on destroy: stale BRS connection IDs in state cause the provider
+	// to hard-error during the pre-destroy refresh. -refresh=false skips it.
+	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
+		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
+		return nil
+	}
 
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
