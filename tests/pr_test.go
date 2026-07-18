@@ -136,9 +136,15 @@ func cleanupTerraform(t *testing.T, options *terraform.Options, prefix string) {
 		return
 	}
 	logger.Log(t, "START: Destroy (existing resources)")
-	// Skip refresh on destroy: stale BRS connection IDs in state cause the provider
-	// to hard-error during the pre-destroy refresh even when we only own the
-	// supporting cluster/VPC resources here.
+	// Drop the BRS data-source connection from local state before destroy.
+	// The Schematics workspace may have already deleted the connection, causing
+	// the IBM provider's Delete to return HTTP 400 "does not exist" (provider
+	// bug: should treat this as already-gone). Removing it from state avoids
+	// the fatal error until https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906
+	// is merged and released. Ignore the exit code: if the resource is not in
+	// state (e.g. count=0 or already removed) the command exits 1, which is fine.
+	terraform.RunTerraformCommandContextE(t, context.Background(), options, "state", "rm", "module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]") //nolint:errcheck
+	// Skip refresh on destroy for the same reason.
 	options.ExtraArgs.Destroy = append(options.ExtraArgs.Destroy, "-refresh=false")
 	terraform.DestroyContext(t, context.Background(), options)
 	terraform.WorkspaceDeleteContext(t, context.Background(), options, prefix)
