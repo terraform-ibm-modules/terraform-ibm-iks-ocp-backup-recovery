@@ -32,6 +32,10 @@ provider "helm" {
     client_key             = data.ibm_container_cluster_config.source_cluster_config.admin_key
     cluster_ca_certificate = data.ibm_container_cluster_config.source_cluster_config.ca_certificate
   }
+
+  registries = [
+    { url = "oci://icr.io", username = "iamapikey", password = var.ibmcloud_api_key }
+  ]
 }
 
 ##############################################################################
@@ -59,4 +63,8 @@ provider "helm" {
     client_key             = data.ibm_container_cluster_config.target_cluster_config.admin_key
     cluster_ca_certificate = data.ibm_container_cluster_config.target_cluster_config.ca_certificate
   }
+
+  registries = [
+    { url = "oci://icr.io", username = "iamapikey", password = var.ibmcloud_api_key }
+  ]
 }
