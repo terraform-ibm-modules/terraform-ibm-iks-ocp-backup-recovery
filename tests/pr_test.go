@@ -342,6 +342,12 @@ func TestRunIKSExample(t *testing.T) {
 		return nil
 	}
 	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
+		// Remove stale BRS connection from state before destroy. The provider's
+		// Delete hard-errors with HTTP 400 "does not exist" when the connection is
+		// already gone server-side (provider bug; fix pending PR #6906). Ignore
+		// the exit code — a non-zero means the resource wasn't in state, which is fine.
+		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
+			"module.backup_recover_protect_iks.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
 		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
 		return nil
 	}
@@ -370,6 +376,9 @@ func TestRunOCPExample(t *testing.T) {
 		return nil
 	}
 	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
+		// Remove stale BRS connection from state before destroy (same reason as IKS above).
+		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
+			"module.backup_recover_protect_ocp.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
 		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
 		return nil
 	}
@@ -405,6 +414,11 @@ func TestRunCrossClusterExample(t *testing.T) {
 		return nil
 	}
 	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
+		// Remove stale BRS connections (source + target) from state before destroy.
+		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
+			"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
+		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
+			"module.target_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
 		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
 		return nil
 	}
