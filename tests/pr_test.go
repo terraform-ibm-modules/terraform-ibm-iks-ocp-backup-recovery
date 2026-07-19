@@ -291,12 +291,14 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		},
 	}
 
-	// Skip refresh during Schematics PLAN and DESTROY: the IBM provider hard-errors when
-	// a stale BRS connection ID is in state and BRS returns "does not exist" (not 404).
-	// TF_CLI_ARGS_* env vars are honoured by Schematics the same way as local CLI flags.
+	// Skip refresh during Schematics DESTROY only. TF_CLI_ARGS_plan is intentionally
+	// omitted for the upgrade test: the Schematics upgrade apply needs a live refresh
+	// to pick up the current registration token — skipping it causes the Helm chart to
+	// be installed with an empty registrationToken and fail.
+	// The BRS connection Read error during the standalone plan step is already tolerated
+	// because the connection resource is in IgnoreDestroys above.
 	// Once https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906 is merged and
-	// a new provider version is released, these env vars can be removed.
-	options.AddWorkspaceEnvVar("TF_CLI_ARGS_plan", "-refresh=false", false, false)
+	// a new provider version is released, this env var can be removed too.
 	options.AddWorkspaceEnvVar("TF_CLI_ARGS_destroy", "-refresh=false", false, false)
 	require.NoError(t, options.RunSchematicUpgradeTest(), "This should not have errored")
 }
