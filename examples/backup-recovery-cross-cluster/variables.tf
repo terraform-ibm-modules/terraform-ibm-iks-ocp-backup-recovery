@@ -75,6 +75,24 @@ variable "existing_brs_instance_crn" {
   default     = null
 }
 
+variable "brs_create_new_connection" {
+  description = "Set to true to create a new data source connection, false to look up an existing connection."
+  type        = bool
+  default     = true
+}
+
+variable "source_connection_name" {
+  description = "Custom name for source cluster connection. If null, a default name using prefix will be generated."
+  type        = string
+  default     = null
+}
+
+variable "target_connection_name" {
+  description = "Custom name for target cluster connection. If null, a default name using prefix will be generated."
+  type        = string
+  default     = null
+}
+
 ##############################################################################
 # Recovery Configuration
 ##############################################################################

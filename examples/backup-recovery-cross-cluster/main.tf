@@ -326,8 +326,8 @@ module "source_backup_recovery" {
   existing_brs_instance_crn = var.existing_brs_instance_crn
   brs_endpoint_type         = "public"
   brs_instance_name         = "${var.prefix}-brs-instance"
-  brs_connection_name       = "${var.prefix}-source-connection"
-  brs_create_new_connection = true
+  brs_connection_name       = var.source_connection_name != null ? var.source_connection_name : "${var.prefix}-source-connection"
+  brs_create_new_connection = var.brs_create_new_connection
   region                    = var.region
   connection_env_type       = "kIksVpc"
   dsc_worker_pool_zones     = 1 # Single-zone cluster
@@ -415,8 +415,8 @@ module "target_backup_recovery" {
   existing_brs_instance_crn = var.existing_brs_instance_crn != null ? var.existing_brs_instance_crn : module.source_backup_recovery.brs_instance_crn
   create_new_brs_instance   = false
   brs_endpoint_type         = "public"
-  brs_connection_name       = "${var.prefix}-target-connection"
-  brs_create_new_connection = true
+  brs_connection_name       = var.target_connection_name != null ? var.target_connection_name : "${var.prefix}-target-connection"
+  brs_create_new_connection = var.brs_create_new_connection
   region                    = var.region
   connection_env_type       = "kIksVpc"
   dsc_worker_pool_zones     = 1 # Single-zone cluster
