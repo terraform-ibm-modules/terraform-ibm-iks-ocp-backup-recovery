@@ -54,6 +54,17 @@ variable "target_cluster_name_id" {
   default     = null
 }
 
+variable "cluster_config_endpoint_type" {
+  description = "The type of endpoint to use for cluster config access: 'default', 'private', 'vpe', or 'link'."
+  type        = string
+  default     = "default"
+
+  validation {
+    condition     = contains(["default", "private", "vpe", "link"], var.cluster_config_endpoint_type)
+    error_message = "`cluster_config_endpoint_type` must be 'default', 'private', 'vpe', or 'link'."
+  }
+}
+
 ##############################################################################
 # BRS Instance Configuration
 ##############################################################################

@@ -219,14 +219,17 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 			// (each runs in a fresh temp dir), causing a side-effect-free in-place
 			// update (no provisioner runs on update).
 			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
+			// wait_for_dsc_node_ready stores the kubeconfig path in input.
+			// That path differs between Schematics jobs (each runs in a fresh
+			// temp dir), causing a side-effect-free in-place update.
+			"module.protect_cluster.terraform_data.wait_for_dsc_node_ready[0]",
 		},
 	}
-	// Skip refresh during Schematics PLAN and DESTROY: the IBM provider hard-errors when
-	// a stale BRS connection ID is in state and BRS returns "does not exist" (not 404).
-	// TF_CLI_ARGS_* env vars are honoured by Schematics the same way as local CLI flags.
+	// Skip refresh during Schematics DESTROY only. TF_CLI_ARGS_plan is intentionally
+	// omitted: Schematics apply needs a live refresh to pick up the current registration token
+	// — skipping it causes the Helm chart to be installed with an empty registrationToken and fail.
 	// Once https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906 is merged and
-	// a new provider version is released, these env vars can be removed.
-	options.AddWorkspaceEnvVar("TF_CLI_ARGS_plan", "-refresh=false", false, false)
+	// a new provider version is released, this env var can be removed too.
 	options.AddWorkspaceEnvVar("TF_CLI_ARGS_destroy", "-refresh=false", false, false)
 	require.NoError(t, options.RunSchematicTest(), "This should not have errored")
 }
@@ -253,7 +256,23 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 		DeleteWorkspaceOnFail: false,
 	})
 
-	options.TerraformVars = getSchematicTerraformVars(t, prefix, options, existingTerraformOptions)
+	// Use create_new_connection=true for the upgrade test so the base apply
+	// (which runs old v1.10.4 code) takes the ibm_backup_recovery_data_source_connection
+	// creation path instead of the data-source lookup path.  With create_new_connection=false
+	// the old module indexes data.ibm_backup_recovery_data_source_connections.connections[0].connections[0]
+	// directly, which panics when BRS returns a null connections array (a known v1.10.4 bug
+	// fixed in v1.12.2 via try()).  Schematics caches .terraform/ between the base apply and
+	// the upgrade plan, so the cached v1.10.4 module would also be used during the plan step.
+	vars := getSchematicTerraformVars(t, prefix, options, existingTerraformOptions)
+	for i, v := range vars {
+		if v.Name == "brs_create_new_connection" {
+			vars[i].Value = "true"
+		}
+		if v.Name == "brs_connection_name" {
+			vars[i].Value = fmt.Sprintf("%s-upgrade-conn", prefix)
+		}
+	}
+	options.TerraformVars = vars
 
 	options.IgnoreDestroys = testhelper.Exemptions{
 		List: []string{
@@ -275,6 +294,10 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
 			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]",
 			fmt.Sprintf(`module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-test-policy"]`, prefix),
+			// wait_for_dsc_node_ready is a new resource added in this PR that
+			// does not exist in the base version. The upgrade plan will show it
+			// as an add, which is expected and harmless.
+			"module.protect_cluster.terraform_data.wait_for_dsc_node_ready[0]",
 		},
 	}
 	options.IgnoreUpdates = testhelper.Exemptions{
@@ -288,6 +311,10 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// (each runs in a fresh temp dir), causing a side-effect-free in-place
 			// update (no provisioner runs on update).
 			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
+			// wait_for_dsc_node_ready stores the kubeconfig path in input.
+			// That path differs between Schematics jobs (each runs in a fresh
+			// temp dir), causing a side-effect-free in-place update.
+			"module.protect_cluster.terraform_data.wait_for_dsc_node_ready[0]",
 		},
 	}
 

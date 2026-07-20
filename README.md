@@ -336,6 +336,7 @@ You need the following permissions to run this module:
 | [terraform_data.trigger_backup_run](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 | [terraform_data.wait_before_helm_destroy](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 | [terraform_data.wait_for_backup_run](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
+| [terraform_data.wait_for_dsc_node_ready](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) | resource |
 | [time_sleep.brs_source_deregistration_wait](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
 | [time_sleep.wait_for_dsc_stabilization](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |
 | [time_sleep.wait_for_pg_registration](https://registry.terraform.io/providers/hashicorp/time/latest/docs/resources/sleep) | resource |

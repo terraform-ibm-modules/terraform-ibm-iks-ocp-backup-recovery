@@ -225,6 +225,38 @@ resource "ibm_container_vpc_worker_pool" "data_source_connector" {
 }
 
 ##############################################################################
+# Wait for DSC Worker Pool Node(s) to be Ready
+##############################################################################
+
+# The IBM Cloud provider marks the worker pool as "created" as soon as the API
+# confirms the pool exists, but the underlying VMs may not be in Kubernetes
+# Ready state for several minutes after that. Scheduling the Helm release
+# immediately causes the DSC pod to stay Pending until the node becomes Ready,
+# which exhausts the Helm timeout (context deadline exceeded).
+# This resource runs kubectl wait after pool creation to block the Helm install
+# until at least one node with the "dedicated=data-source-connector" label is
+# schedulable.  It is a no-op when create_dsc_worker_pool is false.
+resource "terraform_data" "wait_for_dsc_node_ready" {
+  count = local.is_vpc && var.create_dsc_worker_pool ? 1 : 0
+
+  depends_on = [ibm_container_vpc_worker_pool.data_source_connector]
+
+  input = {
+    kubeconfig_path = data.ibm_container_cluster_config.cluster_config.config_file_path
+  }
+
+  provisioner "local-exec" {
+    # Wait up to 15 minutes for at least one DSC node to become Ready.
+    # --selector matches the label applied to every dsc-pool-zone-* worker pool.
+    command     = "kubectl wait node --selector='dedicated=data-source-connector' --for=condition=Ready --timeout=900s"
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      KUBECONFIG = self.input.kubeconfig_path
+    }
+  }
+}
+
+##############################################################################
 # Data Source Connector Namespace
 ##############################################################################
 
@@ -325,6 +357,7 @@ resource "helm_release" "data_source_connector" {
   ]
 
   depends_on = [
+    terraform_data.wait_for_dsc_node_ready,
     ibm_container_vpc_worker_pool.data_source_connector,
     kubernetes_namespace_v1.dsc_namespace,
     kubernetes_role_binding_v1.anyuid_scc_rolebinding,
