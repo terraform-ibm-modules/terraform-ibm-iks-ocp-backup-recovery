@@ -144,6 +144,8 @@ func cleanupTerraform(t *testing.T, options *terraform.Options, prefix string) {
 	// is merged and released. Ignore the exit code: if the resource is not in
 	// state (e.g. count=0 or already removed) the command exits 1, which is fine.
 	terraform.RunTerraformCommandContextE(t, context.Background(), options, "state", "rm", "module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]") //nolint:errcheck
+	terraform.RunTerraformCommandContextE(t, context.Background(), options, "state", "rm", "module.source_connection.ibm_backup_recovery_data_source_connection.connection[0]")        //nolint:errcheck
+	terraform.RunTerraformCommandContextE(t, context.Background(), options, "state", "rm", "module.target_connection.ibm_backup_recovery_data_source_connection.connection[0]")        //nolint:errcheck
 	// Skip refresh on destroy for the same reason.
 	options.ExtraArgs.Destroy = append(options.ExtraArgs.Destroy, "-refresh=false")
 	terraform.DestroyContext(t, context.Background(), options)
