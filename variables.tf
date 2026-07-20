@@ -565,7 +565,7 @@ variable "registration_images" {
     data_mover                  = string
     velero                      = string
     velero_aws_plugin           = string
-    velero_openshift_plugin     = string
+    velero_openshift_plugin     = optional(string, null)
     cohesity_dataprotect_plugin = string
     init_container              = optional(string, null)
   })
