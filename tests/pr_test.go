@@ -420,7 +420,7 @@ func TestRunOCPExample(t *testing.T) {
 func TestRunCrossClusterExample(t *testing.T) {
 	t.Parallel()
 
-	options := setupOptions(t, "brs-cross-new", crossClusterExampleDir, []string{
+	options := setupOptions(t, "brs-cross", crossClusterExampleDir, []string{
 		"module.source_backup_recovery.ibm_backup_recovery_source_registration.source_registration",
 		"module.target_backup_recovery.ibm_backup_recovery_source_registration.source_registration",
 		"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
@@ -429,8 +429,6 @@ func TestRunCrossClusterExample(t *testing.T) {
 		"ibm_container_vpc_cluster.target_cluster[0]",
 	})
 
-	// Delete existing_brs_instance_crn so this test defaults to null and provisions a new BRS instance
-	delete(options.TerraformVars, "existing_brs_instance_crn")
 	options.TerraformVars["brs_create_new_connection"] = true
 
 	options.IgnoreUpdates.List = append(options.IgnoreUpdates.List,
@@ -448,43 +446,6 @@ func TestRunCrossClusterExample(t *testing.T) {
 	}
 	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
 		// Remove stale BRS connections (source + target) from state before destroy.
-		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
-			"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
-		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
-			"module.target_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
-		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
-		return nil
-	}
-
-	output, err := options.RunTestConsistency()
-	assert.NoError(t, err, "This should not have errored")
-	assert.NotNil(t, output, "Expected some output")
-}
-
-func TestRunCrossClusterExistingInstance(t *testing.T) {
-	t.Parallel()
-
-	options := setupOptions(t, "brs-cross-ext-inst", crossClusterExampleDir, []string{
-		"module.source_backup_recovery.ibm_backup_recovery_source_registration.source_registration",
-		"module.target_backup_recovery.ibm_backup_recovery_source_registration.source_registration",
-		"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-		"module.target_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-		"ibm_container_vpc_cluster.source_cluster[0]",
-		"ibm_container_vpc_cluster.target_cluster[0]",
-	})
-
-	// Uses permanentResources["brs_us_east_crn"] (set by setupOptions) with new connections
-	options.TerraformVars["brs_create_new_connection"] = true
-
-	options.IgnoreUpdates.List = append(options.IgnoreUpdates.List,
-		fmt.Sprintf(`module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-continuous-backup"]`, options.Prefix),
-	)
-
-	options.PostApplyHook = func(o *testhelper.TestOptions) error {
-		o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
-		return nil
-	}
-	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
 		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
 			"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
 		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
