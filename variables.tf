@@ -223,7 +223,7 @@ variable "region" {
   type        = string
   default     = null
   validation {
-    condition     = var.existing_brs_instance_crn != null || var.region != null
+    condition     = (var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "null" && var.existing_brs_instance_crn != "") || var.region != null
     error_message = "`region` is required when `existing_brs_instance_crn` is not provided."
   }
 }
@@ -245,7 +245,7 @@ variable "existing_brs_instance_crn" {
   default     = null
 
   validation {
-    condition     = var.existing_brs_instance_crn == null || can(regex("^crn:v1:[a-z0-9-]+:[a-z0-9-]*:[a-z0-9-]+:[a-z0-9-]*:a/[a-f0-9]+:[a-f0-9-]+::$", var.existing_brs_instance_crn))
+    condition     = var.existing_brs_instance_crn == null || var.existing_brs_instance_crn == "null" || var.existing_brs_instance_crn == "" || can(regex("^crn:v1:[a-z0-9-]+:[a-z0-9-]*:[a-z0-9-]+:[a-z0-9-]*:a/[a-f0-9]+:[a-f0-9-]+::$", var.existing_brs_instance_crn))
     error_message = "'existing_brs_instance_crn' must be a valid CRN. Example: crn:v1:bluemix:public:backup-recovery:<region>:a/<account-id>:<instance-guid>::"
   }
 }
@@ -266,7 +266,7 @@ variable "brs_instance_name" {
     error_message = "'brs_instance_name' must not be an empty string. Either provide a valid name or leave it as null."
   }
   validation {
-    condition     = var.existing_brs_instance_crn != null || var.brs_instance_name != null
+    condition     = (var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "null" && var.existing_brs_instance_crn != "") || var.brs_instance_name != null
     error_message = "`brs_instance_name` is required when `existing_brs_instance_crn` is not provided."
   }
 }

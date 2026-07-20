@@ -13,7 +13,7 @@ locals {
   deploy_recovery = var.deployment_mode == "full_backup_recovery"
 
   # --- BRS region: cluster region for new instances, existing instance region otherwise ---
-  brs_region = var.existing_brs_instance_crn != null ? module.crn_parser.region : var.region
+  brs_region = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "null" && var.existing_brs_instance_crn != "" ? module.crn_parser.region : var.region
 
   # --- Cluster attributes (resolved from VPC or Classic data sources) ---
   cluster_crn                  = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].crn : data.ibm_container_cluster.classic_cluster[0].crn
@@ -74,7 +74,7 @@ resource "terraform_data" "install_dependencies" {
 module "crn_parser" {
   source  = "terraform-ibm-modules/common-utilities/ibm//modules/crn-parser"
   version = "1.5.0"
-  crn     = var.existing_brs_instance_crn != null ? var.existing_brs_instance_crn : ""
+  crn     = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "null" && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : ""
 }
 
 ##############################################################################
@@ -88,7 +88,7 @@ module "backup_recovery_instance" {
   resource_group_id         = var.cluster_resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
   instance_name             = var.brs_instance_name
-  existing_brs_instance_crn = var.existing_brs_instance_crn
+  existing_brs_instance_crn = var.existing_brs_instance_crn != "null" && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : null
   create_new_instance       = var.create_new_brs_instance
   connection_name           = var.brs_connection_name
   create_new_connection     = var.brs_create_new_connection

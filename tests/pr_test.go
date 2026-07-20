@@ -429,8 +429,8 @@ func TestRunCrossClusterExample(t *testing.T) {
 		"ibm_container_vpc_cluster.target_cluster[0]",
 	})
 
-	// Override existing_brs_instance_crn to nil so this test provisions a new BRS instance
-	options.TerraformVars["existing_brs_instance_crn"] = nil
+	// Delete existing_brs_instance_crn so this test defaults to null and provisions a new BRS instance
+	delete(options.TerraformVars, "existing_brs_instance_crn")
 	options.TerraformVars["brs_create_new_connection"] = true
 
 	options.IgnoreUpdates.List = append(options.IgnoreUpdates.List,
