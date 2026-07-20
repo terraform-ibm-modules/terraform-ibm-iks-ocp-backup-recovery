@@ -97,4 +97,3 @@ variable "cluster_config_endpoint_type" {
     error_message = "`cluster_config_endpoint_type` must be 'default', 'private', 'vpe', or 'link'."
   }
 }
-
