@@ -251,13 +251,23 @@ resource "terraform_data" "wait_for_dsc_node_ready" {
     # `kubectl wait node --selector=...` fails immediately with "no matching resources
     # found" when zero nodes with that label exist yet (the VM is still provisioning).
     # So we first poll until at least one matching node appears, then wait for Ready.
+    #
+    # After the node reports Ready we sleep an additional 120 s. A node enters the
+    # Ready condition as soon as its kubelet registers, but the scheduler's internal
+    # cache and taint/toleration logic may not yet have accepted the node. Without
+    # this extra delay the Helm install starts while the scheduler still considers
+    # the node unschedulable, the DSC pod stays Pending for the entire Helm timeout,
+    # and the install fails with "context deadline exceeded".
     command     = <<-EOT
       echo "Waiting for DSC node to appear (label dedicated=data-source-connector)..."
       for i in $(seq 1 90); do
         if kubectl get nodes --selector='dedicated=data-source-connector' --no-headers 2>/dev/null | grep -q .; then
           echo "Node found, waiting for Ready condition..."
-          kubectl wait node --selector='dedicated=data-source-connector' --for=condition=Ready --timeout=900s
-          exit $?
+          kubectl wait node --selector='dedicated=data-source-connector' --for=condition=Ready --timeout=900s || exit 1
+          echo "Node is Ready. Sleeping 120 s to allow scheduler cache to sync..."
+          sleep 120
+          echo "Scheduler sync wait complete."
+          exit 0
         fi
         echo "No DSC node yet, retry $i/90 (sleeping 10s)..."
         sleep 10

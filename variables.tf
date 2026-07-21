@@ -139,7 +139,7 @@ variable "dsc_replicas" {
 variable "dsc_helm_timeout" {
   description = "Timeout in seconds for the Data Source Connector Helm deployment."
   type        = number
-  default     = 3600
+  default     = 7200
   nullable    = false
 }
 
