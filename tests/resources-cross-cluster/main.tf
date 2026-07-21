@@ -24,7 +24,7 @@ module "crn_parser" {
 # Pre-provision Source Connection in existing BRS instance
 module "source_connection" {
   source                    = "terraform-ibm-modules/backup-recovery/ibm"
-  version                   = "1.12.2"
+  version                   = "1.12.3"
   region                    = local.brs_region
   resource_group_id         = module.resource_group.resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
@@ -40,7 +40,7 @@ module "source_connection" {
 # Pre-provision Target Connection in existing BRS instance
 module "target_connection" {
   source                    = "terraform-ibm-modules/backup-recovery/ibm"
-  version                   = "1.12.2"
+  version                   = "1.12.3"
   region                    = local.brs_region
   resource_group_id         = module.resource_group.resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key

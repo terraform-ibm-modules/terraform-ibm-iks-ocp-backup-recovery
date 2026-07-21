@@ -13,7 +13,7 @@ locals {
   deploy_recovery = var.deployment_mode == "full_backup_recovery"
 
   # --- BRS region: cluster region for new instances, existing instance region otherwise ---
-  brs_region = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "null" && var.existing_brs_instance_crn != "" ? module.crn_parser.region : var.region
+  brs_region = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "null" && var.existing_brs_instance_crn != "" ? split(":", var.existing_brs_instance_crn)[5] : var.region
 
   # --- Cluster attributes (resolved from VPC or Classic data sources) ---
   cluster_crn                  = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].crn : data.ibm_container_cluster.classic_cluster[0].crn
@@ -83,7 +83,7 @@ module "crn_parser" {
 
 module "backup_recovery_instance" {
   source                    = "terraform-ibm-modules/backup-recovery/ibm"
-  version                   = "1.12.2"
+  version                   = "1.12.3"
   region                    = local.brs_region
   resource_group_id         = var.cluster_resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
@@ -248,7 +248,23 @@ resource "terraform_data" "wait_for_dsc_node_ready" {
   provisioner "local-exec" {
     # Wait up to 15 minutes for at least one DSC node to become Ready.
     # --selector matches the label applied to every dsc-pool-zone-* worker pool.
-    command     = "kubectl wait node --selector='dedicated=data-source-connector' --for=condition=Ready --timeout=900s"
+    # `kubectl wait node --selector=...` fails immediately with "no matching resources
+    # found" when zero nodes with that label exist yet (the VM is still provisioning).
+    # So we first poll until at least one matching node appears, then wait for Ready.
+    command     = <<-EOT
+      echo "Waiting for DSC node to appear (label dedicated=data-source-connector)..."
+      for i in $(seq 1 90); do
+        if kubectl get nodes --selector='dedicated=data-source-connector' --no-headers 2>/dev/null | grep -q .; then
+          echo "Node found, waiting for Ready condition..."
+          kubectl wait node --selector='dedicated=data-source-connector' --for=condition=Ready --timeout=900s
+          exit $?
+        fi
+        echo "No DSC node yet, retry $i/90 (sleeping 10s)..."
+        sleep 10
+      done
+      echo "Timed out waiting for DSC node to appear after 15 minutes"
+      exit 1
+    EOT
     interpreter = ["/bin/bash", "-c"]
     environment = {
       KUBECONFIG = self.input.kubeconfig_path
@@ -544,7 +560,7 @@ resource "time_sleep" "wait_for_source_discovery" {
     dsc_version   = var.dsc_image_version
   }
 
-  create_duration = "5m"
+  create_duration = "10m"
 }
 
 data "ibm_backup_recovery_protection_sources" "sources" {

@@ -141,11 +141,14 @@ func cleanupTerraform(t *testing.T, options *terraform.Options, prefix string) {
 	// the IBM provider's Delete to return HTTP 400 "does not exist" (provider
 	// bug: should treat this as already-gone). Removing it from state avoids
 	// the fatal error until https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906
-	// is merged and released. Ignore the exit code: if the resource is not in
-	// state (e.g. count=0 or already removed) the command exits 1, which is fine.
-	terraform.RunTerraformCommandContextE(t, context.Background(), options, "state", "rm", "module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]") //nolint:errcheck
-	terraform.RunTerraformCommandContextE(t, context.Background(), options, "state", "rm", "module.source_connection.ibm_backup_recovery_data_source_connection.connection[0]")        //nolint:errcheck
-	terraform.RunTerraformCommandContextE(t, context.Background(), options, "state", "rm", "module.target_connection.ibm_backup_recovery_data_source_connection.connection[0]")        //nolint:errcheck
+	// is merged and released.
+	// Exit code 1 is expected when the resource is not in state (e.g. count=0,
+	// already removed, or this stateDir belongs to resources-cross-cluster which
+	// only has source_connection/target_connection but not backup_recovery_instance).
+	// Assign to _ to make the discard explicit and satisfy the linter.
+	_, _ = terraform.RunTerraformCommandContextE(t, context.Background(), options, "state", "rm", "module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
+	_, _ = terraform.RunTerraformCommandContextE(t, context.Background(), options, "state", "rm", "module.source_connection.ibm_backup_recovery_data_source_connection.connection[0]")
+	_, _ = terraform.RunTerraformCommandContextE(t, context.Background(), options, "state", "rm", "module.target_connection.ibm_backup_recovery_data_source_connection.connection[0]")
 	// Skip refresh on destroy for the same reason.
 	options.ExtraArgs.Destroy = append(options.ExtraArgs.Destroy, "-refresh=false")
 	terraform.DestroyContext(t, context.Background(), options)
@@ -465,7 +468,7 @@ func TestRunCrossClusterExistingConnection(t *testing.T) {
 	t.Parallel()
 
 	// Provision pre-existing BRS connections using dedicated helper directory
-	prefix := fmt.Sprintf("brs-conn-%s", strings.ToLower(random.UniqueID()))
+	prefix := fmt.Sprintf("brs-xc-%s", strings.ToLower(random.UniqueID()))
 	existingTerraformOptions := setupTerraform(t, prefix, "./resources-cross-cluster")
 	defer cleanupTerraform(t, existingTerraformOptions, prefix)
 
@@ -483,15 +486,15 @@ func TestRunCrossClusterExistingConnection(t *testing.T) {
 	options.TerraformVars["source_connection_name"] = terraform.OutputContext(t, context.Background(), existingTerraformOptions, "source_connection_name")
 	options.TerraformVars["target_connection_name"] = terraform.OutputContext(t, context.Background(), existingTerraformOptions, "target_connection_name")
 
-	options.IgnoreUpdates.List = append(options.IgnoreUpdates.List,
-		fmt.Sprintf(`module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-continuous-backup"]`, options.Prefix),
-	)
-
 	options.PostApplyHook = func(o *testhelper.TestOptions) error {
 		o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
 		return nil
 	}
 	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
+		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
+			"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
+		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
+			"module.target_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
 		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
 		return nil
 	}
