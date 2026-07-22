@@ -524,6 +524,13 @@ func TestRunCrossClusterExistingConnection(t *testing.T) {
 	options.TerraformVars["source_connection_name"] = terraform.OutputContext(t, context.Background(), existingTerraformOptions, "source_connection_name")
 	options.TerraformVars["target_connection_name"] = terraform.OutputContext(t, context.Background(), existingTerraformOptions, "target_connection_name")
 
+	// The continuous-backup protection policy re-plans as an in-place update on the
+	// consistency check: its backup_policy value churns by design, so the second plan
+	// always shows a no-op update. Exempt it, exactly as TestRunCrossClusterExample does.
+	options.IgnoreUpdates.List = append(options.IgnoreUpdates.List,
+		fmt.Sprintf(`module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-continuous-backup"]`, options.Prefix),
+	)
+
 	options.PostApplyHook = func(o *testhelper.TestOptions) error {
 		o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
 		return nil
