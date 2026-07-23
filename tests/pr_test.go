@@ -227,11 +227,11 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 			// destroy-time provisioner. That path differs between Schematics jobs
 			// (each runs in a fresh temp dir), causing a side-effect-free in-place
 			// update (no provisioner runs on update).
-			// "module.protect_cluster.terraform_data.wait_before_helm_destroy",
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 			// wait_for_dsc_node_ready stores the kubeconfig path in input.
 			// That path differs between Schematics jobs (each runs in a fresh
 			// temp dir), causing a side-effect-free in-place update.
-			// "module.protect_cluster.terraform_data.wait_for_dsc_node_ready[0]",
+			"module.protect_cluster.terraform_data.wait_for_dsc_node_ready[0]",
 		},
 	}
 	// Skip the Schematics pre-destroy refresh AND the actual destroy refresh.
@@ -300,32 +300,32 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 	}
 	options.TerraformVars = vars
 
-	// options.IgnoreDestroys = testhelper.Exemptions{
-	// 	List: []string{
-	// 		"module.protect_cluster.time_rotating.token_rotation",
-	// 		"module.protect_cluster.ibm_backup_recovery_connection_registration_token.registration_token",
-	// 		"module.protect_cluster.terraform_data.cleanup_brs_agent_resources",
-	// 		"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-	// 		"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]",
-	// 		fmt.Sprintf(`module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-test-policy"]`, prefix),
-	// 		// wait_before_helm_destroy moved from triggers_replace to input, which
-	// 		// is a one-time structural change that forces a replace when upgrading
-	// 		// from the base version. Post-merge this becomes a plain in-place update
-	// 		// (covered by IgnoreUpdates below).
-	// 		"module.protect_cluster.terraform_data.wait_before_helm_destroy",
-	// 	},
-	// }
-	// options.IgnoreAdds = testhelper.Exemptions{
-	// 	List: []string{
-	// 		"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-	// 		"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]",
-	// 		fmt.Sprintf(`module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-test-policy"]`, prefix),
-	// 		// wait_for_dsc_node_ready is a new resource added in this PR that
-	// 		// does not exist in the base version. The upgrade plan will show it
-	// 		// as an add, which is expected and harmless.
-	// 		"module.protect_cluster.terraform_data.wait_for_dsc_node_ready[0]",
-	// 	},
-	// }
+	options.IgnoreDestroys = testhelper.Exemptions{
+		List: []string{
+			"module.protect_cluster.time_rotating.token_rotation",
+			"module.protect_cluster.ibm_backup_recovery_connection_registration_token.registration_token",
+			"module.protect_cluster.terraform_data.cleanup_brs_agent_resources",
+			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
+			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]",
+			fmt.Sprintf(`module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-test-policy"]`, prefix),
+			// wait_before_helm_destroy moved from triggers_replace to input, which
+			// is a one-time structural change that forces a replace when upgrading
+			// from the base version. Post-merge this becomes a plain in-place update
+			// (covered by IgnoreUpdates below).
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
+		},
+	}
+	options.IgnoreAdds = testhelper.Exemptions{
+		List: []string{
+			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
+			"module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]",
+			fmt.Sprintf(`module.protect_cluster.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-test-policy"]`, prefix),
+			// wait_for_dsc_node_ready is a new resource added in this PR that
+			// does not exist in the base version. The upgrade plan will show it
+			// as an add, which is expected and harmless.
+			"module.protect_cluster.terraform_data.wait_for_dsc_node_ready[0]",
+		},
+	}
 	options.IgnoreUpdates = testhelper.Exemptions{
 		List: []string{
 			// The DSC helm release re-updates on every plan because the BRS
@@ -336,11 +336,11 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// destroy-time provisioner. That path differs between Schematics jobs
 			// (each runs in a fresh temp dir), causing a side-effect-free in-place
 			// update (no provisioner runs on update).
-			// "module.protect_cluster.terraform_data.wait_before_helm_destroy",
+			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
 			// wait_for_dsc_node_ready stores the kubeconfig path in input.
 			// That path differs between Schematics jobs (each runs in a fresh
 			// temp dir), causing a side-effect-free in-place update.
-			// "module.protect_cluster.terraform_data.wait_for_dsc_node_ready[0]",
+			"module.protect_cluster.terraform_data.wait_for_dsc_node_ready[0]",
 		},
 	}
 
@@ -403,20 +403,20 @@ func TestRunIKSExample(t *testing.T) {
 	// -refresh=false into Plan args. PreDestroyHook covers the destroy.
 	// Remove both once https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906
 	// is merged and a new provider version is released.
-	// options.PostApplyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
-	// 	return nil
-	// }
-	// options.PreDestroyHook = func(o *testhelper.TestOptions) error {
-	// 	// Remove stale BRS connection from state before destroy. The provider's
-	// 	// Delete hard-errors with HTTP 400 "does not exist" when the connection is
-	// 	// already gone server-side (provider bug; fix pending PR #6906). Ignore
-	// 	// the exit code — a non-zero means the resource wasn't in state, which is fine.
-	// 	terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
-	// 		"module.backup_recover_protect_iks.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
-	// 	o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
-	// 	return nil
-	// }
+	options.PostApplyHook = func(o *testhelper.TestOptions) error {
+		o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
+		return nil
+	}
+	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
+		// Remove stale BRS connection from state before destroy. The provider's
+		// Delete hard-errors with HTTP 400 "does not exist" when the connection is
+		// already gone server-side (provider bug; fix pending PR #6906). Ignore
+		// the exit code — a non-zero means the resource wasn't in state, which is fine.
+		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
+			"module.backup_recover_protect_iks.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
+		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
+		return nil
+	}
 
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
@@ -431,23 +431,23 @@ func TestRunOCPExample(t *testing.T) {
 		"module.ocp_base[0].ibm_container_vpc_cluster.cluster[0]",
 		"ibm_container_cluster.cluster[0]",
 	})
-	// // Skip refresh on consistency plan and destroy: stale BRS connection IDs in state
-	// // cause the provider to hard-error when BRS returns "does not exist" (not HTTP 404).
-	// // PostApplyHook fires after apply but before the consistency plan, so it can inject
-	// // -refresh=false into Plan args. PreDestroyHook covers the destroy.
-	// // Remove both once https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906
-	// // is merged and a new provider version is released.
-	// options.PostApplyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
-	// 	return nil
-	// }
-	// options.PreDestroyHook = func(o *testhelper.TestOptions) error {
-	// 	// Remove stale BRS connection from state before destroy (same reason as IKS above).
-	// 	terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
-	// 		"module.backup_recover_protect_ocp.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
-	// 	o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
-	// 	return nil
-	// }
+	// Skip refresh on consistency plan and destroy: stale BRS connection IDs in state
+	// cause the provider to hard-error when BRS returns "does not exist" (not HTTP 404).
+	// PostApplyHook fires after apply but before the consistency plan, so it can inject
+	// -refresh=false into Plan args. PreDestroyHook covers the destroy.
+	// Remove both once https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906
+	// is merged and a new provider version is released.
+	options.PostApplyHook = func(o *testhelper.TestOptions) error {
+		o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
+		return nil
+	}
+	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
+		// Remove stale BRS connection from state before destroy (same reason as IKS above).
+		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
+			"module.backup_recover_protect_ocp.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
+		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
+		return nil
+	}
 
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
@@ -468,30 +468,30 @@ func TestRunCrossClusterExample(t *testing.T) {
 
 	options.TerraformVars["brs_create_new_connection"] = true
 
-	// options.IgnoreUpdates.List = append(options.IgnoreUpdates.List,
-	// 	fmt.Sprintf(`module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-continuous-backup"]`, options.Prefix),
-	// )
-	// // Skip refresh on consistency plan and destroy: stale BRS connection IDs in state
-	// // cause the provider to hard-error when BRS returns "does not exist" (not HTTP 404).
-	// // PostApplyHook fires after apply but before the consistency plan, so it can inject
-	// // -refresh=false into Plan args. PreDestroyHook covers the destroy.
-	// // Remove both once https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906
-	// // is merged and a new provider version is released.
-	// options.PostApplyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
-	// 	return nil
-	// }
-	// options.PreDestroyHook = func(o *testhelper.TestOptions) error {
-	// 	// Remove stale BRS connections (source + target) from state before destroy.
-	// 	terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
-	// 		"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
-	// 	terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
-	// 		"module.target_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
-	// 	// Use parallelism=1 so cluster worker-node cleanup finishes before
-	// 	// Terraform attempts to delete the VPCs and subnets.
-	// 	o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false", "-parallelism=1")
-	// 	return nil
-	// }
+	options.IgnoreUpdates.List = append(options.IgnoreUpdates.List,
+		fmt.Sprintf(`module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-continuous-backup"]`, options.Prefix),
+	)
+	// Skip refresh on consistency plan and destroy: stale BRS connection IDs in state
+	// cause the provider to hard-error when BRS returns "does not exist" (not HTTP 404).
+	// PostApplyHook fires after apply but before the consistency plan, so it can inject
+	// -refresh=false into Plan args. PreDestroyHook covers the destroy.
+	// Remove both once https://github.com/IBM-Cloud/terraform-provider-ibm/pull/6906
+	// is merged and a new provider version is released.
+	options.PostApplyHook = func(o *testhelper.TestOptions) error {
+		o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
+		return nil
+	}
+	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
+		// Remove stale BRS connections (source + target) from state before destroy.
+		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
+			"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
+		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
+			"module.target_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
+		// Use parallelism=1 so cluster worker-node cleanup finishes before
+		// Terraform attempts to delete the VPCs and subnets.
+		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false", "-parallelism=1")
+		return nil
+	}
 
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
@@ -530,29 +530,29 @@ func TestRunCrossClusterExistingConnection(t *testing.T) {
 	options.TerraformVars["source_connection_name"] = terraform.OutputContext(t, context.Background(), existingTerraformOptions, "source_connection_name")
 	options.TerraformVars["target_connection_name"] = terraform.OutputContext(t, context.Background(), existingTerraformOptions, "target_connection_name")
 
-	// // The continuous-backup protection policy re-plans as an in-place update on the
-	// // consistency check: its backup_policy value churns by design, so the second plan
-	// // always shows a no-op update. Exempt it, exactly as TestRunCrossClusterExample does.
-	// options.IgnoreUpdates.List = append(options.IgnoreUpdates.List,
-	// 	fmt.Sprintf(`module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-continuous-backup"]`, options.Prefix),
-	// )
+	// The continuous-backup protection policy re-plans as an in-place update on the
+	// consistency check: its backup_policy value churns by design, so the second plan
+	// always shows a no-op update. Exempt it, exactly as TestRunCrossClusterExample does.
+	options.IgnoreUpdates.List = append(options.IgnoreUpdates.List,
+		fmt.Sprintf(`module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-continuous-backup"]`, options.Prefix),
+	)
 
-	// options.PostApplyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
-	// 	return nil
-	// }
-	// options.PreDestroyHook = func(o *testhelper.TestOptions) error {
-	// 	terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
-	// 		"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
-	// 	terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
-	// 		"module.target_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
-	// 	// Use parallelism=1 on destroy so that IBM cluster worker nodes finish
-	// 	// draining before Terraform attempts to delete the VPC and its subnets.
-	// 	// Without this the VPC destroy races the asynchronous worker-node cleanup
-	// 	// and fails with "VPC is in use" even after the subnet resource is gone.
-	// 	o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false", "-parallelism=1")
-	// 	return nil
-	// }
+	options.PostApplyHook = func(o *testhelper.TestOptions) error {
+		o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
+		return nil
+	}
+	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
+		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
+			"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
+		terraform.RunTerraformCommandContextE(t, context.Background(), o.TerraformOptions, "state", "rm", //nolint:errcheck
+			"module.target_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_data_source_connection.connection[0]")
+		// Use parallelism=1 on destroy so that IBM cluster worker nodes finish
+		// draining before Terraform attempts to delete the VPC and its subnets.
+		// Without this the VPC destroy races the asynchronous worker-node cleanup
+		// and fails with "VPC is in use" even after the subnet resource is gone.
+		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false", "-parallelism=1")
+		return nil
+	}
 
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
