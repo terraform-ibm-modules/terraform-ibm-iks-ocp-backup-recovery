@@ -54,12 +54,41 @@ variable "target_cluster_name_id" {
   default     = null
 }
 
+variable "cluster_config_endpoint_type" {
+  description = "The type of endpoint to use for cluster config access: 'default', 'private', 'vpe', or 'link'."
+  type        = string
+  default     = "default"
+
+  validation {
+    condition     = contains(["default", "private", "vpe", "link"], var.cluster_config_endpoint_type)
+    error_message = "`cluster_config_endpoint_type` must be 'default', 'private', 'vpe', or 'link'."
+  }
+}
+
 ##############################################################################
 # BRS Instance Configuration
 ##############################################################################
 
 variable "existing_brs_instance_crn" {
   description = "CRN of existing Backup & Recovery Service instance. If null, a new instance will be created."
+  type        = string
+  default     = null
+}
+
+variable "brs_create_new_connection" {
+  description = "Set to true to create a new data source connection, false to look up an existing connection."
+  type        = bool
+  default     = true
+}
+
+variable "source_connection_name" {
+  description = "Custom name for source cluster connection. If null, a default name using prefix will be generated."
+  type        = string
+  default     = null
+}
+
+variable "target_connection_name" {
+  description = "Custom name for target cluster connection. If null, a default name using prefix will be generated."
   type        = string
   default     = null
 }

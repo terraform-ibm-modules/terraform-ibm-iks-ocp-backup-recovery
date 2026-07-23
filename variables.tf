@@ -139,7 +139,7 @@ variable "dsc_replicas" {
 variable "dsc_helm_timeout" {
   description = "Timeout in seconds for the Data Source Connector Helm deployment."
   type        = number
-  default     = 3600
+  default     = 7200
   nullable    = false
 }
 
@@ -223,7 +223,7 @@ variable "region" {
   type        = string
   default     = null
   validation {
-    condition     = var.existing_brs_instance_crn != null || var.region != null
+    condition     = (var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "null" && var.existing_brs_instance_crn != "") || var.region != null
     error_message = "`region` is required when `existing_brs_instance_crn` is not provided."
   }
 }
@@ -245,9 +245,15 @@ variable "existing_brs_instance_crn" {
   default     = null
 
   validation {
-    condition     = var.existing_brs_instance_crn == null || can(regex("^crn:v1:[a-z0-9-]+:[a-z0-9-]*:[a-z0-9-]+:[a-z0-9-]*:a/[a-f0-9]+:[a-f0-9-]+::$", var.existing_brs_instance_crn))
+    condition     = var.existing_brs_instance_crn == null || var.existing_brs_instance_crn == "null" || var.existing_brs_instance_crn == "" || can(regex("^crn:v1:[a-z0-9-]+:[a-z0-9-]*:[a-z0-9-]+:[a-z0-9-]*:a/[a-f0-9]+:[a-f0-9-]+::$", var.existing_brs_instance_crn))
     error_message = "'existing_brs_instance_crn' must be a valid CRN. Example: crn:v1:bluemix:public:backup-recovery:<region>:a/<account-id>:<instance-guid>::"
   }
+}
+
+variable "create_new_brs_instance" {
+  description = "Whether to provision a new Backup & Recovery Service instance. Leave as `null` (default) to infer the behaviour from `existing_brs_instance_crn` (a new instance is created when the CRN is not provided). Set to `false` to reuse an existing instance whose CRN is only known after apply — for example, when this module registers a second cluster against an instance created by a first invocation in the same apply."
+  type        = bool
+  default     = null
 }
 
 variable "brs_instance_name" {
@@ -260,7 +266,7 @@ variable "brs_instance_name" {
     error_message = "'brs_instance_name' must not be an empty string. Either provide a valid name or leave it as null."
   }
   validation {
-    condition     = var.existing_brs_instance_crn != null || var.brs_instance_name != null
+    condition     = (var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "null" && var.existing_brs_instance_crn != "") || var.brs_instance_name != null
     error_message = "`brs_instance_name` is required when `existing_brs_instance_crn` is not provided."
   }
 }
@@ -559,7 +565,7 @@ variable "registration_images" {
     data_mover                  = string
     velero                      = string
     velero_aws_plugin           = string
-    velero_openshift_plugin     = string
+    velero_openshift_plugin     = optional(string, null)
     cohesity_dataprotect_plugin = string
     init_container              = optional(string, null)
   })

@@ -4,7 +4,7 @@
 
 output "source_registration_id" {
   description = "ID of the registered Kubernetes source."
-  value       = ibm_backup_recovery_source_registration.source_registration.id
+  value       = try(ibm_backup_recovery_source_registration.source_registration.id, null)
 }
 
 output "brs_instance_crn" {
