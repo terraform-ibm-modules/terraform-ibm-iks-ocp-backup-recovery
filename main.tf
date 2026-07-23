@@ -13,7 +13,7 @@ locals {
   deploy_recovery = var.deployment_mode == "full_backup_recovery"
 
   # --- BRS region: cluster region for new instances, existing instance region otherwise ---
-  brs_region = var.existing_brs_instance_crn != null ? module.crn_parser.region : var.region
+  brs_region = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "null" && var.existing_brs_instance_crn != "" ? split(":", var.existing_brs_instance_crn)[5] : var.region
 
   # --- Cluster attributes (resolved from VPC or Classic data sources) ---
   cluster_crn                  = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].crn : data.ibm_container_cluster.classic_cluster[0].crn
@@ -34,8 +34,8 @@ locals {
   brs_tenant_id                        = module.backup_recovery_instance.tenant_id
   connection_id                        = module.backup_recovery_instance.connection_id
   registration_token                   = module.backup_recovery_instance.registration_token
-  backup_recovery_instance_public_url  = module.backup_recovery_instance.brs_instance.extensions["endpoints.public"]
-  backup_recovery_instance_private_url = module.backup_recovery_instance.brs_instance.extensions["endpoints.private"]
+  backup_recovery_instance_public_url  = nonsensitive(module.backup_recovery_instance.brs_instance.extensions["endpoints.public"])
+  backup_recovery_instance_private_url = nonsensitive(module.backup_recovery_instance.brs_instance.extensions["endpoints.private"])
   brs_instance_guid                    = module.backup_recovery_instance.brs_instance_guid
   brs_instance_region                  = element(split(":", module.backup_recovery_instance.brs_instance_crn), 5)
   backup_recovery_instance_url         = var.brs_endpoint_type == "public" ? local.backup_recovery_instance_public_url : local.backup_recovery_instance_private_url
@@ -74,7 +74,7 @@ resource "terraform_data" "install_dependencies" {
 module "crn_parser" {
   source  = "terraform-ibm-modules/common-utilities/ibm//modules/crn-parser"
   version = "1.5.0"
-  crn     = var.existing_brs_instance_crn != null ? var.existing_brs_instance_crn : ""
+  crn     = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "null" && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : ""
 }
 
 ##############################################################################
@@ -83,16 +83,18 @@ module "crn_parser" {
 
 module "backup_recovery_instance" {
   source                    = "terraform-ibm-modules/backup-recovery/ibm"
-  version                   = "v1.10.4"
+  version                   = "1.12.3"
   region                    = local.brs_region
   resource_group_id         = var.cluster_resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
   instance_name             = var.brs_instance_name
-  existing_brs_instance_crn = var.existing_brs_instance_crn
+  existing_brs_instance_crn = var.existing_brs_instance_crn != "null" && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : null
+  create_new_instance       = var.create_new_brs_instance
   connection_name           = var.brs_connection_name
   create_new_connection     = var.brs_create_new_connection
   resource_tags             = var.resource_tags
   access_tags               = var.access_tags
+  endpoint_type             = var.brs_endpoint_type
   connection_env_type       = var.connection_env_type
   policies                  = var.policies
 }
@@ -223,6 +225,64 @@ resource "ibm_container_vpc_worker_pool" "data_source_connector" {
 }
 
 ##############################################################################
+# Wait for DSC Worker Pool Node(s) to be Ready
+##############################################################################
+
+# The IBM Cloud provider marks the worker pool as "created" as soon as the API
+# confirms the pool exists, but the underlying VMs may not be in Kubernetes
+# Ready state for several minutes after that. Scheduling the Helm release
+# immediately causes the DSC pod to stay Pending until the node becomes Ready,
+# which exhausts the Helm timeout (context deadline exceeded).
+# This resource runs kubectl wait after pool creation to block the Helm install
+# until at least one node with the "dedicated=data-source-connector" label is
+# schedulable.  It is a no-op when create_dsc_worker_pool is false.
+resource "terraform_data" "wait_for_dsc_node_ready" {
+  count = local.is_vpc && var.create_dsc_worker_pool ? 1 : 0
+
+  depends_on = [ibm_container_vpc_worker_pool.data_source_connector]
+
+  input = {
+    kubeconfig_path = data.ibm_container_cluster_config.cluster_config.config_file_path
+  }
+
+  provisioner "local-exec" {
+    # Wait up to 15 minutes for at least one DSC node to become Ready.
+    # --selector matches the label applied to every dsc-pool-zone-* worker pool.
+    # `kubectl wait node --selector=...` fails immediately with "no matching resources
+    # found" when zero nodes with that label exist yet (the VM is still provisioning).
+    # So we first poll until at least one matching node appears, then wait for Ready.
+    #
+    # After the node reports Ready we sleep an additional 120 s. A node enters the
+    # Ready condition as soon as its kubelet registers, but the scheduler's internal
+    # cache and taint/toleration logic may not yet have accepted the node. Without
+    # this extra delay the Helm install starts while the scheduler still considers
+    # the node unschedulable, the DSC pod stays Pending for the entire Helm timeout,
+    # and the install fails with "context deadline exceeded".
+    command     = <<-EOT
+      echo "Waiting for DSC node to appear (label dedicated=data-source-connector)..."
+      for i in $(seq 1 90); do
+        if kubectl get nodes --selector='dedicated=data-source-connector' --no-headers 2>/dev/null | grep -q .; then
+          echo "Node found, waiting for Ready condition..."
+          kubectl wait node --selector='dedicated=data-source-connector' --for=condition=Ready --timeout=900s || exit 1
+          echo "Node is Ready. Sleeping 120 s to allow scheduler cache to sync..."
+          sleep 120
+          echo "Scheduler sync wait complete."
+          exit 0
+        fi
+        echo "No DSC node yet, retry $i/90 (sleeping 10s)..."
+        sleep 10
+      done
+      echo "Timed out waiting for DSC node to appear after 15 minutes"
+      exit 1
+    EOT
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      KUBECONFIG = self.input.kubeconfig_path
+    }
+  }
+}
+
+##############################################################################
 # Data Source Connector Namespace
 ##############################################################################
 
@@ -285,7 +345,7 @@ resource "helm_release" "data_source_connector" {
   values = [
     yamlencode({
       secrets = {
-        registrationToken = local.registration_token
+        registrationToken = local.registration_token != null ? local.registration_token : ""
       }
       image = {
         registry   = element(split("/", var.dsc_image_version), 0)
@@ -323,6 +383,7 @@ resource "helm_release" "data_source_connector" {
   ]
 
   depends_on = [
+    terraform_data.wait_for_dsc_node_ready,
     ibm_container_vpc_worker_pool.data_source_connector,
     kubernetes_namespace_v1.dsc_namespace,
     kubernetes_role_binding_v1.anyuid_scc_rolebinding,
@@ -984,23 +1045,42 @@ locals {
   } : {}
 }
 
-# Trigger an immediate on-demand backup run for each protection group in recovery mode
-# This ensures backups are available for recovery without waiting for scheduled runs
-resource "ibm_backup_recovery_protection_group_run_request" "trigger_backup_run" {
+# Trigger an immediate on-demand backup run for each protection group in recovery mode,
+# but only if BRS has not already started one automatically (which it does as soon as a
+# protection group is registered against an active policy).
+# Blindly firing a second kRegular run while a CloudArchiveDirect archival task is in
+# progress causes: "CloudArchiveDirect job has an active archival task for primary target".
+resource "terraform_data" "trigger_backup_run" {
   for_each = local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
-
-  x_ibm_tenant_id = local.brs_tenant_id
-  group_id        = local.numeric_pg_ids[each.key] # Use numeric ID (timestamp:id:id format)
-  run_type        = "kRegular"
-  endpoint_type   = var.brs_endpoint_type
-  instance_id     = local.brs_instance_guid
-  region          = local.brs_instance_region
 
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
     time_sleep.wait_for_source_discovery,
-    time_sleep.wait_for_pg_registration
+    time_sleep.wait_for_pg_registration,
+    terraform_data.install_dependencies
   ]
+
+  input = {
+    url                 = "https://${local.backup_recovery_instance_url}"
+    tenant              = local.brs_tenant_id
+    endpoint_type       = var.brs_endpoint_type
+    instance_id         = local.brs_instance_guid
+    protection_group_id = ibm_backup_recovery_protection_group.protection_group[each.key].id
+    api_key             = sensitive(var.ibmcloud_api_key)
+    binaries_path       = local.binaries_path
+  }
+
+  triggers_replace = {
+    protection_group_id = ibm_backup_recovery_protection_group.protection_group[each.key].id
+  }
+
+  provisioner "local-exec" {
+    command     = "${path.module}/scripts/trigger_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' '${self.input.protection_group_id}'"
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
+    }
+  }
 }
 
 ##############################################################################
@@ -1015,7 +1095,7 @@ resource "terraform_data" "wait_for_backup_run" {
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
     time_sleep.wait_for_source_discovery,
-    ibm_backup_recovery_protection_group_run_request.trigger_backup_run,
+    terraform_data.trigger_backup_run,
     terraform_data.install_dependencies
   ]
 
@@ -1072,7 +1152,11 @@ data "ibm_backup_recovery_protection_group_runs" "backup_runs" {
 locals {
   # Map of protection group name to latest successful snapshot
   latest_snapshots = local.deploy_recovery ? {
-    for pg_name, runs in data.ibm_backup_recovery_protection_group_runs.backup_runs : pg_name => (
+    for pg_name, runs in data.ibm_backup_recovery_protection_group_runs
+
+
+
+    .backup_runs : pg_name => (
       length(try(runs.runs, [])) > 0 ? (
         try(runs.runs[0].local_backup_info[0].snapshot_info[0].snapshot_id, try(runs.runs[0].id, null))
       ) : null

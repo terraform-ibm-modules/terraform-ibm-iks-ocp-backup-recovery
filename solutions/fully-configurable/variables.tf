@@ -322,7 +322,7 @@ variable "dsc_replicas" {
 variable "dsc_helm_timeout" {
   description = "Timeout in seconds for the Data Source Connector Helm deployment."
   type        = number
-  default     = 3600
+  default     = 7200
   nullable    = false
 }
 
@@ -428,7 +428,7 @@ variable "registration_images" {
     data_mover                  = string
     velero                      = string
     velero_aws_plugin           = string
-    velero_openshift_plugin     = string
+    velero_openshift_plugin     = optional(string, null)
     cohesity_dataprotect_plugin = string
     init_container              = optional(string, null)
   })
@@ -940,9 +940,16 @@ variable "target_cluster_config_endpoint_type" {
 }
 
 variable "target_brs_connection_name" {
-  description = "Name for the BRS connection to the target cluster in cross-cluster recovery. If null, defaults to '{cluster_id}-target-connection'."
+  description = "Name for the BRS connection to the target cluster in cross-cluster recovery or connected component setup. If null, defaults to '{cluster_id}-target-connection'."
   type        = string
   default     = null
+}
+
+variable "target_brs_create_new_connection" {
+  description = "Whether to create a new BRS connection for the target cluster. Set to `false` to reuse an existing connection matching `target_brs_connection_name`. Defaults to `true`."
+  type        = bool
+  default     = true
+  nullable    = false
 }
 
 variable "target_create_dsc_worker_pool" {

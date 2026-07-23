@@ -42,7 +42,4 @@ provider "helm" {
     client_key             = (var.deployment_mode == "connected_component" || (var.deployment_mode == "full_backup_recovery" && var.recovery_type == "cross-cluster")) ? data.ibm_container_cluster_config.target_cluster_config[0].admin_key : data.ibm_container_cluster_config.cluster_config.admin_key
     cluster_ca_certificate = (var.deployment_mode == "connected_component" || (var.deployment_mode == "full_backup_recovery" && var.recovery_type == "cross-cluster")) ? data.ibm_container_cluster_config.target_cluster_config[0].ca_certificate : data.ibm_container_cluster_config.cluster_config.ca_certificate
   }
-  registries = [
-    { url = "oci://${var.dsc_registry}", username = "iamapikey", password = var.ibmcloud_api_key }
-  ]
 }
