@@ -26,7 +26,7 @@ import (
 // Use existing resource group
 // const resourceGroup = "geretain-test-resources"
 const resourceGroup = "BRT-General-testing"
-const existing_brs_instance_crn = "crn:v1:bluemix:public:backup-recovery:us-south:a/7d8f9e928b9d6c2dfa06475946765e01:6dc833fd-d62f-470c-87f0-af934b4afe90::"
+const existing_brs_instance_crn = "crn:v1:bluemix:public:backup-recovery:au-syd:a/7d8f9e928b9d6c2dfa06475946765e01:4dde55c7-e8a8-48c8-b431-c226f75090f7::"
 const fullyConfigurableTerraformDir = "solutions/fully-configurable"
 const iksExampleDir = "examples/kubernetes"
 const ocpExampleDir = "examples/openshift"
