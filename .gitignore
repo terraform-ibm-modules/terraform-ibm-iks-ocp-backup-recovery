@@ -73,4 +73,3 @@ terraform.rc
 go.work
 **/pipeline-logs
 **/*.code-workspace
-**/logs
