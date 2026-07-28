@@ -424,12 +424,13 @@ resource "helm_release" "data_source_connector" {
         echo ">> Standard stdout/stderr logs for $pod:"
         kubectl logs "$pod" -n "$NS" --all-containers --tail=200 2>&1 || true
 
-        echo ">> Internal /cohesity_logs/ for $pod:"
+        echo ">> Internal /cohesity_logs/ for $pod (*.ERROR and *.STDOUTERR only):"
         # Use exec to read directly from the pod's filesystem.
         # Fails gracefully if the pod is Pending or CrashLoopBackOff.
         kubectl exec "$pod" -n "$NS" -- sh -c '
           if [ -d "/cohesity_logs" ]; then
-            for file in $(find /cohesity_logs -type f 2>/dev/null); do
+            for file in /cohesity_logs/*.ERROR /cohesity_logs/*.STDOUTERR; do
+              [ -f "$file" ] || continue
               echo "--- Content of $file ---"
               tail -n 200 "$file"
             done
