@@ -399,6 +399,59 @@ resource "helm_release" "data_source_connector" {
       error_message = "Invalid connection_env_type '${var.connection_env_type}' for kube_type '${var.kube_type}'. When kube_type is 'kubernetes', connection_env_type must be 'kIksVpc' or 'kIksClassic'. When kube_type is 'openshift', connection_env_type must be 'kRoksVpc' or 'kRoksClassic'."
     }
   }
+
+  # Collect pod, event, PVC, and node diagnostics when the Helm install fails.
+  # on_failure = continue ensures this runs even when helm times out or errors,
+  # so the logs are visible in the Terraform output before atomic rolls back.
+  provisioner "local-exec" {
+    on_failure  = continue
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      KUBECONFIG = data.ibm_container_cluster_config.cluster_config.config_file_path
+    }
+    command = <<-EOT
+      NS="${self.namespace}"
+      echo "=== DSC HELM INSTALL DIAGNOSTICS (namespace: $NS) ==="
+
+      echo "--- Pods ---"
+      kubectl get pods -n "$NS" -o wide || true
+
+      echo "--- Pod details ---"
+      kubectl describe pods -n "$NS" || true
+
+      echo "--- Pod logs (Standard & /cohesity_logs) ---"
+      for pod in $(kubectl get pods -n "$NS" -o name 2>/dev/null); do
+        echo ">> Standard stdout/stderr logs for $pod:"
+        kubectl logs "$pod" -n "$NS" --all-containers --tail=200 2>&1 || true
+
+        echo ">> Internal /cohesity_logs/ for $pod:"
+        # Use exec to read directly from the pod's filesystem.
+        # Fails gracefully if the pod is Pending or CrashLoopBackOff.
+        kubectl exec "$pod" -n "$NS" -- sh -c '
+          if [ -d "/cohesity_logs" ]; then
+            for file in $(find /cohesity_logs -type f 2>/dev/null); do
+              echo "--- Content of $file ---"
+              tail -n 200 "$file"
+            done
+          else
+            echo "Directory /cohesity_logs not found in this pod."
+          fi
+        ' 2>/dev/null || echo "Could not exec into $pod (may be crashing or still initializing)."
+      done
+
+      echo "--- PersistentVolumeClaims ---"
+      kubectl get pvc -n "$NS" -o wide || true
+      kubectl describe pvc -n "$NS" || true
+
+      echo "--- Namespace events (sorted by time) ---"
+      kubectl get events -n "$NS" --sort-by='.lastTimestamp' || true
+
+      echo "--- Node summary ---"
+      kubectl get nodes -o wide || true
+
+      echo "=== END DIAGNOSTICS ==="
+    EOT
+  }
 }
 
 ##############################################################################
