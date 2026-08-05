@@ -330,6 +330,10 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// brs_source_deregistration_wait destroy_duration changed from 5m
 			// to 10m — in-place update, no resource replacement.
 			"module.protect_cluster.time_sleep.brs_source_deregistration_wait",
+			// wait_for_dsc_stabilization create_duration changed from 5m to 10m
+			// to allow the DSC gRPC tunnel to BRS to fully establish before
+			// source_registration is called — in-place update, no replacement.
+			"module.protect_cluster.time_sleep.wait_for_dsc_stabilization",
 		},
 	}
 
