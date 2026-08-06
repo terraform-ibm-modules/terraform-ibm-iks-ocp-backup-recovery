@@ -847,10 +847,27 @@ data "ibm_backup_recovery_protection_sources" "sources" {
 }
 
 locals {
-  # Flatten protection sources up to 3 levels deep to create a comprehensive map of object names (namespaces, PVCs, etc.) to IDs
+  # Flatten protection sources up to 3 levels deep to create a map of object names
+  # (namespaces, PVCs, etc.) to IDs — scoped to THIS cluster's registered source only.
+  #
+  # The BRS protection_sources API returns every cluster registered to the instance.
+  # In a cross-cluster deployment (full_backup_recovery + cross-cluster) both the
+  # source and the target cluster are registered to the same BRS instance, so the
+  # global node list contains namespaces from both clusters. When two clusters share
+  # a namespace name, the old unscoped [0] index pick was non-deterministic and
+  # resolved to the target cluster's namespace on ROKS, causing the target namespace
+  # to be backed up instead of the source one.
+  #
+  # Fix: at L1 (all_env_nodes), keep only the single cluster-root node whose
+  # protection_source[0].id matches this module's registered source_id. The entire
+  # l2/l3 descent then stays within that cluster's subtree.
   all_env_nodes = flatten([
     for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
-    (env.nodes != null ? env.nodes : [])
+    [for node in(env.nodes != null ? env.nodes : []) : node
+      if node.protection_source != null &&
+      length(node.protection_source) > 0 &&
+      tostring(node.protection_source[0].id) == tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
+    ]
   ])
 
   all_l1_ps = flatten([
