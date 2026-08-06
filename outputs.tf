@@ -34,7 +34,14 @@ output "protection_group_ids" {
 
 output "auto_protect_pg_id" {
   description = "ID of the auto-protect protection group created by BRS when enable_auto_protect=true. Null when auto-protect is not enabled or the registration has not yet propagated."
-  value       = try(ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id, null)
+  # Two paths to the same ID — the top-level attribute (provider typo: "proetction")
+  # is more reliable at plan time; the nested path is the canonical reference.
+  # coalesce picks whichever is non-null first.
+  value = coalesce(
+    try(ibm_backup_recovery_source_registration.source_registration.auto_proetction_group_id, null),
+    try(ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id, null),
+    null,
+  )
 }
 
 output "protection_sources" {
