@@ -657,7 +657,11 @@ locals {
   # Flatten protection sources up to 3 levels deep to create a comprehensive map of object names (namespaces, PVCs, etc.) to IDs
   all_env_nodes = flatten([
     for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
-    (env.nodes != null ? env.nodes : [])
+    [for node in(env.nodes != null ? env.nodes : []) : node
+      if node.protection_source != null &&
+      length(node.protection_source) > 0 &&
+      tostring(node.protection_source[0].id) == tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
+    ]
   ])
 
   all_l1_ps = flatten([
