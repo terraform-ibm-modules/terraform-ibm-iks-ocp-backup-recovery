@@ -90,7 +90,7 @@ variable "install_required_binaries" {
 variable "add_dsc_rules_to_cluster_sg" {
   description = "Set to `true` to automatically add the security group rules required by the Data Source Connector. This is mandatory when registering the cluster via its public service endpoint. Set to `false` to only register the cluster and create the policy without modifying security groups."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "dsc_chart_uri" {
@@ -228,46 +228,6 @@ variable "brs_endpoint_type" {
   }
 }
 
-##############################################################################
-# Virtual Private Endpoint Gateway (VPEG) for BRS
-##############################################################################
-
-variable "create_brs_vpe" {
-  description = "Set to `true` to create a Virtual Private Endpoint Gateway (VPEG) that routes traffic from the cluster VPC to the BRS instance over the IBM private backbone. For existing clusters, `vpc_id` and `vpc_subnets` are auto-discovered from the cluster's worker pools. When creating a new cluster in the same apply, supply `vpc_id` and `vpc_subnets` explicitly (the auto-discovery reads worker pools, which are unknown until after the cluster is applied). For cross-account setups (BRS in a different IBM Cloud account), also provide `brs_source_account_id` to create the required S2S IAM authorization policy."
-  type        = bool
-  default     = false
-  nullable    = false
-}
-
-variable "vpc_id" {
-  description = "ID of the VPC where the BRS Virtual Private Endpoint Gateway will be created. Optional when create_brs_vpe is true — when omitted the VPC ID is auto-discovered from the cluster's worker-pool subnets. Supply this explicitly only when the auto-discovery would pick the wrong VPC."
-  type        = string
-  default     = null
-}
-
-variable "vpc_subnets" {
-  description = "List of subnets in which to bind reserved IPs for the BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when create_brs_vpe is true — when omitted all subnets in the cluster VPC are discovered automatically. Supply this explicitly to restrict the VPEG to a specific subset of subnets."
-  type = list(object({
-    name = string
-    id   = string
-    zone = string
-  }))
-  default  = []
-  nullable = false
-}
-
-variable "brs_source_account_id" {
-  description = "IBM Cloud account ID of the account where the IKS/ROKS cluster (and its VPC) reside. Required only for cross-account setups where the BRS instance is in a different account. When provided, an S2S IAM authorization policy is created in the BRS account allowing VPC Infrastructure Services (endpoint-gateway) in the source account to access the BRS instance. Leave null for same-account deployments."
-  type        = string
-  default     = null
-}
-
-variable "brs_vpe_name" {
-  description = "Override the name of the BRS Virtual Private Endpoint Gateway. If null, the name is auto-generated as '<brs_connection_name>-vpe'."
-  type        = string
-  default     = null
-}
-
 variable "existing_brs_instance_crn" {
   description = "CRN of the Backup & Recovery Service instance."
   type        = string
@@ -325,6 +285,40 @@ variable "connection_env_type" {
     condition     = contains(["kIksVpc", "kRoksVpc", "kRoksClassic", "kIksClassic"], var.connection_env_type)
     error_message = "`connection_env_type` must be one of 'kIksVpc', 'kRoksVpc', 'kRoksClassic', or 'kIksClassic'."
   }
+}
+
+##############################################################################
+# Virtual Private Endpoint Gateway (VPEG) for BRS
+##############################################################################
+
+variable "create_brs_vpe" {
+  description = "Set to `true` to create a Virtual Private Endpoint Gateway (VPEG) that routes traffic from the cluster VPC to the BRS instance over the IBM private backbone. For existing clusters, `vpc_id` and `vpc_subnets` are auto-discovered from the cluster's worker pools. When creating a new cluster in the same apply, supply `vpc_id` and `vpc_subnets` explicitly (the auto-discovery reads worker pools, which are unknown until after the cluster is applied). For cross-account setups (BRS in a different IBM Cloud account), the required S2S IAM authorization policy is created automatically when the module detects that the `ibm.cluster` provider belongs to a different account than the default `ibm` provider."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "vpc_id" {
+  description = "ID of the VPC where the BRS Virtual Private Endpoint Gateway will be created. Optional when create_brs_vpe is true — when omitted the VPC ID is auto-discovered from the cluster's worker-pool subnets. Supply this explicitly only when the auto-discovery would pick the wrong VPC."
+  type        = string
+  default     = null
+}
+
+variable "vpc_subnets" {
+  description = "List of subnets in which to bind reserved IPs for the BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when create_brs_vpe is true — when omitted all subnets in the cluster VPC are discovered automatically. Supply this explicitly to restrict the VPEG to a specific subset of subnets."
+  type = list(object({
+    name = string
+    id   = string
+    zone = string
+  }))
+  default  = []
+  nullable = false
+}
+
+variable "brs_vpe_name" {
+  description = "Override the name of the BRS Virtual Private Endpoint Gateway. If null, the name is auto-generated as '<brs_connection_name>-vpe'."
+  type        = string
+  default     = null
 }
 
 ##############################################################################

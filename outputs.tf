@@ -37,11 +37,10 @@ output "auto_protect_pg_id" {
   # Two paths to the same ID — the top-level attribute (provider typo: "proetction")
   # is more reliable at plan time; the nested path is the canonical reference.
   # coalesce picks whichever is non-null first.
-  value = coalesce(
-    try(ibm_backup_recovery_source_registration.source_registration.auto_proetction_group_id, null),
-    try(ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id, null),
-    null,
-  )
+  value = try(coalesce(
+    ibm_backup_recovery_source_registration.source_registration.auto_proetction_group_id,
+    ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id,
+  ), null)
 }
 
 output "protection_sources" {
@@ -104,6 +103,6 @@ output "brs_vpe_ips" {
 }
 
 output "s2s_auth_policies" {
-  description = "S2S IAM authorization policies created in this account. Populated only when brs_source_account_id is set (cross-account VPE); empty map otherwise."
-  value       = var.brs_source_account_id != null && var.create_brs_vpe ? module.brs_s2s_auth[0].auth_policies : {}
+  description = "S2S IAM authorization policies created in this account. Populated only for cross-account VPE deployments (when ibm.cluster and ibm provider resolve to different accounts); empty map otherwise."
+  value       = local.is_cross_account ? module.brs_s2s_auth[0].auth_policies : {}
 }

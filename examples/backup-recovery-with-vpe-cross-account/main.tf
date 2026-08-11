@@ -11,8 +11,8 @@
 #   TARGET account  (ibmcloud_api_key / default ibm provider)
 #     - BRS instance  (new or existing)
 #     - BRS data-source connection + registration token
-#     - S2S IAM authorization policy  (created by root module when
-#       brs_source_account_id is set)
+#     - S2S IAM authorization policy  (created automatically when cross-account
+#       is detected by comparing ibm vs ibm.cluster provider tokens)
 #
 # Apply order (enforced by the root module's internal dependency graph)
 # -----------------------------------------------------------------------
@@ -173,7 +173,7 @@ data "ibm_container_cluster_config" "cluster_config" {
 #
 # The default ibm provider (target account) handles all BRS resources:
 #   - BRS instance, data-source connection, registration token
-#   - S2S IAM authorization policy (via brs_source_account_id)
+#   - S2S IAM authorization policy (auto-created when cross-account detected)
 #
 # The ibm.cluster provider alias (source account) handles all cluster
 # and VPC resources:
@@ -221,18 +221,16 @@ module "backup_recovery" {
   # ---- VPE Gateway + S2S authorization (cross-account) ----
   # create_brs_vpe = true  → root module creates the VPEG in the source-account
   #                          VPC (using ibm.cluster provider).
-  # brs_source_account_id  → root module creates the S2S IAM auth policy that
-  #                          allows the source-account VPEG to resolve the BRS
-  #                          CRN across account boundaries.  The policy is
-  #                          created before the VPEG via an internal dep chain.
+  # S2S IAM auth policy is created automatically when the module detects that
+  # the ibm.cluster provider token (source account) differs from the default
+  # ibm provider token (target/BRS account). No input variable needed.
   # vpc_id / vpc_subnets   → supplied explicitly because the cluster is created
   #                          in the same apply; auto-discovery from worker-pool
   #                          data sources would be unknown at plan time.
-  create_brs_vpe        = true
-  brs_source_account_id = var.source_account_id
-  brs_vpe_name          = "${var.prefix}-brs-connection-vpe"
-  vpc_id                = local.vpc_id
-  vpc_subnets           = local.vpc_subnets
+  create_brs_vpe = true
+  brs_vpe_name   = "${var.prefix}-brs-connection-vpe"
+  vpc_id         = local.vpc_id
+  vpc_subnets    = local.vpc_subnets
 
   # ---- Backup policy ----
   policies = [
@@ -248,6 +246,14 @@ module "backup_recovery" {
         duration = 30
       }
       use_default_backup_target = true
+    }
+  ]
+  protection_groups = [
+    {
+      name        = "${var.prefix}-pg"
+      policy_name = "${var.prefix}-retention"
+      description = "Backs up the brs-testing-10g namespace (StatefulSet with 20Gi VPC Block PVC)"
+      objects     = [{ name = "brs-testing-10g" }]
     }
   ]
 

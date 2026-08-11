@@ -14,11 +14,6 @@ variable "source_ibmcloud_api_key" {
   sensitive   = true
 }
 
-variable "source_account_id" {
-  type        = string
-  description = "IBM Cloud account ID of the SOURCE account (cluster/VPC account). Used to scope the S2S IAM authorization policy so that the VPC endpoint-gateway service in the source account is authorized to target the BRS instance in the target account."
-}
-
 ##############################################################################
 # Regions
 ##############################################################################
@@ -105,4 +100,10 @@ variable "access_tags" {
   type        = list(string)
   description = "Optional list of access management tags to apply to all provisioned resources."
   default     = []
+}
+
+variable "workload_namespace" {
+  description = "Kubernetes namespace to create for the test workload. This name is also used as the BRS protection-group object name."
+  type        = string
+  default     = "brs-testing-10g"
 }

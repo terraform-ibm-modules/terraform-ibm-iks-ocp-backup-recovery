@@ -7,6 +7,41 @@ locals {
   is_vpc     = length(regexall("Vpc$", var.connection_env_type)) > 0
   is_classic = length(regexall("Classic$", var.connection_env_type)) > 0
 
+  # --- Cross-account detection ---
+  # S2S IAM authorization policy is only required when the VPEG (source account)
+  # and the BRS instance (target account) live in DIFFERENT IBM Cloud accounts.
+  # Both account IDs are auto-derived from IAM JWT tokens — no extra roles required.
+  # Cross-account detection compares the two provider tokens directly.
+  #
+  # Decode the target account ID from the IAM JWT.
+  _tgt_jwt_payload_raw = split(".", data.ibm_iam_auth_token.target_account.iam_access_token)[1]
+  _tgt_jwt_payload_padded = format("%s%s",
+    local._tgt_jwt_payload_raw,
+    substr("====", 0, (4 - (length(local._tgt_jwt_payload_raw) % 4)) % 4)
+  )
+  target_account_id = jsondecode(
+    base64decode(
+      replace(replace(local._tgt_jwt_payload_padded, "-", "+"), "_", "/")
+    )
+  ).account.bss
+
+  # Decode the source account ID from the ibm.cluster provider token.
+  _src_jwt_payload_raw = split(".", data.ibm_iam_auth_token.source_account.iam_access_token)[1]
+  _src_jwt_payload_padded = format("%s%s",
+    local._src_jwt_payload_raw,
+    substr("====", 0, (4 - (length(local._src_jwt_payload_raw) % 4)) % 4)
+  )
+  source_account_id = jsondecode(
+    base64decode(
+      replace(replace(local._src_jwt_payload_padded, "-", "+"), "_", "/")
+    )
+  ).account.bss
+
+  is_cross_account = (
+    var.create_brs_vpe &&
+    local.source_account_id != local.target_account_id
+  )
+
   # --- Deployment mode flags ---
   # DSC, source registration, and protection groups are always deployed in every
   # deployment_mode. deploy_recovery is the only mode-gated flag.
@@ -70,8 +105,19 @@ resource "terraform_data" "install_dependencies" {
 }
 
 ##############################################################################
-# IAM Auth Token (retrieved from provider credentials)
+# Account identity — used to detect cross-account vs same-account deployments
 ##############################################################################
+
+# Derive the target (BRS) account ID from the IAM token issued for ibmcloud_api_key.
+# ibm_iam_auth_token requires only a valid API key — no extra IAM roles needed.
+# The account ID is embedded in the JWT payload under .account.bss.
+data "ibm_iam_auth_token" "target_account" {}
+
+# Derive the source (cluster) account ID from the token issued for ibm.cluster.
+# When ibm.cluster == ibm (same account), this token is identical to target_account.
+data "ibm_iam_auth_token" "source_account" {
+  provider = ibm.cluster
+}
 
 ##############################################################################
 # CRN Parser (for existing BRS instance)
@@ -275,10 +321,16 @@ module "dsc_sg_rule" {
 #   Resource : backup-recovery instance GUID
 #   Role     : Viewer
 #
-# For same-account deployments (brs_source_account_id == null) this module
-# creates no resources (service_map is empty).
+# Only created when the ibm.cluster provider resolves to a different account
+# than the default ibm provider (cross-account detection is automatic via JWT).
+# Same-account VPE deployments do not need an S2S policy.
 module "brs_s2s_auth" {
-  count   = var.create_brs_vpe && var.brs_source_account_id != null ? 1 : 0
+  # Only create the S2S IAM authorization policy when:
+  #   1. A VPEG is being created (create_brs_vpe = true), AND
+  #   2. The cluster VPC account differs from the BRS instance account (cross-account)
+  # Same-account VPE deployments do not need an S2S policy — the VPC API can
+  # already resolve the BRS CRN within the same account.
+  count   = local.is_cross_account ? 1 : 0
   source  = "terraform-ibm-modules/s2s-auth/ibm"
   version = "2.3.1"
 
@@ -289,14 +341,14 @@ module "brs_s2s_auth" {
       # Source: VPC Infrastructure Services / endpoint-gateway in the SOURCE account
       source_service_name       = "is"
       source_resource_type      = "endpoint-gateway"
-      source_service_account_id = var.brs_source_account_id
+      source_service_account_id = local.source_account_id
 
       # Target: the specific BRS instance in this (TARGET) account
       target_service_name         = "backup-recovery"
       target_resource_instance_id = local.brs_instance_guid
 
       roles       = ["Viewer"]
-      description = "Allow VPC endpoint-gateway in account ${var.brs_source_account_id} to target BRS instance ${local.brs_instance_guid}"
+      description = "Allow VPC endpoint-gateway in account ${local.source_account_id} to target BRS instance ${local.brs_instance_guid}"
     }
   }
 
@@ -318,6 +370,11 @@ locals {
   brs_vpe_vpc_name = local.is_vpc ? "vpc" : "vpc"
 }
 
+# The VPE Gateway must be created after the S2S IAM authorization policy
+# exists in the target account.  The `depends_on = [module.brs_s2s_auth]`
+# below enforces that ordering.  The VPC service-resolution layer resolves
+# the cross-account BRS CRN instantly once the S2S policy is in place —
+# no additional sleep is required.
 module "brs_vpe" {
   count   = var.create_brs_vpe && local.is_vpc ? 1 : 0
   source  = "terraform-ibm-modules/vpe-gateway/ibm"
@@ -786,7 +843,6 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
   depends_on = [
     helm_release.data_source_connector,
     time_sleep.wait_for_dsc_stabilization,
-    time_sleep.brs_source_deregistration_wait,
     module.backup_recovery_instance,
   ]
 
@@ -801,18 +857,38 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
   }
 }
 
-# BRS source deregistration is async on the backend. Without this sleep,
-# DeleteDataSourceConnectionWithContext fails with "can't be deleted as it is
-# being used by the source" because the connection is still referenced when
-# the DSC connection cleanup script runs on the BRS instance side.
-# destroy_duration fires between source_registration destruction and the
-# namespace wait, giving BRS time to process the async deregistration.
-# 20m: BRS backend globally releases the cluster endpoint registration only
-# after full internal cleanup; 10m was not sufficient — consecutive runs on
-# the same cluster hit "already registered to brs-backup-agent-<id>" errors.
-resource "time_sleep" "brs_source_deregistration_wait" {
-  depends_on       = [terraform_data.wait_before_helm_destroy]
-  destroy_duration = "20m"
+# Poll until BRS confirms the source registration is fully gone before
+# proceeding with DSC / connection teardown.  Replaces the old blind 20-minute
+# time_sleep: deregistration usually completes in 3–8 minutes but can take
+# longer; polling exits as soon as the ID disappears from registrations-list.
+# depends_on module.backup_recovery_instance enforces destroy ordering:
+# the connection inside that module is deleted only AFTER this poller
+# confirms the source registration is fully gone from BRS.
+resource "terraform_data" "brs_source_deregistration_wait" {
+  depends_on = [
+    terraform_data.wait_before_helm_destroy,
+    module.backup_recovery_instance,
+  ]
+
+  input = {
+    region           = local.brs_instance_region
+    tenant_id        = local.brs_tenant_id
+    registration_id  = tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
+    brs_endpoint     = local.backup_recovery_instance_public_url
+    ibmcloud_api_key = var.ibmcloud_api_key # pragma: allowlist secret
+  }
+
+  provisioner "local-exec" {
+    when        = destroy
+    interpreter = ["/bin/bash", "-c"]
+    # Script signature: REGION TENANT REGISTRATION_ID BRS_ENDPOINT [TIMEOUT_S] [POLL_S]
+    # Timeout: 600s (10 min) — generous for normal 3-8 min deregistration;
+    # exits with 0 on timeout so destroy always proceeds regardless.
+    command = "${path.module}/scripts/wait-for-deregistration.sh '${try(self.input.region, "")}' '${try(self.input.tenant_id, "")}' '${try(self.input.registration_id, "")}' '${try(self.input.brs_endpoint, "")}' 600 20"
+    environment = {
+      IBMCLOUD_API_KEY = self.input.ibmcloud_api_key # pragma: allowlist secret
+    }
+  }
 }
 
 # Wait for namespace cleanup during destroy before destroying helm release.
@@ -852,20 +928,44 @@ resource "terraform_data" "wait_before_helm_destroy" {
   }
 }
 
-# Wait for BRS asynchronous discovery to stabilize before reading protection sources.
-resource "time_sleep" "wait_for_source_discovery" {
+# Poll the BRS protection-sources API until the DSC initial discovery pass is
+# complete — i.e., until the registered cluster appears as a source node with
+# at least one child object (namespace or PVC).  This replaces the old blind
+# time_sleep which was either too short (sources empty) or wasteful (waited
+# long after discovery had already finished).
+#
+# The script calls `ibmcloud backup-recovery protection-source list` every 30 s
+# and exits 0 as soon as children are visible, or exits 1 after a configurable
+# timeout (default 30 min).  Terraform will surface the timeout as a clear
+# error rather than a silent precondition failure.
+resource "terraform_data" "wait_for_source_discovery" {
   depends_on = [
     ibm_backup_recovery_source_registration.source_registration,
     helm_release.data_source_connector,
     terraform_data.install_dependencies
   ]
 
-  triggers = {
+  triggers_replace = {
     connection_id = local.connection_id
     dsc_version   = var.dsc_chart_uri
+    source_id     = tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
   }
 
-  create_duration = "10m"
+  input = {
+    region          = local.brs_instance_region
+    tenant_id       = local.brs_tenant_id
+    registration_id = tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
+    brs_endpoint    = local.backup_recovery_instance_public_url
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    # Script signature: REGION TENANT REGISTRATION_ID BRS_ENDPOINT [TIMEOUT_S] [POLL_S]
+    command = "${path.module}/scripts/wait-for-source-discovery.sh '${self.input.region}' '${self.input.tenant_id}' '${self.input.registration_id}' '${self.input.brs_endpoint}'"
+    environment = {
+      IBMCLOUD_API_KEY = var.ibmcloud_api_key # pragma: allowlist secret
+    }
+  }
 }
 
 data "ibm_backup_recovery_protection_sources" "sources" {
@@ -875,30 +975,34 @@ data "ibm_backup_recovery_protection_sources" "sources" {
   region          = local.brs_instance_region
   endpoint_type   = var.brs_endpoint_type
 
-  depends_on = [time_sleep.wait_for_source_discovery]
+  depends_on = [terraform_data.wait_for_source_discovery]
 }
 
 locals {
   # Flatten protection sources up to 3 levels deep to create a map of object names
   # (namespaces, PVCs, etc.) to IDs — scoped to THIS cluster's registered source only.
   #
-  # The BRS protection_sources API returns every cluster registered to the instance.
-  # In a cross-cluster deployment (full_backup_recovery + cross-cluster) both the
-  # source and the target cluster are registered to the same BRS instance, so the
-  # global node list contains namespaces from both clusters. When two clusters share
-  # a namespace name, the old unscoped [0] index pick was non-deterministic and
-  # resolved to the target cluster's namespace on ROKS, causing the target namespace
-  # to be backed up instead of the source one.
+  # The BRS provider tree structure (kKubernetes):
+  #   protection_sources[N]           ← env envelope, NO protection_source attr
+  #     └── nodes[M]                  ← cluster node, NO protection_source attr in provider
+  #           └── nodes[K]            ← namespace/label nodes, protection_source[0].id = namespace_id,
+  #                                      protection_source[0].parent_id = cluster source_id (175)
+  #                 └── nodes[J]      ← PVC nodes
   #
-  # Fix: at L1 (all_env_nodes), keep only the single cluster-root node whose
-  # protection_source[0].id matches this module's registered source_id. The entire
-  # l2/l3 descent then stays within that cluster's subtree.
+  # Filter: keep only the cluster-root node (L1) whose L2 children's parent_id
+  # matches this module's registered source_id. This scopes the entire descent to
+  # the correct cluster when multiple clusters are registered to the same BRS instance.
   all_env_nodes = flatten([
     for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
     [for node in(env.nodes != null ? env.nodes : []) : node
-      if node.protection_source != null &&
-      length(node.protection_source) > 0 &&
-      tostring(node.protection_source[0].id) == tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
+      if node.nodes != null &&
+      length(node.nodes) > 0 &&
+      anytrue([
+        for child in node.nodes :
+        child.protection_source != null &&
+        length(child.protection_source) > 0 &&
+        tostring(try(child.protection_source[0].parent_id, "")) == tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
+      ])
     ]
   ])
 
@@ -1225,7 +1329,7 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
 
   depends_on = [
     data.ibm_backup_recovery_protection_sources.sources,
-    time_sleep.wait_for_source_discovery
+    terraform_data.wait_for_source_discovery
   ]
 
   lifecycle {
@@ -1337,7 +1441,7 @@ resource "time_sleep" "wait_for_pg_registration" {
 
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
-    time_sleep.wait_for_source_discovery
+    terraform_data.wait_for_source_discovery
   ]
 
   create_duration = "90s" # Increased to 90s to match solution wrapper
@@ -1367,7 +1471,7 @@ resource "terraform_data" "trigger_backup_run" {
 
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
-    time_sleep.wait_for_source_discovery,
+    terraform_data.wait_for_source_discovery,
     time_sleep.wait_for_pg_registration,
     terraform_data.install_dependencies
   ]
@@ -1406,7 +1510,7 @@ resource "terraform_data" "wait_for_backup_run" {
 
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
-    time_sleep.wait_for_source_discovery,
+    terraform_data.wait_for_source_discovery,
     terraform_data.trigger_backup_run,
     terraform_data.install_dependencies
   ]
