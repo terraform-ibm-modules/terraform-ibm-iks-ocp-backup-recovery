@@ -37,7 +37,7 @@ var includeFiletypes = []string{".tf", ".yaml", ".py", ".tpl", ".md", ".sh"}
 // to minimise same-region collisions, which slow down IKS cluster provisioning
 // and can push total wall-clock time over the GitHub Actions job limit.
 var validRegions = []string{
-	// "us-south",
+	"us-south",
 	"us-east",
 	"eu-es",
 	"eu-gb",

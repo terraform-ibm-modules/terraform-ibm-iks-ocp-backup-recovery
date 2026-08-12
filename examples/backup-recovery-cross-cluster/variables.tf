@@ -80,6 +80,13 @@ variable "existing_brs_instance_crn" {
   default     = null
 }
 
+variable "brs_create_new_connection" {
+  description = "Set to true to create new BRS data-source connections for each cluster. Set to false to reuse existing connections identified by source_connection_name and target_connection_name."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
 variable "source_connection_name" {
   description = "Custom connection name for the source cluster. If null, '<prefix>-source-connection' is used."
   type        = string
