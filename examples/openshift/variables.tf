@@ -97,3 +97,30 @@ variable "cluster_config_endpoint_type" {
     error_message = "`cluster_config_endpoint_type` must be 'default', 'private', 'vpe', or 'link'."
   }
 }
+
+##############################################################################
+# VPE Gateway configuration (VPC clusters only)
+##############################################################################
+
+variable "create_brs_vpe" {
+  description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) in the cluster VPC, routing DSC→BRS traffic over the IBM private backbone. Only effective for VPC clusters — ignored when classic_cluster is true."
+  type        = bool
+  default     = true
+}
+
+variable "brs_vpe_name" {
+  description = "Override the name of the BRS VPE Gateway. If null, the name is auto-generated from the BRS connection name."
+  type        = string
+  default     = null
+}
+
+variable "brs_endpoint_type" {
+  description = "Endpoint type used by Terraform and scripts to reach the BRS API: 'public' or 'private'. Set to 'public' (default) so that CI/workstation machines can reach the BRS API directly. DSC pods always communicate with BRS over the VPE Gateway regardless of this setting."
+  type        = string
+  default     = "public"
+
+  validation {
+    condition     = contains(["public", "private"], var.brs_endpoint_type)
+    error_message = "`brs_endpoint_type` must be 'public' or 'private'."
+  }
+}
