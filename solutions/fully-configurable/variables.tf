@@ -471,7 +471,7 @@ variable "brs_create_new_connection" {
 }
 
 variable "create_brs_vpe" {
-  description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) that routes traffic from the cluster VPC to the BRS instance over the IBM private backbone. For existing clusters, vpc_id and vpc_subnets are auto-discovered from the cluster's worker pools. When creating a new cluster in the same apply, supply vpc_id and vpc_subnets explicitly. For cross-account setups (BRS in a different IBM Cloud account), also provide brs_source_account_id to create the required S2S IAM authorization policy. Set to false only if you are managing the VPEG externally or do not require private connectivity."
+  description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) that routes traffic from the cluster VPC to the BRS instance over the IBM private backbone. For existing clusters, vpc_id and vpc_subnets are auto-discovered from the cluster's worker pools. When creating a new cluster in the same apply, supply vpc_id and vpc_subnets explicitly. Set to false only if you are managing the VPEG externally or do not require private connectivity."
   type        = bool
   default     = true
   nullable    = false
@@ -492,12 +492,6 @@ variable "vpc_subnets" {
   }))
   default  = []
   nullable = false
-}
-
-variable "brs_source_account_id" {
-  description = "IBM Cloud account ID of the account where the IKS/ROKS cluster (and its VPC) reside. Required only for cross-account setups where the BRS instance is in a different account. When provided, an S2S IAM authorization policy is created in the BRS account allowing VPC Infrastructure Services (endpoint-gateway) in the source account to access the BRS instance. Leave null for same-account deployments."
-  type        = string
-  default     = null
 }
 
 variable "brs_vpe_name" {

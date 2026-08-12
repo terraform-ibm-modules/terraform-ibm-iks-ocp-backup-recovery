@@ -62,6 +62,12 @@ locals {
       zone = ibm_is_subnet.target_subnet[0].zone
     }
   ]
+
+  # Namespace created on the source cluster for the test workload.
+  source_namespace = kubernetes_namespace_v1.source_app.metadata[0].name
+
+  # Snapshot metadata written by wait_for_source_backup; null when recovery is disabled.
+  snapshot_data = var.enable_recovery ? jsondecode(data.local_file.snapshot_info[0].content) : null
 }
 
 ##############################################################################
@@ -69,8 +75,8 @@ locals {
 ##############################################################################
 
 module "resource_group" {
-  source  = "terraform-ibm-modules/resource-group/ibm"
-  version = "1.6.0"
+  source                       = "terraform-ibm-modules/resource-group/ibm"
+  version                      = "1.6.0"
   resource_group_name          = var.resource_group == null ? "${var.prefix}-resource-group" : null
   existing_resource_group_name = var.resource_group
 }
@@ -236,10 +242,6 @@ resource "kubernetes_namespace_v1" "source_app" {
   }
 
   depends_on = [time_sleep.wait_clusters]
-}
-
-locals {
-  source_namespace = kubernetes_namespace_v1.source_app.metadata[0].name
 }
 
 # StatefulSet with volumeClaimTemplates — BRS requires StatefulSet PVCs for
@@ -566,10 +568,6 @@ data "local_file" "snapshot_info" {
 
   filename   = "/tmp/backup_snapshot_${module.source_backup_recovery.brs_instance_guid}.json"
   depends_on = [terraform_data.wait_for_source_backup]
-}
-
-locals {
-  snapshot_data = var.enable_recovery ? jsondecode(data.local_file.snapshot_info[0].content) : null
 }
 
 # Trigger the cross-cluster restore via the BRS API

@@ -14,26 +14,26 @@ locals {
   # Cross-account detection compares the two provider tokens directly.
   #
   # Decode the target account ID from the IAM JWT.
-  _tgt_jwt_payload_raw = split(".", data.ibm_iam_auth_token.target_account.iam_access_token)[1]
-  _tgt_jwt_payload_padded = format("%s%s",
-    local._tgt_jwt_payload_raw,
-    substr("====", 0, (4 - (length(local._tgt_jwt_payload_raw) % 4)) % 4)
+  tgt_jwt_payload_raw = split(".", data.ibm_iam_auth_token.target_account.iam_access_token)[1]
+  tgt_jwt_payload_padded = format("%s%s",
+    local.tgt_jwt_payload_raw,
+    substr("====", 0, (4 - (length(local.tgt_jwt_payload_raw) % 4)) % 4)
   )
   target_account_id = jsondecode(
     base64decode(
-      replace(replace(local._tgt_jwt_payload_padded, "-", "+"), "_", "/")
+      replace(replace(local.tgt_jwt_payload_padded, "-", "+"), "_", "/")
     )
   ).account.bss
 
   # Decode the source account ID from the ibm.cluster provider token.
-  _src_jwt_payload_raw = split(".", data.ibm_iam_auth_token.source_account.iam_access_token)[1]
-  _src_jwt_payload_padded = format("%s%s",
-    local._src_jwt_payload_raw,
-    substr("====", 0, (4 - (length(local._src_jwt_payload_raw) % 4)) % 4)
+  src_jwt_payload_raw = split(".", data.ibm_iam_auth_token.source_account.iam_access_token)[1]
+  src_jwt_payload_padded = format("%s%s",
+    local.src_jwt_payload_raw,
+    substr("====", 0, (4 - (length(local.src_jwt_payload_raw) % 4)) % 4)
   )
   source_account_id = jsondecode(
     base64decode(
-      replace(replace(local._src_jwt_payload_padded, "-", "+"), "_", "/")
+      replace(replace(local.src_jwt_payload_padded, "-", "+"), "_", "/")
     )
   ).account.bss
 

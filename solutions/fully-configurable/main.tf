@@ -82,11 +82,10 @@ module "protect_cluster" {
   brs_create_new_connection = var.brs_create_new_connection
   connection_env_type       = var.connection_env_type
   # --- VPE + S2S (cross-account and same-account private routing) ---
-  create_brs_vpe        = var.create_brs_vpe
-  vpc_id                = var.vpc_id
-  vpc_subnets           = var.vpc_subnets
-  brs_source_account_id = var.brs_source_account_id
-  brs_vpe_name          = var.brs_vpe_name
+  create_brs_vpe = var.create_brs_vpe
+  vpc_id         = var.vpc_id
+  vpc_subnets    = var.vpc_subnets
+  brs_vpe_name   = var.brs_vpe_name
   # --- Data Source Connector (DSC) ---
   dsc_chart_uri           = var.dsc_chart_uri
   dsc_name                = var.dsc_name
@@ -227,11 +226,10 @@ module "target_cluster_registration" {
   protection_groups = null
 
   # --- VPE (target cluster's own VPC — needed when target is in a different VPC from source) ---
-  create_brs_vpe        = var.target_create_brs_vpe
-  vpc_id                = var.target_vpc_id
-  vpc_subnets           = var.target_vpc_subnets
-  brs_source_account_id = var.brs_source_account_id
-  brs_vpe_name          = var.target_brs_vpe_name
+  create_brs_vpe = var.target_create_brs_vpe
+  vpc_id         = var.target_vpc_id
+  vpc_subnets    = var.target_vpc_subnets
+  brs_vpe_name   = var.target_brs_vpe_name
 
   # Tags
   resource_tags = var.resource_tags

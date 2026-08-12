@@ -74,7 +74,7 @@
                 "crn:v1:bluemix:public:iam::::role:Administrator"
               ],
               "service_name": "iam-identity",
-              "notes": "Required to create IAM service-to-service (S2S) authorization policies. When brs_source_account_id is set (cross-account VPE), the deploying identity in the target (BRS) account must hold Administrator on IAM Identity Services to allow the source-account VPC endpoint-gateway to access the BRS instance."
+              "notes": "Required to create IAM service-to-service (S2S) authorization policies for cross-account VPE deployments. The deploying identity in the target (BRS) account must hold Administrator on IAM Identity Services."
             }
           ],
           "architecture": {
@@ -583,10 +583,6 @@
                   ]
                 }
               }
-            },
-            {
-              "key": "brs_source_account_id",
-              "display_name": "BRS Source Account ID"
             },
             {
               "key": "brs_vpe_name",
