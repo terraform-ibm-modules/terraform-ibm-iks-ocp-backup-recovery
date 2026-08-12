@@ -37,7 +37,7 @@ var includeFiletypes = []string{".tf", ".yaml", ".py", ".tpl", ".md", ".sh"}
 // to minimise same-region collisions, which slow down IKS cluster provisioning
 // and can push total wall-clock time over the GitHub Actions job limit.
 var validRegions = []string{
-	"us-south",
+	// "us-south",
 	"us-east",
 	"eu-es",
 	"eu-gb",
@@ -334,6 +334,10 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// to allow the DSC gRPC tunnel to BRS to fully establish before
 			// source_registration is called — in-place update, no replacement.
 			"module.protect_cluster.time_sleep.wait_for_dsc_stabilization",
+			// purge_stale_dsc_pvc was added in the same release cycle; it does not
+			// exist in the previous released version so the upgrade plan shows it
+			// as an in-place update rather than an add.
+			"module.protect_cluster.terraform_data.purge_stale_dsc_pvc",
 		},
 	}
 

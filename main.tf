@@ -982,26 +982,75 @@ locals {
   # Flatten protection sources up to 3 levels deep to create a map of object names
   # (namespaces, PVCs, etc.) to IDs — scoped to THIS cluster's registered source only.
   #
-  # The BRS provider tree structure (kKubernetes):
-  #   protection_sources[N]           ← env envelope, NO protection_source attr
-  #     └── nodes[M]                  ← cluster node, NO protection_source attr in provider
-  #           └── nodes[K]            ← namespace/label nodes, protection_source[0].id = namespace_id,
-  #                                      protection_source[0].parent_id = cluster source_id (175)
-  #                 └── nodes[J]      ← PVC nodes
+  # The BRS Terraform provider exposes the kKubernetes source tree as:
   #
-  # Filter: keep only the cluster-root node (L1) whose L2 children's parent_id
-  # matches this module's registered source_id. This scopes the entire descent to
-  # the correct cluster when multiple clusters are registered to the same BRS instance.
+  #   protection_sources[N]          ← env envelope (no protection_source attr)
+  #     └── nodes[M]                 ← cluster node
+  #           IKS:  protection_source[0].id = cluster source_id  (L1 has it)
+  #           OCP:  NO protection_source attr at this level
+  #           └── nodes[K]           ← namespace / label nodes
+  #                 IKS:  protection_source[0].id = namespace object id
+  #                 OCP:  protection_source[0].id = namespace object id
+  #                       protection_source[0].parent_id = cluster source_id  ← key difference
+  #                 └── nodes[J]     ← PVC nodes
+  #
+  # IKS filter: keep the L1 node whose protection_source[0].id == source_id
+  # OCP filter: keep the L1 node that has at least one L2 child whose
+  #             protection_source[0].parent_id == source_id
+  #
+  # When source_id is not yet known (null) or not found in the tree (source
+  # discovery still in progress), the filter is skipped so all nodes are
+  # included — identical to pre-PR-74 behaviour, which avoids an empty
+  # all_flat_objects and prevents a spurious precondition failure.
+
+  source_id_str = tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
+
+  # IKS: source_id appears as protection_source[0].id on the L1 cluster node.
+  # Collect all such L1 IDs to cheaply detect whether we are in IKS mode.
+  all_known_l1_source_ids = toset(flatten([
+    for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
+    [for node in(env.nodes != null ? env.nodes : []) :
+      tostring(node.protection_source[0].id)
+      if node.protection_source != null && length(node.protection_source) > 0
+    ]
+  ]))
+
+  # OCP: source_id appears as protection_source[0].parent_id on L2 namespace nodes.
+  # Collect all such parent_id values so we can detect OCP mode and find the right L1.
+  all_known_l2_parent_ids = toset(flatten([
+    for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
+    [for node in(env.nodes != null ? env.nodes : []) :
+      [for child in(node.nodes != null ? node.nodes : []) :
+        tostring(try(child.protection_source[0].parent_id, ""))
+        if child.protection_source != null && length(child.protection_source) > 0 &&
+        try(child.protection_source[0].parent_id, null) != null
+      ]
+    ]
+  ]))
+
+  # Filter is active only when source_id is non-null and present in either set.
+  filter_by_source_id = (
+    ibm_backup_recovery_source_registration.source_registration.source_id != null &&
+    (
+      contains(local.all_known_l1_source_ids, local.source_id_str) ||
+      contains(local.all_known_l2_parent_ids, local.source_id_str)
+    )
+  )
+
   all_env_nodes = flatten([
     for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
     [for node in(env.nodes != null ? env.nodes : []) : node
-      if node.nodes != null &&
-      length(node.nodes) > 0 &&
+      if !local.filter_by_source_id ||
+      # IKS: source_id is the L1 node's own protection_source[0].id
+      (node.protection_source != null &&
+        length(node.protection_source) > 0 &&
+      tostring(node.protection_source[0].id) == local.source_id_str) ||
+      # OCP: source_id appears as parent_id on one of this L1 node's L2 children
       anytrue([
-        for child in node.nodes :
-        child.protection_source != null &&
-        length(child.protection_source) > 0 &&
-        tostring(try(child.protection_source[0].parent_id, "")) == tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
+        for child in(node.nodes != null ? node.nodes : []) :
+        (child.protection_source != null &&
+          length(child.protection_source) > 0 &&
+        tostring(try(child.protection_source[0].parent_id, "")) == local.source_id_str)
       ])
     ]
   ])
