@@ -224,6 +224,10 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 			// destroy-time PVC cleanup provisioner. That path differs between
 			// Schematics jobs, causing a side-effect-free in-place update.
 			"module.protect_cluster.terraform_data.dsc_immutable_values",
+			// check_existing_registration stores the kubeconfig path in input.
+			// That path differs between Schematics jobs (each runs in a fresh
+			// temp dir), causing a side-effect-free in-place update.
+			"module.protect_cluster.terraform_data.check_existing_registration",
 		},
 	}
 	// TODO(provider-fix): re-enable these once ibm provider PR #6906 is merged+released.
@@ -288,6 +292,10 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// binding). The upgrade plan shows it as a destroy because it exists
 			// in state from the base version but is no longer in the module.
 			"module.protect_cluster.kubernetes_role_binding_v1.anyuid_scc_rolebinding[0]",
+			// brs_source_deregistration_wait was removed from solutions/fully-configurable
+			// in this PR. The upgrade plan shows it as a destroy because it exists
+			// in state from the base version but is no longer in the module.
+			"module.protect_cluster.time_sleep.brs_source_deregistration_wait",
 		},
 	}
 	options.IgnoreAdds = testhelper.Exemptions{
@@ -327,9 +335,6 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// dual-provider alias change in this PR; no resource is replaced.
 			"module.protect_cluster.ibm_resource_tag.cluster_brs_tag[0]",
 			"module.protect_cluster.ibm_container_vpc_worker_pool.data_source_connector[0]",
-			// brs_source_deregistration_wait destroy_duration changed from 5m
-			// to 10m — in-place update, no resource replacement.
-			"module.protect_cluster.time_sleep.brs_source_deregistration_wait",
 			// wait_for_dsc_stabilization create_duration changed from 5m to 10m
 			// to allow the DSC gRPC tunnel to BRS to fully establish before
 			// source_registration is called — in-place update, no replacement.
