@@ -228,6 +228,9 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 			// That path differs between Schematics jobs (each runs in a fresh
 			// temp dir), causing a side-effect-free in-place update.
 			"module.protect_cluster.terraform_data.check_existing_registration",
+			// wait_for_source_discovery stores the kubeconfig path in input.
+			// Same ephemeral-path churn pattern as the other terraform_data resources.
+			"module.protect_cluster.terraform_data.wait_for_source_discovery",
 		},
 	}
 	// TODO(provider-fix): re-enable these once ibm provider PR #6906 is merged+released.
@@ -284,17 +287,17 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// from the base version. Post-merge this becomes a plain in-place update
 			// (covered by IgnoreUpdates below).
 			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
-			// wait_for_source_discovery is replaced (delete+create) on upgrade
-			// because its trigger (connection_id) changes between the base and the
-			// new connection. Must be exempted from both IgnoreDestroys and IgnoreAdds.
+			// wait_for_source_discovery changed from time_sleep to terraform_data in
+			// this PR. The old time_sleep resource exists in state from the base version
+			// and must be exempted as a destroy.
 			"module.protect_cluster.time_sleep.wait_for_source_discovery",
 			// anyuid_scc_rolebinding was removed in this PR (over-permissive SCC
 			// binding). The upgrade plan shows it as a destroy because it exists
 			// in state from the base version but is no longer in the module.
 			"module.protect_cluster.kubernetes_role_binding_v1.anyuid_scc_rolebinding[0]",
-			// brs_source_deregistration_wait was removed from solutions/fully-configurable
-			// in this PR. The upgrade plan shows it as a destroy because it exists
-			// in state from the base version but is no longer in the module.
+			// brs_source_deregistration_wait changed from time_sleep to terraform_data
+			// in this PR. The old time_sleep exists in base-version state and will be
+			// planned as a destroy.
 			"module.protect_cluster.time_sleep.brs_source_deregistration_wait",
 		},
 	}
@@ -307,9 +310,15 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// does not exist in the base version. The upgrade plan will show it
 			// as an add, which is expected and harmless.
 			"module.protect_cluster.terraform_data.wait_for_dsc_node_ready[0]",
-			// wait_for_source_discovery is replaced on upgrade because its
-			// trigger (connection_id) changes between the base and new connection.
-			"module.protect_cluster.time_sleep.wait_for_source_discovery",
+			// wait_for_source_discovery changed from time_sleep to terraform_data.
+			// The new terraform_data resource appears as an add on upgrade.
+			"module.protect_cluster.terraform_data.wait_for_source_discovery",
+			// brs_source_deregistration_wait changed from time_sleep to terraform_data.
+			// The new terraform_data resource appears as an add on upgrade.
+			"module.protect_cluster.terraform_data.brs_source_deregistration_wait",
+			// check_existing_registration is a new resource added in this PR that
+			// guards against double-registration. Does not exist in the base version.
+			"module.protect_cluster.terraform_data.check_existing_registration",
 		},
 	}
 	options.IgnoreUpdates = testhelper.Exemptions{
@@ -343,6 +352,13 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// exist in the previous released version so the upgrade plan shows it
 			// as an in-place update rather than an add.
 			"module.protect_cluster.terraform_data.purge_stale_dsc_pvc",
+			// check_existing_registration stores the kubeconfig path in input.
+			// That path differs between Schematics jobs, causing a side-effect-free
+			// in-place update. Also exempted in TestRunFullyConfigurableInSchematics.
+			"module.protect_cluster.terraform_data.check_existing_registration",
+			// wait_for_source_discovery stores the kubeconfig path in input.
+			// Same ephemeral-path churn pattern as the other terraform_data resources.
+			"module.protect_cluster.terraform_data.wait_for_source_discovery",
 		},
 	}
 
