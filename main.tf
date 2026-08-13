@@ -85,6 +85,203 @@ locals {
   resolved_policy_ids = module.backup_recovery_instance.resolved_policy_ids
 
   binaries_path = "/tmp"
+
+  # --- VPC subnet auto-discovery (for VPE gateway) ---
+  # All subnet IDs attached to the cluster's worker pools — flattened then
+  # deduplicated. A single-zone cluster exposes the same subnet ID once per
+  # worker pool, so without distinct() the list has duplicates that produce
+  # duplicate for_each keys in the VPE gateway reserved-IP module.
+  # For classic clusters is_vpc is false so this will be [].
+  cluster_subnet_ids = local.is_vpc ? distinct(flatten(
+    data.ibm_container_vpc_cluster.vpc_cluster[0].worker_pools[*].zones[*].subnets[*].id
+  )) : []
+
+  # Only look up cluster subnets when ALL of the following hold:
+  #   1. VPE creation is requested
+  #   2. Caller did NOT supply vpc_subnets explicitly (auto-discovery path)
+  #   3. The cluster is a VPC cluster
+  # When the caller supplies vpc_subnets (including when a new cluster is being
+  # created in the same apply), skip the lookup entirely — the list length is
+  # already known at plan time from the caller-supplied value, so the count
+  # below is always static and Terraform can plan correctly.
+  cluster_subnet_lookup_count = (
+    var.create_brs_vpe &&
+    length(var.vpc_subnets) == 0 &&
+    local.is_vpc &&
+    length(local.cluster_subnet_ids) > 0
+  ) ? length(local.cluster_subnet_ids) : 0
+
+  # VPC ID: user-supplied takes precedence; auto-derived from the first
+  # cluster subnet lookup otherwise.
+  resolved_vpc_id = var.vpc_id != null ? var.vpc_id : (
+    local.cluster_subnet_lookup_count > 0 ? data.ibm_is_subnet.cluster_subnet[0].vpc : null
+  )
+
+  # Subnet list: user-supplied takes precedence; built from the per-subnet
+  # lookups otherwise. Deduplication of cluster_subnet_ids ensures each subnet
+  # object appears exactly once — required by the VPE module's for_each key.
+  resolved_vpc_subnets = length(var.vpc_subnets) > 0 ? var.vpc_subnets : (
+    local.cluster_subnet_lookup_count > 0 ? [for s in data.ibm_is_subnet.cluster_subnet : {
+      name = s.name
+      id   = s.id
+      zone = s.zone
+    }] : []
+  )
+
+  # vpc_name is used only in the VPE name template; the actual vpc_id is passed separately.
+  # Using a fixed string keeps the final VPE gateway name within the 63-character limit.
+  brs_vpe_vpc_name = local.is_vpc ? "vpc" : "vpc"
+
+  # --- DSC worker pool zone math ---
+  # Calculate workers per zone based on total replicas.
+  num_zones     = local.is_vpc && var.create_dsc_worker_pool ? var.dsc_worker_pool_zones : 0
+  zones_list    = local.is_vpc && var.create_dsc_worker_pool ? [for zone in data.ibm_container_vpc_worker_pool.pool[0].zones : zone] : []
+  base_workers  = local.num_zones > 0 ? floor(var.dsc_replicas / local.num_zones) : 0
+  extra_workers = local.num_zones > 0 ? var.dsc_replicas % local.num_zones : 0
+
+  # Resolved storage class for the DSC PVC — used in both the Helm values and
+  # the diagnostics script so the expression is not repeated.
+  dsc_storage_class = var.dsc_storage_class != null ? var.dsc_storage_class : (local.is_vpc ? "ibmc-vpc-block-metro-5iops-tier" : "ibmc-block-silver")
+
+  # --- Protection source tree (object name → ID map) ---
+  # Flatten protection sources up to 3 levels deep to create a map of object names
+  # (namespaces, PVCs, etc.) to IDs — scoped to THIS cluster's registered source only.
+  #
+  # The BRS Terraform provider exposes the kKubernetes source tree as:
+  #
+  #   protection_sources[N]          ← env envelope (no protection_source attr)
+  #     └── nodes[M]                 ← cluster node
+  #           IKS:  protection_source[0].id = cluster source_id  (L1 has it)
+  #           OCP:  NO protection_source attr at this level
+  #           └── nodes[K]           ← namespace / label nodes
+  #                 IKS:  protection_source[0].id = namespace object id
+  #                 OCP:  protection_source[0].id = namespace object id
+  #                       protection_source[0].parent_id = cluster source_id  ← key difference
+  #                 └── nodes[J]     ← PVC nodes
+  #
+  # IKS filter: keep the L1 node whose protection_source[0].id == source_id
+  # OCP filter: keep the L1 node that has at least one L2 child whose
+  #             protection_source[0].parent_id == source_id
+  #
+  # When source_id is not yet known (null) or not found in the tree (source
+  # discovery still in progress), the filter is skipped so all nodes are
+  # included — identical to pre-PR-74 behaviour, which avoids an empty
+  # all_flat_objects and prevents a spurious precondition failure.
+
+  source_id_str = tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
+
+  # IKS: source_id appears as protection_source[0].id on the L1 cluster node.
+  # Collect all such L1 IDs to cheaply detect whether we are in IKS mode.
+  all_known_l1_source_ids = toset(flatten([
+    for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
+    [for node in(env.nodes != null ? env.nodes : []) :
+      tostring(node.protection_source[0].id)
+      if node.protection_source != null && length(node.protection_source) > 0
+    ]
+  ]))
+
+  # OCP: source_id appears as protection_source[0].parent_id on L2 namespace nodes.
+  # Collect all such parent_id values so we can detect OCP mode and find the right L1.
+  all_known_l2_parent_ids = toset(flatten([
+    for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
+    [for node in(env.nodes != null ? env.nodes : []) :
+      [for child in(node.nodes != null ? node.nodes : []) :
+        tostring(try(child.protection_source[0].parent_id, ""))
+        if child.protection_source != null && length(child.protection_source) > 0 &&
+        try(child.protection_source[0].parent_id, null) != null
+      ]
+    ]
+  ]))
+
+  # Filter is active only when source_id is non-null and present in either set.
+  filter_by_source_id = (
+    ibm_backup_recovery_source_registration.source_registration.source_id != null &&
+    (
+      contains(local.all_known_l1_source_ids, local.source_id_str) ||
+      contains(local.all_known_l2_parent_ids, local.source_id_str)
+    )
+  )
+
+  all_env_nodes = flatten([
+    for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
+    [for node in(env.nodes != null ? env.nodes : []) : node
+      if !local.filter_by_source_id ||
+      # IKS: source_id is the L1 node's own protection_source[0].id
+      (node.protection_source != null &&
+        length(node.protection_source) > 0 &&
+      tostring(node.protection_source[0].id) == local.source_id_str) ||
+      # OCP: source_id appears as parent_id on one of this L1 node's L2 children
+      anytrue([
+        for child in(node.nodes != null ? node.nodes : []) :
+        (child.protection_source != null &&
+          length(child.protection_source) > 0 &&
+        tostring(try(child.protection_source[0].parent_id, "")) == local.source_id_str)
+      ])
+    ]
+  ])
+
+  all_l1_ps = flatten([
+    for node in local.all_env_nodes : [
+      for ps in(node.protection_source != null ? node.protection_source : []) : {
+        id   = ps.id
+        name = ps.name
+      }
+    ]
+  ])
+
+  all_l2_nodes = flatten([
+    for node in local.all_env_nodes :
+    (node.nodes != null ? node.nodes : [])
+  ])
+
+  all_l2_ps = flatten([
+    for node in local.all_l2_nodes : [
+      for ps in(node.protection_source != null ? node.protection_source : []) : {
+        id   = ps.id
+        name = ps.name
+      }
+    ]
+  ])
+
+  all_l3_nodes = flatten([
+    for node in local.all_l2_nodes :
+    (node.nodes != null ? node.nodes : [])
+  ])
+
+  all_l3_ps = flatten([
+    for node in local.all_l3_nodes : [
+      for ps in(node.protection_source != null ? node.protection_source : []) : {
+        id   = ps.id
+        name = ps.name
+      }
+    ]
+  ])
+
+  all_flat_objects  = concat(local.all_l1_ps, local.all_l2_ps, local.all_l3_ps)
+  object_name_to_id = { for obj in local.all_flat_objects : obj.name => obj.id... }
+
+  # --- Protection group ID helpers ---
+  # Convert full PG ID format (clusterid/::timestamp:id:id) to numeric format (timestamp:id:id)
+  # Example: "5n3kwor5cb/::8009179080677672:1753125047518:126734" -> "8009179080677672:1753125047518:126734"
+  numeric_pg_ids = local.deploy_recovery ? {
+    for pg_name, pg_resource in ibm_backup_recovery_protection_group.protection_group :
+    pg_name => split("::", pg_resource.id)[1]
+  } : {}
+
+  # --- Recovery helpers ---
+  # Map of protection group name to latest successful snapshot.
+  latest_snapshots = local.deploy_recovery ? {
+    for pg_name, runs in data.ibm_backup_recovery_protection_group_runs.backup_runs :
+    pg_name => (
+      length(try(runs.runs, [])) > 0 ? (
+        try(runs.runs[0].local_backup_info[0].snapshot_info[0].snapshot_id, try(runs.runs[0].id, null))
+      ) : null
+    )
+  } : {}
+
+  # Determine target cluster details based on recovery mode.
+  # For cross-cluster recovery, the target cluster must be pre-registered with the same BRS instance.
+  target_cluster_id = var.recovery_mode == "cross-cluster" ? var.target_cluster_id : var.cluster_id
 }
 
 resource "terraform_data" "install_dependencies" {
@@ -210,31 +407,6 @@ data "ibm_container_vpc_worker_pool" "pool" {
 # Users no longer need to supply vpc_id or vpc_subnets when create_brs_vpe = true.
 ##############################################################################
 
-locals {
-  # All subnet IDs attached to the cluster's worker pools — flattened then
-  # deduplicated. A single-zone cluster exposes the same subnet ID once per
-  # worker pool, so without distinct() the list has duplicates that produce
-  # duplicate for_each keys in the VPE gateway reserved-IP module.
-  # For classic clusters is_vpc is false so this will be [].
-  cluster_subnet_ids = local.is_vpc ? distinct(flatten(
-    data.ibm_container_vpc_cluster.vpc_cluster[0].worker_pools[*].zones[*].subnets[*].id
-  )) : []
-
-  # Only look up cluster subnets when ALL of the following hold:
-  #   1. VPE creation is requested
-  #   2. Caller did NOT supply vpc_subnets explicitly (auto-discovery path)
-  #   3. The cluster is a VPC cluster
-  # When the caller supplies vpc_subnets (including when a new cluster is being
-  # created in the same apply), skip the lookup entirely — the list length is
-  # already known at plan time from the caller-supplied value, so the count
-  # below is always static and Terraform can plan correctly.
-  cluster_subnet_lookup_count = (
-    var.create_brs_vpe &&
-    length(var.vpc_subnets) == 0 &&
-    local.is_vpc &&
-    length(local.cluster_subnet_ids) > 0
-  ) ? length(local.cluster_subnet_ids) : 0
-}
 
 # Look up every unique cluster subnet individually.
 # The IDs come from worker_pools splat and are known at plan time, so the
@@ -245,24 +417,6 @@ data "ibm_is_subnet" "cluster_subnet" {
   identifier = local.cluster_subnet_ids[count.index]
 }
 
-locals {
-  # VPC ID: user-supplied takes precedence; auto-derived from the first
-  # cluster subnet lookup otherwise.
-  resolved_vpc_id = var.vpc_id != null ? var.vpc_id : (
-    local.cluster_subnet_lookup_count > 0 ? data.ibm_is_subnet.cluster_subnet[0].vpc : null
-  )
-
-  # Subnet list: user-supplied takes precedence; built from the per-subnet
-  # lookups otherwise. Deduplication of cluster_subnet_ids ensures each subnet
-  # object appears exactly once — required by the VPE module's for_each key.
-  resolved_vpc_subnets = length(var.vpc_subnets) > 0 ? var.vpc_subnets : (
-    local.cluster_subnet_lookup_count > 0 ? [for s in data.ibm_is_subnet.cluster_subnet : {
-      name = s.name
-      id   = s.id
-      zone = s.zone
-    }] : []
-  )
-}
 
 ##############################################################################
 # Security Group Rules for Data Source Connector
@@ -363,12 +517,6 @@ module "brs_s2s_auth" {
 # 63-character resource name limit. The vpc_name is only used in the VPE name
 # template (e.g., "<prefix>-<vpc_name>-vpe-gateway"); the actual vpc_id is
 # specified separately and is what matters for API operations.
-# Using the VPC UUID (36+ chars) would cause the final VPE name to exceed 63 chars.
-locals {
-  # vpc_name is used only in the VPE name template; the actual vpc_id is passed separately.
-  # Using a fixed string keeps the final VPE gateway name within the 63-character limit.
-  brs_vpe_vpc_name = local.is_vpc ? "vpc" : "vpc"
-}
 
 # The VPE Gateway must be created after the S2S IAM authorization policy
 # exists in the target account.  The `depends_on = [module.brs_s2s_auth]`
@@ -426,20 +574,6 @@ data "ibm_is_security_group" "kube_vpeg_sg" {
 # Data Source Connector Worker Pools (Single-Zone)
 ##############################################################################
 
-locals {
-  # Calculate workers per zone based on total replicas
-  # Use the dsc_worker_pool_zones variable (defaults to 1) for count calculation
-  # This ensures the count is known at plan time
-  num_zones = local.is_vpc && var.create_dsc_worker_pool ? var.dsc_worker_pool_zones : 0
-  # Convert zones set to list for indexing (only used after apply)
-  zones_list    = local.is_vpc && var.create_dsc_worker_pool ? [for zone in data.ibm_container_vpc_worker_pool.pool[0].zones : zone] : []
-  base_workers  = local.num_zones > 0 ? floor(var.dsc_replicas / local.num_zones) : 0
-  extra_workers = local.num_zones > 0 ? var.dsc_replicas % local.num_zones : 0
-
-  # Resolved storage class for the DSC PVC — used in both the Helm values and
-  # the diagnostics script so the expression is not repeated.
-  dsc_storage_class = var.dsc_storage_class != null ? var.dsc_storage_class : (local.is_vpc ? "ibmc-vpc-block-metro-5iops-tier" : "ibmc-block-silver")
-}
 
 resource "ibm_container_vpc_worker_pool" "data_source_connector" {
   count    = local.is_vpc && var.create_dsc_worker_pool ? local.num_zones : 0
@@ -978,124 +1112,6 @@ data "ibm_backup_recovery_protection_sources" "sources" {
   depends_on = [terraform_data.wait_for_source_discovery]
 }
 
-locals {
-  # Flatten protection sources up to 3 levels deep to create a map of object names
-  # (namespaces, PVCs, etc.) to IDs — scoped to THIS cluster's registered source only.
-  #
-  # The BRS Terraform provider exposes the kKubernetes source tree as:
-  #
-  #   protection_sources[N]          ← env envelope (no protection_source attr)
-  #     └── nodes[M]                 ← cluster node
-  #           IKS:  protection_source[0].id = cluster source_id  (L1 has it)
-  #           OCP:  NO protection_source attr at this level
-  #           └── nodes[K]           ← namespace / label nodes
-  #                 IKS:  protection_source[0].id = namespace object id
-  #                 OCP:  protection_source[0].id = namespace object id
-  #                       protection_source[0].parent_id = cluster source_id  ← key difference
-  #                 └── nodes[J]     ← PVC nodes
-  #
-  # IKS filter: keep the L1 node whose protection_source[0].id == source_id
-  # OCP filter: keep the L1 node that has at least one L2 child whose
-  #             protection_source[0].parent_id == source_id
-  #
-  # When source_id is not yet known (null) or not found in the tree (source
-  # discovery still in progress), the filter is skipped so all nodes are
-  # included — identical to pre-PR-74 behaviour, which avoids an empty
-  # all_flat_objects and prevents a spurious precondition failure.
-
-  source_id_str = tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
-
-  # IKS: source_id appears as protection_source[0].id on the L1 cluster node.
-  # Collect all such L1 IDs to cheaply detect whether we are in IKS mode.
-  all_known_l1_source_ids = toset(flatten([
-    for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
-    [for node in(env.nodes != null ? env.nodes : []) :
-      tostring(node.protection_source[0].id)
-      if node.protection_source != null && length(node.protection_source) > 0
-    ]
-  ]))
-
-  # OCP: source_id appears as protection_source[0].parent_id on L2 namespace nodes.
-  # Collect all such parent_id values so we can detect OCP mode and find the right L1.
-  all_known_l2_parent_ids = toset(flatten([
-    for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
-    [for node in(env.nodes != null ? env.nodes : []) :
-      [for child in(node.nodes != null ? node.nodes : []) :
-        tostring(try(child.protection_source[0].parent_id, ""))
-        if child.protection_source != null && length(child.protection_source) > 0 &&
-        try(child.protection_source[0].parent_id, null) != null
-      ]
-    ]
-  ]))
-
-  # Filter is active only when source_id is non-null and present in either set.
-  filter_by_source_id = (
-    ibm_backup_recovery_source_registration.source_registration.source_id != null &&
-    (
-      contains(local.all_known_l1_source_ids, local.source_id_str) ||
-      contains(local.all_known_l2_parent_ids, local.source_id_str)
-    )
-  )
-
-  all_env_nodes = flatten([
-    for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
-    [for node in(env.nodes != null ? env.nodes : []) : node
-      if !local.filter_by_source_id ||
-      # IKS: source_id is the L1 node's own protection_source[0].id
-      (node.protection_source != null &&
-        length(node.protection_source) > 0 &&
-      tostring(node.protection_source[0].id) == local.source_id_str) ||
-      # OCP: source_id appears as parent_id on one of this L1 node's L2 children
-      anytrue([
-        for child in(node.nodes != null ? node.nodes : []) :
-        (child.protection_source != null &&
-          length(child.protection_source) > 0 &&
-        tostring(try(child.protection_source[0].parent_id, "")) == local.source_id_str)
-      ])
-    ]
-  ])
-
-  all_l1_ps = flatten([
-    for node in local.all_env_nodes : [
-      for ps in(node.protection_source != null ? node.protection_source : []) : {
-        id   = ps.id
-        name = ps.name
-      }
-    ]
-  ])
-
-  all_l2_nodes = flatten([
-    for node in local.all_env_nodes :
-    (node.nodes != null ? node.nodes : [])
-  ])
-
-  all_l2_ps = flatten([
-    for node in local.all_l2_nodes : [
-      for ps in(node.protection_source != null ? node.protection_source : []) : {
-        id   = ps.id
-        name = ps.name
-      }
-    ]
-  ])
-
-  all_l3_nodes = flatten([
-    for node in local.all_l2_nodes :
-    (node.nodes != null ? node.nodes : [])
-  ])
-
-  all_l3_ps = flatten([
-    for node in local.all_l3_nodes : [
-      for ps in(node.protection_source != null ? node.protection_source : []) : {
-        id   = ps.id
-        name = ps.name
-      }
-    ]
-  ])
-
-  all_flat_objects  = concat(local.all_l1_ps, local.all_l2_ps, local.all_l3_ps)
-  object_name_to_id = { for obj in local.all_flat_objects : obj.name => obj.id... }
-}
-
 ##############################################################################
 # Protection Groups (granular backup control)
 ##############################################################################
@@ -1500,16 +1516,6 @@ resource "time_sleep" "wait_for_pg_registration" {
   }
 }
 
-# Extract numeric protection group IDs for API calls
-locals {
-  # Convert full PG ID format (clusterid/::timestamp:id:id) to numeric format (timestamp:id:id)
-  # Example: "5n3kwor5cb/::8009179080677672:1753125047518:126734" -> "8009179080677672:1753125047518:126734"
-  numeric_pg_ids = local.deploy_recovery ? {
-    for pg_name, pg_resource in ibm_backup_recovery_protection_group.protection_group :
-    pg_name => split("::", pg_resource.id)[1]
-  } : {}
-}
-
 # Trigger an immediate on-demand backup run for each protection group in recovery mode,
 # but only if BRS has not already started one automatically (which it does as soon as a
 # protection group is registered against an active policy).
@@ -1611,26 +1617,6 @@ data "ibm_backup_recovery_protection_group_runs" "backup_runs" {
     terraform_data.wait_for_backup_run,
     ibm_backup_recovery_protection_group.protection_group
   ]
-}
-
-# Local to extract latest successful snapshot IDs per protection group
-locals {
-  # Map of protection group name to latest successful snapshot
-  latest_snapshots = local.deploy_recovery ? {
-    for pg_name, runs in data.ibm_backup_recovery_protection_group_runs
-
-
-
-    .backup_runs : pg_name => (
-      length(try(runs.runs, [])) > 0 ? (
-        try(runs.runs[0].local_backup_info[0].snapshot_info[0].snapshot_id, try(runs.runs[0].id, null))
-      ) : null
-    )
-  } : {}
-
-  # Determine target cluster details based on recovery mode
-  # For cross-cluster recovery, the target cluster must be pre-registered with the same BRS instance
-  target_cluster_id = var.recovery_mode == "cross-cluster" ? var.target_cluster_id : var.cluster_id
 }
 
 ##############################################################################

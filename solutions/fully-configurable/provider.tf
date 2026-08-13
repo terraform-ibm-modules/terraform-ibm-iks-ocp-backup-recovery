@@ -30,6 +30,7 @@ provider "ibm" {
 provider "ibm" {
   alias            = "cluster"
   ibmcloud_api_key = var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key
+  region           = var.region
   visibility       = var.provider_visibility
 }
 

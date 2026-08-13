@@ -375,23 +375,7 @@ func setupOptions(t *testing.T, prefix string, dir string, exemptionList []strin
 func TestRunIKSExample(t *testing.T) {
 	t.Parallel()
 
-	options := setupOptions(t, "brs-iks", iksExampleDir, []string{
-		"module.backup_recover_protect_ocp.ibm_backup_recovery_source_registration.source_registration",
-		"ibm_container_vpc_cluster.vpc_cluster[0]",
-		"ibm_container_cluster.cluster[0]",
-	})
-	// TODO(provider-fix): re-enable these once ibm provider PR #6906 is merged+released.
-	// Without -refresh=false, stale BRS connection IDs in state cause the provider to
-	// hard-error on HTTP 400 "does not exist" during the consistency-plan refresh (Plan)
-	// and the pre-destroy refresh (Destroy).
-	// options.PostApplyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
-	// 	return nil
-	// }
-	// options.PreDestroyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
-	// 	return nil
-	// }
+	options := setupOptions(t, "brs-iks", iksExampleDir, []string{})
 
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
@@ -401,21 +385,7 @@ func TestRunIKSExample(t *testing.T) {
 func TestRunOCPExample(t *testing.T) {
 	t.Parallel()
 
-	options := setupOptions(t, "brs-ocp", ocpExampleDir, []string{
-		"module.backup_recover_protect_ocp.ibm_backup_recovery_source_registration.source_registration",
-		"module.ocp_base[0].ibm_container_vpc_cluster.cluster[0]",
-		"ibm_container_cluster.cluster[0]",
-	})
-	// TODO(provider-fix): re-enable these once ibm provider PR #6906 is merged+released.
-	// Same reason as TestRunIKSExample.
-	// options.PostApplyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
-	// 	return nil
-	// }
-	// options.PreDestroyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
-	// 	return nil
-	// }
+	options := setupOptions(t, "brs-ocp", ocpExampleDir, []string{})
 
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
@@ -425,19 +395,7 @@ func TestRunOCPExample(t *testing.T) {
 func TestRunVPEExample(t *testing.T) {
 	t.Parallel()
 
-	options := setupOptions(t, "brs-vpe", vpeExampleDir, []string{
-		// source_registration churns because the registration token rotates by design;
-		// the consistency-plan will always show an in-place update here.
-		"module.backup_recovery.ibm_backup_recovery_source_registration.source_registration",
-		// cluster creation resource; tag drift causes spurious updates on consistency plan.
-		"ibm_container_vpc_cluster.vpc_cluster[0]",
-		// registration_token rotates by design between plan and consistency-plan;
-		// the sub-module recreates it every time, which is expected non-destructive churn.
-		"module.backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-		// DSC helm release re-updates on every plan because the registration token
-		// rotates and the chart version resolves dynamically. Non-destructive churn.
-		"module.backup_recovery.helm_release.data_source_connector",
-	})
+	options := setupOptions(t, "brs-vpe", vpeExampleDir, []string{})
 
 	// parallelism=1 on destroy prevents VPC removal from racing worker-node cleanup.
 	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
@@ -453,27 +411,15 @@ func TestRunVPEExample(t *testing.T) {
 func TestRunCrossClusterExample(t *testing.T) {
 	t.Parallel()
 
-	options := setupOptions(t, "brs-cross", crossClusterExampleDir, []string{
-		"module.source_backup_recovery.ibm_backup_recovery_source_registration.source_registration",
-		"module.target_backup_recovery.ibm_backup_recovery_source_registration.source_registration",
-		"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-		"module.target_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-		"ibm_container_vpc_cluster.source_cluster[0]",
-		"ibm_container_vpc_cluster.target_cluster[0]",
-	})
+	options := setupOptions(t, "brs-cross", crossClusterExampleDir, []string{})
 
 	options.TerraformVars["brs_create_new_connection"] = true
 
 	options.IgnoreUpdates.List = append(options.IgnoreUpdates.List,
 		fmt.Sprintf(`module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-continuous-backup"]`, options.Prefix),
 	)
-	// TODO(provider-fix): re-enable -refresh=false lines once ibm provider PR #6906 is merged+released.
-	// Same reason as TestRunIKSExample. parallelism=1 is kept unconditionally — it is not
-	// provider-related; it prevents VPC destroy from racing worker-node cleanup.
-	// options.PostApplyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
-	// 	return nil
-	// }
+
+	// parallelism=1 on destroy prevents VPC removal from racing worker-node cleanup.
 	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
 		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-parallelism=1")
 		return nil
@@ -501,14 +447,7 @@ func TestRunCrossClusterExistingConnection(t *testing.T) {
 	// setupTerraform picks its own random region; read it back from the output.
 	existingRegion := terraform.OutputContext(t, context.Background(), existingTerraformOptions, "region")
 
-	options := setupOptions(t, prefix, crossClusterExampleDir, []string{
-		"module.source_backup_recovery.ibm_backup_recovery_source_registration.source_registration",
-		"module.target_backup_recovery.ibm_backup_recovery_source_registration.source_registration",
-		"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-		"module.target_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-		"ibm_container_vpc_cluster.source_cluster[0]",
-		"ibm_container_vpc_cluster.target_cluster[0]",
-	})
+	options := setupOptions(t, prefix, crossClusterExampleDir, []string{})
 
 	// Override the random region chosen by setupOptions with the one used for the
 	// pre-provisioned connections so the two terraform states stay consistent.
@@ -526,12 +465,7 @@ func TestRunCrossClusterExistingConnection(t *testing.T) {
 		fmt.Sprintf(`module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-continuous-backup"]`, options.Prefix),
 	)
 
-	// TODO(provider-fix): re-enable -refresh=false lines once ibm provider PR #6906 is merged+released.
-	// Same reason as TestRunIKSExample. parallelism=1 is kept unconditionally.
-	// options.PostApplyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
-	// 	return nil
-	// }
+	// parallelism=1 on destroy prevents VPC removal from racing worker-node cleanup.
 	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
 		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-parallelism=1")
 		return nil
