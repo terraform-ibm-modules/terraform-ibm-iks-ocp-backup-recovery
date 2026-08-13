@@ -358,9 +358,9 @@ variable "create_dsc_worker_pool" {
 }
 
 variable "dsc_worker_pool_flavor" {
-  description = "The machine flavor for the Data Source Connector worker pool. This determines the CPU, memory, and other resources available to each worker node. Common flavors: bx2.4x16 (4 vCPU, 16GB RAM), bx2.8x32 (8 vCPU, 32GB RAM), bx2.16x64 (16 vCPU, 64GB RAM)."
+  description = "The machine flavor for the Data Source Connector worker pool. `bxf.4x16` (4 vCPU, 16 GB RAM) is available in every IBM Cloud VPC zone. Override for a larger flavor (e.g. `bxf.8x32`)."
   type        = string
-  default     = "bx2.4x16"
+  default     = "bxf.4x16"
   nullable    = false
 }
 
