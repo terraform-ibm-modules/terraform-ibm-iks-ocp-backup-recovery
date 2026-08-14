@@ -180,7 +180,6 @@ data "ibm_is_security_group" "kube_vpeg_sg" {
 
   depends_on = [
     data.ibm_container_vpc_cluster.vpc_cluster,
-    module.protect_cluster,
   ]
 }
 

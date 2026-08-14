@@ -513,7 +513,6 @@ data "ibm_is_security_group" "source_kube_vpeg_sg" {
   # does not exist yet.
   depends_on = [
     ibm_container_vpc_cluster.source_cluster,
-    module.source_backup_recovery,
   ]
 }
 
@@ -524,7 +523,6 @@ data "ibm_is_security_group" "target_kube_vpeg_sg" {
   # provisioned before polling for its kube-vpegw security group.
   depends_on = [
     ibm_container_vpc_cluster.target_cluster,
-    module.target_backup_recovery,
   ]
 }
 

@@ -199,7 +199,6 @@ data "ibm_is_security_group" "kube_vpeg_sg" {
   depends_on = [
     ibm_container_vpc_cluster.vpc_cluster,
     data.ibm_container_vpc_cluster.vpc_cluster_data,
-    module.backup_recovery,
   ]
 }
 
