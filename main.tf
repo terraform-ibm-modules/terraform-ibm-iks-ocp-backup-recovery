@@ -87,96 +87,120 @@ locals {
   # included — identical to pre-PR-74 behaviour, which avoids an empty
   # all_flat_objects and prevents a spurious precondition failure.
 
+  # The registered source_id as a string — used for tree-filtering comparisons.
   source_id_str = tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
 
-  # IKS: source_id appears as protection_source[0].id on the L1 cluster node.
-  # Collect all such L1 IDs to cheaply detect whether we are in IKS mode.
-  all_known_l1_source_ids = toset(flatten([
-    for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
-    [for node in(env.nodes != null ? env.nodes : []) :
-      tostring(node.protection_source[0].id)
-      if node.protection_source != null && length(node.protection_source) > 0
+  # Shorthand: all top-level environment entries returned by the BRS protection-sources API,
+  # with a null guard so the expression is safe before the data source is populated.
+  raw_envs = try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []
+
+  # IKS clusters: the registered source_id equals protection_source[0].id on the
+  # cluster node (the first level of children inside an environment entry).
+  # Build a set of all such IDs so we can cheaply detect IKS mode.
+  known_cluster_node_ids = toset(flatten([
+    for env in local.raw_envs : [
+      for cluster_node in(env.nodes != null ? env.nodes : []) :
+      tostring(cluster_node.protection_source[0].id)
+      if cluster_node.protection_source != null && length(cluster_node.protection_source) > 0
     ]
   ]))
 
-  # OCP: source_id appears as protection_source[0].parent_id on L2 namespace nodes.
-  # Collect all such parent_id values so we can detect OCP mode and find the right L1.
-  all_known_l2_parent_ids = toset(flatten([
-    for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
-    [for node in(env.nodes != null ? env.nodes : []) :
-      [for child in(node.nodes != null ? node.nodes : []) :
-        tostring(try(child.protection_source[0].parent_id, ""))
-        if child.protection_source != null && length(child.protection_source) > 0 &&
-        try(child.protection_source[0].parent_id, null) != null
+  # OCP clusters: the registered source_id appears as protection_source[0].parent_id
+  # on namespace nodes (one level deeper than the cluster node). Build a set of all
+  # such parent IDs so we can detect OCP mode and find the right cluster node.
+  known_namespace_parent_ids = toset(flatten([
+    for env in local.raw_envs : [
+      for cluster_node in(env.nodes != null ? env.nodes : []) : [
+        for namespace_node in(cluster_node.nodes != null ? cluster_node.nodes : []) :
+        tostring(try(namespace_node.protection_source[0].parent_id, ""))
+        if namespace_node.protection_source != null && length(namespace_node.protection_source) > 0 &&
+        try(namespace_node.protection_source[0].parent_id, null) != null
       ]
     ]
   ]))
 
-  # Filter is active only when source_id is non-null and present in either set.
-  filter_by_source_id = (
+  # Determine whether to scope the tree walk to a single registered cluster.
+  # The filter is skipped (all cluster nodes included) when source_id is not yet
+  # known or is not found in the tree — e.g. during initial source discovery —
+  # so protection group object resolution still works rather than returning empty.
+  should_filter_by_registered_cluster = (
     ibm_backup_recovery_source_registration.source_registration.source_id != null &&
     (
-      contains(local.all_known_l1_source_ids, local.source_id_str) ||
-      contains(local.all_known_l2_parent_ids, local.source_id_str)
+      contains(local.known_cluster_node_ids, local.source_id_str) ||
+      contains(local.known_namespace_parent_ids, local.source_id_str)
     )
   )
 
-  all_env_nodes = flatten([
-    for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
-    [for node in(env.nodes != null ? env.nodes : []) : node
-      if !local.filter_by_source_id ||
-      # IKS: source_id is the L1 node's own protection_source[0].id
-      (node.protection_source != null &&
-        length(node.protection_source) > 0 &&
-      tostring(node.protection_source[0].id) == local.source_id_str) ||
-      # OCP: source_id appears as parent_id on one of this L1 node's L2 children
+  # Cluster-level nodes — one per registered cluster within each environment.
+  # When filtering is active, only the node matching the registered cluster is kept.
+  #   IKS: match by cluster_node.protection_source[0].id == source_id
+  #   OCP: match by any namespace child having protection_source[0].parent_id == source_id
+  cluster_nodes = flatten([
+    for env in local.raw_envs : [
+      for cluster_node in(env.nodes != null ? env.nodes : []) : cluster_node
+      if !local.should_filter_by_registered_cluster ||
+      # IKS path — source_id is the cluster node's own object ID
+      (cluster_node.protection_source != null &&
+        length(cluster_node.protection_source) > 0 &&
+      tostring(cluster_node.protection_source[0].id) == local.source_id_str) ||
+      # OCP path — source_id appears as parent_id on one of the cluster's namespace children
       anytrue([
-        for child in(node.nodes != null ? node.nodes : []) :
-        (child.protection_source != null &&
-          length(child.protection_source) > 0 &&
-        tostring(try(child.protection_source[0].parent_id, "")) == local.source_id_str)
+        for namespace_node in(cluster_node.nodes != null ? cluster_node.nodes : []) :
+        (namespace_node.protection_source != null &&
+          length(namespace_node.protection_source) > 0 &&
+        tostring(try(namespace_node.protection_source[0].parent_id, "")) == local.source_id_str)
       ])
     ]
   ])
 
-  all_l1_ps = flatten([
-    for node in local.all_env_nodes : [
-      for ps in(node.protection_source != null ? node.protection_source : []) : {
+  # protection_source entries on cluster-level nodes (the cluster objects themselves).
+  cluster_protection_sources = flatten([
+    for cluster_node in local.cluster_nodes : [
+      for ps in(cluster_node.protection_source != null ? cluster_node.protection_source : []) : {
         id   = ps.id
         name = ps.name
       }
     ]
   ])
 
-  all_l2_nodes = flatten([
-    for node in local.all_env_nodes :
-    (node.nodes != null ? node.nodes : [])
+  # Namespace-level nodes — direct children of each cluster node.
+  namespace_nodes = flatten([
+    for cluster_node in local.cluster_nodes :
+    (cluster_node.nodes != null ? cluster_node.nodes : [])
   ])
 
-  all_l2_ps = flatten([
-    for node in local.all_l2_nodes : [
-      for ps in(node.protection_source != null ? node.protection_source : []) : {
+  # protection_source entries on namespace nodes (namespace / project objects).
+  namespace_protection_sources = flatten([
+    for namespace_node in local.namespace_nodes : [
+      for ps in(namespace_node.protection_source != null ? namespace_node.protection_source : []) : {
         id   = ps.id
         name = ps.name
       }
     ]
   ])
 
-  all_l3_nodes = flatten([
-    for node in local.all_l2_nodes :
-    (node.nodes != null ? node.nodes : [])
+  # Workload-level nodes — direct children of each namespace node (PVCs, pods, etc.).
+  workload_nodes = flatten([
+    for namespace_node in local.namespace_nodes :
+    (namespace_node.nodes != null ? namespace_node.nodes : [])
   ])
 
-  all_l3_ps = flatten([
-    for node in local.all_l3_nodes : [
-      for ps in(node.protection_source != null ? node.protection_source : []) : {
+  # protection_source entries on workload nodes (individual PVC / workload objects).
+  workload_protection_sources = flatten([
+    for workload_node in local.workload_nodes : [
+      for ps in(workload_node.protection_source != null ? workload_node.protection_source : []) : {
         id   = ps.id
         name = ps.name
       }
     ]
   ])
 
-  all_flat_objects  = concat(local.all_l1_ps, local.all_l2_ps, local.all_l3_ps)
+  # Flat list of every discoverable object across all three levels, then indexed
+  # by name. Used to resolve protection-group object names (e.g. "my-namespace")
+  # to the numeric IDs that the BRS API requires.
+  # The grouping operator (...) keeps duplicate names as a list so the map never
+  # errors when the same name appears at more than one level.
+  all_flat_objects  = concat(local.cluster_protection_sources, local.namespace_protection_sources, local.workload_protection_sources)
   object_name_to_id = { for obj in local.all_flat_objects : obj.name => obj.id... }
 
   # --- Protection group ID helpers ---
