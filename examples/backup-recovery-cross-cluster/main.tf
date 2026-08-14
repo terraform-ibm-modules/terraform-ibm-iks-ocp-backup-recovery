@@ -506,10 +506,26 @@ locals {
 
 data "ibm_is_security_group" "source_kube_vpeg_sg" {
   name = "kube-vpegw-${local.source_vpc_id}"
+
+  # The kube-vpegw-<vpc-id> security group is created by IKS only after the
+  # cluster is fully provisioned.  Without this dependency Terraform starts
+  # polling the SG in parallel with cluster creation and fails because the SG
+  # does not exist yet.
+  depends_on = [
+    ibm_container_vpc_cluster.source_cluster,
+    module.source_backup_recovery,
+  ]
 }
 
 data "ibm_is_security_group" "target_kube_vpeg_sg" {
   name = "kube-vpegw-${local.target_vpc_id}"
+
+  # Same race condition as above — wait for the target cluster to be fully
+  # provisioned before polling for its kube-vpegw security group.
+  depends_on = [
+    ibm_container_vpc_cluster.target_cluster,
+    module.target_backup_recovery,
+  ]
 }
 
 # Source VPE
