@@ -130,7 +130,7 @@ locals {
 
   # vpc_name is used only in the VPE name template; the actual vpc_id is passed separately.
   # Using a fixed string keeps the final VPE gateway name within the 63-character limit.
-  brs_vpe_vpc_name = local.is_vpc ? "vpc" : "vpc"
+  brs_vpe_vpc_name = "vpc"
 
   # --- DSC worker pool zone math ---
   # Calculate workers per zone based on total replicas.
@@ -555,7 +555,7 @@ module "brs_vpe" {
     {
       crn          = module.backup_recovery_instance.brs_instance_crn
       service_name = "backup-recovery"
-      vpe_name     = var.brs_vpe_name != null ? var.brs_vpe_name : "${var.brs_connection_name}-vpe"
+      vpe_name     = var.brs_vpe_name != null ? var.brs_vpe_name : "${lower(var.brs_connection_name)}-vpe"
     }
   ]
 
@@ -847,6 +847,7 @@ resource "helm_release" "data_source_connector" {
     # When create_brs_vpe = false (cross-account, VPEG managed externally),
     # module.brs_vpe has count = 0 so this dep is a no-op — safe in all configs.
     module.brs_vpe,
+    terraform_data.check_existing_registration,
   ]
 
   lifecycle {
@@ -1009,7 +1010,7 @@ resource "terraform_data" "brs_source_deregistration_wait" {
     tenant_id        = local.brs_tenant_id
     registration_id  = tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
     brs_endpoint     = local.backup_recovery_instance_public_url
-    ibmcloud_api_key = var.ibmcloud_api_key # pragma: allowlist secret
+    ibmcloud_api_key = sensitive(var.ibmcloud_api_key) # pragma: allowlist secret
   }
 
   provisioner "local-exec" {

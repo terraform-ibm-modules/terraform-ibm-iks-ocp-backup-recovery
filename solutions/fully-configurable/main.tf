@@ -138,6 +138,16 @@ locals {
   # "auto-protect" so the name is meaningful rather than using the policy name
   # (which has no relation to the BRS-assigned PG name).
   recovery_pg_label = local.recovery_pg_name != null ? local.recovery_pg_name : "auto-protect"
+
+  # Resolved protection-group ID used in all recovery resources (wait, same-cluster,
+  # cross-cluster). Prefers the explicitly Terraform-managed PG when recovery_pg_name
+  # is set, falls back to the BRS-assigned auto-protect PG ID, then "" as a
+  # plan-time placeholder (replaced by the real value at apply).
+  recovery_pg_id = coalesce(
+    local.recovery_pg_name != null ? try(module.protect_cluster.protection_group_ids[local.recovery_pg_name], null) : null,
+    module.protect_cluster.auto_protect_pg_id,
+    ""
+  )
 }
 
 ##############################################################################
@@ -279,14 +289,7 @@ resource "terraform_data" "wait_for_backup" {
     # It is passed via environment variable (not interpolated into the command
     # string) so that a null/unknown value at plan time does not cause
     # "Cannot include a null value in a string template".
-    protection_group_id = coalesce(
-      # explicit Terraform-managed PG (only when recovery_pg_name is non-null)
-      local.recovery_pg_name != null ? try(module.protect_cluster.protection_group_ids[local.recovery_pg_name], null) : null,
-      # auto-protect PG — BRS-assigned ID, no relation to policy name
-      module.protect_cluster.auto_protect_pg_id,
-      # plan-time placeholder — replaced by the real value at apply
-      ""
-    )
+    protection_group_id = local.recovery_pg_id
   }
 
   provisioner "local-exec" {
@@ -307,15 +310,11 @@ resource "terraform_data" "same_cluster_recovery" {
   count = local.is_full_recovery && var.recovery_type == "same-cluster" ? 1 : 0
 
   input = {
-    url           = module.protect_cluster.brs_instance_url
-    tenant        = module.protect_cluster.brs_tenant_id
-    endpoint_type = var.brs_endpoint_type
-    instance_id   = module.protect_cluster.brs_instance_guid
-    source_pg_id = coalesce(
-      local.recovery_pg_name != null ? try(module.protect_cluster.protection_group_ids[local.recovery_pg_name], null) : null,
-      module.protect_cluster.auto_protect_pg_id,
-      ""
-    )
+    url              = module.protect_cluster.brs_instance_url
+    tenant           = module.protect_cluster.brs_tenant_id
+    endpoint_type    = var.brs_endpoint_type
+    instance_id      = module.protect_cluster.brs_instance_guid
+    source_pg_id     = local.recovery_pg_id
     target_source_id = split("::", module.protect_cluster.source_registration_id)[1]
     api_key          = sensitive(var.ibmcloud_api_key)
     recovery_name    = "recovery-${local.recovery_pg_label}-${formatdate("YYYYMMDD-hhmm", timestamp())}"
@@ -357,15 +356,11 @@ resource "terraform_data" "cross_cluster_recovery" {
   count = local.is_full_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
 
   input = {
-    url           = module.protect_cluster.brs_instance_url
-    tenant        = module.protect_cluster.brs_tenant_id
-    endpoint_type = var.brs_endpoint_type
-    instance_id   = module.protect_cluster.brs_instance_guid
-    source_pg_id = coalesce(
-      local.recovery_pg_name != null ? try(module.protect_cluster.protection_group_ids[local.recovery_pg_name], null) : null,
-      module.protect_cluster.auto_protect_pg_id,
-      ""
-    )
+    url              = module.protect_cluster.brs_instance_url
+    tenant           = module.protect_cluster.brs_tenant_id
+    endpoint_type    = var.brs_endpoint_type
+    instance_id      = module.protect_cluster.brs_instance_guid
+    source_pg_id     = local.recovery_pg_id
     target_source_id = split("::", module.target_cluster_registration[0].source_registration_id)[1]
     api_key          = sensitive(var.ibmcloud_api_key)
     recovery_name    = "cross-cluster-recovery-${local.recovery_pg_label}-${formatdate("YYYYMMDD-hhmm", timestamp())}"
