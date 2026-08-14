@@ -1,43 +1,69 @@
 ##############################################################################
-# Locals
+# Locals — Environment & Cluster
 ##############################################################################
 
 locals {
-  # --- Environment type detection ---
+  # Environment type detection — derived from connection_env_type suffix.
   is_vpc     = length(regexall("Vpc$", var.connection_env_type)) > 0
   is_classic = length(regexall("Classic$", var.connection_env_type)) > 0
 
-  # --- Deployment mode flags ---
+  # Deployment mode flag.
   # DSC, source registration, and protection groups are always deployed in every
   # deployment_mode. deploy_recovery is the only mode-gated flag.
   deploy_recovery = var.deployment_mode == "full_backup_recovery"
 
-  # --- BRS region: cluster region for new instances, existing instance region otherwise ---
+  # BRS region: cluster region for new instances, existing instance region otherwise.
   brs_region = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? split(":", var.existing_brs_instance_crn)[5] : var.region
 
-  # --- Cluster attributes (resolved from VPC or Classic data sources) ---
+  # Cluster attributes — resolved from the VPC or Classic data source.
   cluster_crn                  = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].crn : data.ibm_container_cluster.classic_cluster[0].crn
   cluster_private_endpoint_url = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].private_service_endpoint_url : data.ibm_container_cluster.classic_cluster[0].private_service_endpoint_url
   cluster_public_endpoint_url  = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].public_service_endpoint_url : data.ibm_container_cluster.classic_cluster[0].public_service_endpoint_url
   cluster_private_available    = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].private_service_endpoint : data.ibm_container_cluster.classic_cluster[0].private_service_endpoint
   cluster_endpoint             = var.cluster_config_endpoint_type == "private" && local.cluster_private_available ? local.cluster_private_endpoint_url : local.cluster_public_endpoint_url
   cluster_endpoint_port        = element(split(":", local.cluster_endpoint), -1)
+}
 
-  # --- Helm chart URI parsing ---
+##############################################################################
+# Locals — DSC Configuration
+##############################################################################
+
+locals {
+  # Helm chart URI parsing — splits the OCI URI into its chart name, version,
+  # and registry location components used by the helm_release resource.
   uri_no_digest      = split("@", var.dsc_chart_uri)[0]
   chart_with_version = element(split("/", local.uri_no_digest), -1)
   dsc_chart          = split(":", local.chart_with_version)[0]
   dsc_chart_version  = replace(local.chart_with_version, "${local.dsc_chart}:", "")
   dsc_chart_location = replace(local.uri_no_digest, "/${local.chart_with_version}", "")
 
-  # --- BRS instance attributes ---
-  brs_tenant_id                        = module.backup_recovery_instance.tenant_id
-  connection_id                        = module.backup_recovery_instance.connection_id
-  registration_token                   = module.backup_recovery_instance.registration_token
+  # Resolved storage class for the DSC PVC — used in both the Helm values and
+  # the diagnostics script so the expression is not repeated.
+  dsc_storage_class = var.dsc_storage_class != null ? var.dsc_storage_class : (local.is_vpc ? "ibmc-vpc-block-metro-5iops-tier" : "ibmc-block-silver")
+
+  # DSC worker pool zone math — calculates workers per zone based on total replicas.
+  num_zones     = local.is_vpc && var.create_dsc_worker_pool ? var.dsc_worker_pool_zones : 0
+  zones_list    = local.is_vpc && var.create_dsc_worker_pool ? [for zone in data.ibm_container_vpc_worker_pool.pool[0].zones : zone] : []
+  base_workers  = local.num_zones > 0 ? floor(var.dsc_replicas / local.num_zones) : 0
+  extra_workers = local.num_zones > 0 ? var.dsc_replicas % local.num_zones : 0
+
+  binaries_path = "/tmp"
+}
+
+##############################################################################
+# Locals — BRS Instance
+##############################################################################
+
+locals {
+  # Forwarded attributes from the backup_recovery_instance module.
+  brs_tenant_id       = module.backup_recovery_instance.tenant_id
+  connection_id       = module.backup_recovery_instance.connection_id
+  registration_token  = module.backup_recovery_instance.registration_token
+  brs_instance_guid   = module.backup_recovery_instance.brs_instance_guid
+  brs_instance_region = element(split(":", module.backup_recovery_instance.brs_instance_crn), 5)
+
   backup_recovery_instance_public_url  = nonsensitive(module.backup_recovery_instance.brs_instance.extensions["endpoints.public"])
   backup_recovery_instance_private_url = nonsensitive(module.backup_recovery_instance.brs_instance.extensions["endpoints.private"])
-  brs_instance_guid                    = module.backup_recovery_instance.brs_instance_guid
-  brs_instance_region                  = element(split(":", module.backup_recovery_instance.brs_instance_crn), 5)
 
   # URL used by Terraform provider resources and scripts to reach the BRS API.
   # The DSC Helm chart does NOT use this URL — it reads the BRS private endpoint
@@ -46,185 +72,8 @@ locals {
   # any change to this URL.
   backup_recovery_instance_url = var.brs_endpoint_type == "public" ? local.backup_recovery_instance_public_url : local.backup_recovery_instance_private_url
 
-  # Get resolved policy IDs from the BRS module
+  # Resolved policy IDs forwarded from the BRS module.
   resolved_policy_ids = module.backup_recovery_instance.resolved_policy_ids
-
-  binaries_path = "/tmp"
-
-  # --- DSC worker pool zone math ---
-  # Calculate workers per zone based on total replicas.
-  num_zones     = local.is_vpc && var.create_dsc_worker_pool ? var.dsc_worker_pool_zones : 0
-  zones_list    = local.is_vpc && var.create_dsc_worker_pool ? [for zone in data.ibm_container_vpc_worker_pool.pool[0].zones : zone] : []
-  base_workers  = local.num_zones > 0 ? floor(var.dsc_replicas / local.num_zones) : 0
-  extra_workers = local.num_zones > 0 ? var.dsc_replicas % local.num_zones : 0
-
-  # Resolved storage class for the DSC PVC — used in both the Helm values and
-  # the diagnostics script so the expression is not repeated.
-  dsc_storage_class = var.dsc_storage_class != null ? var.dsc_storage_class : (local.is_vpc ? "ibmc-vpc-block-metro-5iops-tier" : "ibmc-block-silver")
-
-  # --- Protection source tree (object name → ID map) ---
-  # Flatten protection sources up to 3 levels deep to create a map of object names
-  # (namespaces, PVCs, etc.) to IDs — scoped to THIS cluster's registered source only.
-  #
-  # The BRS Terraform provider exposes the kKubernetes source tree as:
-  #
-  #   protection_sources[N]          ← env envelope (no protection_source attr)
-  #     └── nodes[M]                 ← cluster node
-  #           IKS:  protection_source[0].id = cluster source_id  (L1 has it)
-  #           OCP:  NO protection_source attr at this level
-  #           └── nodes[K]           ← namespace / label nodes
-  #                 IKS:  protection_source[0].id = namespace object id
-  #                 OCP:  protection_source[0].id = namespace object id
-  #                       protection_source[0].parent_id = cluster source_id  ← key difference
-  #                 └── nodes[J]     ← PVC nodes
-  #
-  # IKS filter: keep the L1 node whose protection_source[0].id == source_id
-  # OCP filter: keep the L1 node that has at least one L2 child whose
-  #             protection_source[0].parent_id == source_id
-  #
-  # When source_id is not yet known (null) or not found in the tree (source
-  # discovery still in progress), the filter is skipped so all nodes are
-  # included — identical to pre-PR-74 behaviour, which avoids an empty
-  # all_flat_objects and prevents a spurious precondition failure.
-
-  # The registered source_id as a string — used for tree-filtering comparisons.
-  source_id_str = tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
-
-  # Shorthand: all top-level environment entries returned by the BRS protection-sources API,
-  # with a null guard so the expression is safe before the data source is populated.
-  raw_envs = try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []
-
-  # IKS clusters: the registered source_id equals protection_source[0].id on the
-  # cluster node (the first level of children inside an environment entry).
-  # Build a set of all such IDs so we can cheaply detect IKS mode.
-  known_cluster_node_ids = toset(flatten([
-    for env in local.raw_envs : [
-      for cluster_node in(env.nodes != null ? env.nodes : []) :
-      tostring(cluster_node.protection_source[0].id)
-      if cluster_node.protection_source != null && length(cluster_node.protection_source) > 0
-    ]
-  ]))
-
-  # OCP clusters: the registered source_id appears as protection_source[0].parent_id
-  # on namespace nodes (one level deeper than the cluster node). Build a set of all
-  # such parent IDs so we can detect OCP mode and find the right cluster node.
-  known_namespace_parent_ids = toset(flatten([
-    for env in local.raw_envs : [
-      for cluster_node in(env.nodes != null ? env.nodes : []) : [
-        for namespace_node in(cluster_node.nodes != null ? cluster_node.nodes : []) :
-        tostring(try(namespace_node.protection_source[0].parent_id, ""))
-        if namespace_node.protection_source != null && length(namespace_node.protection_source) > 0 &&
-        try(namespace_node.protection_source[0].parent_id, null) != null
-      ]
-    ]
-  ]))
-
-  # Determine whether to scope the tree walk to a single registered cluster.
-  # The filter is skipped (all cluster nodes included) when source_id is not yet
-  # known or is not found in the tree — e.g. during initial source discovery —
-  # so protection group object resolution still works rather than returning empty.
-  should_filter_by_registered_cluster = (
-    ibm_backup_recovery_source_registration.source_registration.source_id != null &&
-    (
-      contains(local.known_cluster_node_ids, local.source_id_str) ||
-      contains(local.known_namespace_parent_ids, local.source_id_str)
-    )
-  )
-
-  # Cluster-level nodes — one per registered cluster within each environment.
-  # When filtering is active, only the node matching the registered cluster is kept.
-  #   IKS: match by cluster_node.protection_source[0].id == source_id
-  #   OCP: match by any namespace child having protection_source[0].parent_id == source_id
-  cluster_nodes = flatten([
-    for env in local.raw_envs : [
-      for cluster_node in(env.nodes != null ? env.nodes : []) : cluster_node
-      if !local.should_filter_by_registered_cluster ||
-      # IKS path — source_id is the cluster node's own object ID
-      (cluster_node.protection_source != null &&
-        length(cluster_node.protection_source) > 0 &&
-      tostring(cluster_node.protection_source[0].id) == local.source_id_str) ||
-      # OCP path — source_id appears as parent_id on one of the cluster's namespace children
-      anytrue([
-        for namespace_node in(cluster_node.nodes != null ? cluster_node.nodes : []) :
-        (namespace_node.protection_source != null &&
-          length(namespace_node.protection_source) > 0 &&
-        tostring(try(namespace_node.protection_source[0].parent_id, "")) == local.source_id_str)
-      ])
-    ]
-  ])
-
-  # protection_source entries on cluster-level nodes (the cluster objects themselves).
-  cluster_protection_sources = flatten([
-    for cluster_node in local.cluster_nodes : [
-      for ps in(cluster_node.protection_source != null ? cluster_node.protection_source : []) : {
-        id   = ps.id
-        name = ps.name
-      }
-    ]
-  ])
-
-  # Namespace-level nodes — direct children of each cluster node.
-  namespace_nodes = flatten([
-    for cluster_node in local.cluster_nodes :
-    (cluster_node.nodes != null ? cluster_node.nodes : [])
-  ])
-
-  # protection_source entries on namespace nodes (namespace / project objects).
-  namespace_protection_sources = flatten([
-    for namespace_node in local.namespace_nodes : [
-      for ps in(namespace_node.protection_source != null ? namespace_node.protection_source : []) : {
-        id   = ps.id
-        name = ps.name
-      }
-    ]
-  ])
-
-  # Workload-level nodes — direct children of each namespace node (PVCs, pods, etc.).
-  workload_nodes = flatten([
-    for namespace_node in local.namespace_nodes :
-    (namespace_node.nodes != null ? namespace_node.nodes : [])
-  ])
-
-  # protection_source entries on workload nodes (individual PVC / workload objects).
-  workload_protection_sources = flatten([
-    for workload_node in local.workload_nodes : [
-      for ps in(workload_node.protection_source != null ? workload_node.protection_source : []) : {
-        id   = ps.id
-        name = ps.name
-      }
-    ]
-  ])
-
-  # Flat list of every discoverable object across all three levels, then indexed
-  # by name. Used to resolve protection-group object names (e.g. "my-namespace")
-  # to the numeric IDs that the BRS API requires.
-  # The grouping operator (...) keeps duplicate names as a list so the map never
-  # errors when the same name appears at more than one level.
-  all_flat_objects  = concat(local.cluster_protection_sources, local.namespace_protection_sources, local.workload_protection_sources)
-  object_name_to_id = { for obj in local.all_flat_objects : obj.name => obj.id... }
-
-  # --- Protection group ID helpers ---
-  # Convert full PG ID format (clusterid/::timestamp:id:id) to numeric format (timestamp:id:id)
-  # Example: "5n3kwor5cb/::8009179080677672:1753125047518:126734" -> "8009179080677672:1753125047518:126734"
-  numeric_pg_ids = local.deploy_recovery ? {
-    for pg_name, pg_resource in ibm_backup_recovery_protection_group.protection_group :
-    pg_name => split("::", pg_resource.id)[1]
-  } : {}
-
-  # --- Recovery helpers ---
-  # Map of protection group name to latest successful snapshot.
-  latest_snapshots = local.deploy_recovery ? {
-    for pg_name, runs in data.ibm_backup_recovery_protection_group_runs.backup_runs :
-    pg_name => (
-      length(try(runs.runs, [])) > 0 ? (
-        try(runs.runs[0].local_backup_info[0].snapshot_info[0].snapshot_id, try(runs.runs[0].id, null))
-      ) : null
-    )
-  } : {}
-
-  # Determine target cluster details based on recovery mode.
-  # For cross-cluster recovery, the target cluster must be pre-registered with the same BRS instance.
-  target_cluster_id = var.recovery_mode == "cross-cluster" ? var.target_cluster_id : var.cluster_id
 }
 
 resource "terraform_data" "install_dependencies" {
@@ -906,6 +755,143 @@ data "ibm_backup_recovery_protection_sources" "sources" {
 }
 
 ##############################################################################
+# Locals — Protection Source Tree
+#
+# Flatten the kKubernetes source tree returned by the BRS protection-sources
+# API into a flat name→ID map used to resolve protection group object names
+# (namespaces, PVCs, etc.) to the numeric IDs that the BRS API requires.
+#
+# The tree has three levels inside each environment envelope:
+#
+#   protection_sources[N]          ← env envelope (no protection_source attr)
+#     └── nodes[M]                 ← cluster node
+#           IKS:  protection_source[0].id = cluster source_id
+#           OCP:  NO protection_source attr at this level
+#           └── nodes[K]           ← namespace / label nodes
+#                 IKS:  protection_source[0].id = namespace object id
+#                 OCP:  protection_source[0].id = namespace object id
+#                       protection_source[0].parent_id = cluster source_id
+#                 └── nodes[J]     ← workload nodes (PVCs, pods, etc.)
+#
+# When source_id is not yet known or not found in the tree (source discovery
+# still in progress), the cluster filter is skipped so all nodes are included —
+# this avoids an empty all_flat_objects and prevents a spurious precondition
+# failure while the DSC is still doing its initial discovery pass.
+##############################################################################
+
+locals {
+  # The registered source_id as a string — used for tree-filtering comparisons.
+  source_id_str = tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
+
+  # All top-level environment entries returned by the BRS protection-sources API,
+  # with a null guard so the expression is safe before the data source is populated.
+  raw_envs = try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []
+
+  # IKS clusters: the registered source_id equals protection_source[0].id on the
+  # cluster node. Build a set of all such IDs so we can cheaply detect IKS mode.
+  known_cluster_node_ids = toset(flatten([
+    for env in local.raw_envs : [
+      for cluster_node in(env.nodes != null ? env.nodes : []) :
+      tostring(cluster_node.protection_source[0].id)
+      if cluster_node.protection_source != null && length(cluster_node.protection_source) > 0
+    ]
+  ]))
+
+  # OCP clusters: the registered source_id appears as protection_source[0].parent_id
+  # on namespace nodes. Build a set of all such parent IDs so we can detect OCP mode.
+  known_namespace_parent_ids = toset(flatten([
+    for env in local.raw_envs : [
+      for cluster_node in(env.nodes != null ? env.nodes : []) : [
+        for namespace_node in(cluster_node.nodes != null ? cluster_node.nodes : []) :
+        tostring(try(namespace_node.protection_source[0].parent_id, ""))
+        if namespace_node.protection_source != null && length(namespace_node.protection_source) > 0 &&
+        try(namespace_node.protection_source[0].parent_id, null) != null
+      ]
+    ]
+  ]))
+
+  # Whether to scope the tree walk to a single registered cluster.
+  # Skipped when source_id is not yet known or not found in the tree.
+  should_filter_by_registered_cluster = (
+    ibm_backup_recovery_source_registration.source_registration.source_id != null &&
+    (
+      contains(local.known_cluster_node_ids, local.source_id_str) ||
+      contains(local.known_namespace_parent_ids, local.source_id_str)
+    )
+  )
+
+  # Cluster-level nodes — one per registered cluster within each environment.
+  # When filtering is active, only the node matching the registered cluster is kept.
+  #   IKS: match by cluster_node.protection_source[0].id == source_id
+  #   OCP: match by any namespace child having protection_source[0].parent_id == source_id
+  cluster_nodes = flatten([
+    for env in local.raw_envs : [
+      for cluster_node in(env.nodes != null ? env.nodes : []) : cluster_node
+      if !local.should_filter_by_registered_cluster ||
+      # IKS path — source_id is the cluster node's own object ID
+      (cluster_node.protection_source != null &&
+        length(cluster_node.protection_source) > 0 &&
+      tostring(cluster_node.protection_source[0].id) == local.source_id_str) ||
+      # OCP path — source_id appears as parent_id on one of the cluster's namespace children
+      anytrue([
+        for namespace_node in(cluster_node.nodes != null ? cluster_node.nodes : []) :
+        (namespace_node.protection_source != null &&
+          length(namespace_node.protection_source) > 0 &&
+        tostring(try(namespace_node.protection_source[0].parent_id, "")) == local.source_id_str)
+      ])
+    ]
+  ])
+
+  # protection_source entries on cluster-level nodes (the cluster objects themselves).
+  cluster_protection_sources = flatten([
+    for cluster_node in local.cluster_nodes : [
+      for ps in(cluster_node.protection_source != null ? cluster_node.protection_source : []) : {
+        id   = ps.id
+        name = ps.name
+      }
+    ]
+  ])
+
+  # Namespace-level nodes — direct children of each cluster node.
+  namespace_nodes = flatten([
+    for cluster_node in local.cluster_nodes :
+    (cluster_node.nodes != null ? cluster_node.nodes : [])
+  ])
+
+  # protection_source entries on namespace nodes (namespace / project objects).
+  namespace_protection_sources = flatten([
+    for namespace_node in local.namespace_nodes : [
+      for ps in(namespace_node.protection_source != null ? namespace_node.protection_source : []) : {
+        id   = ps.id
+        name = ps.name
+      }
+    ]
+  ])
+
+  # Workload-level nodes — direct children of each namespace node (PVCs, pods, etc.).
+  workload_nodes = flatten([
+    for namespace_node in local.namespace_nodes :
+    (namespace_node.nodes != null ? namespace_node.nodes : [])
+  ])
+
+  # protection_source entries on workload nodes (individual PVC / workload objects).
+  workload_protection_sources = flatten([
+    for workload_node in local.workload_nodes : [
+      for ps in(workload_node.protection_source != null ? workload_node.protection_source : []) : {
+        id   = ps.id
+        name = ps.name
+      }
+    ]
+  ])
+
+  # Flat list of every discoverable object across all three levels, indexed by name.
+  # The grouping operator (...) keeps duplicate names as a list so the map never
+  # errors when the same name appears at more than one level.
+  all_flat_objects  = concat(local.cluster_protection_sources, local.namespace_protection_sources, local.workload_protection_sources)
+  object_name_to_id = { for obj in local.all_flat_objects : obj.name => obj.id... }
+}
+
+##############################################################################
 # Protection Groups (granular backup control)
 ##############################################################################
 
@@ -1288,6 +1274,36 @@ resource "terraform_data" "delete_auto_protect_pg" {
   }
 }
 
+
+##############################################################################
+# Locals — Recovery Helpers
+##############################################################################
+
+locals {
+  # Convert full PG ID format (clusterid/::timestamp:id:id) to numeric format
+  # (timestamp:id:id) — required by the protection_group_runs data source.
+  # Example: "5n3kwor5cb/::8009179080677672:1753125047518:126734"
+  #       -> "8009179080677672:1753125047518:126734"
+  numeric_pg_ids = local.deploy_recovery ? {
+    for pg_name, pg_resource in ibm_backup_recovery_protection_group.protection_group :
+    pg_name => split("::", pg_resource.id)[1]
+  } : {}
+
+  # Map of protection group name to the latest successful snapshot ID.
+  # Populated only after wait_for_backup_run confirms a completed run exists.
+  latest_snapshots = local.deploy_recovery ? {
+    for pg_name, runs in data.ibm_backup_recovery_protection_group_runs.backup_runs :
+    pg_name => (
+      length(try(runs.runs, [])) > 0 ? (
+        try(runs.runs[0].local_backup_info[0].snapshot_info[0].snapshot_id, try(runs.runs[0].id, null))
+      ) : null
+    )
+  } : {}
+
+  # Target cluster for recovery operations.
+  # For cross-cluster recovery the target must be pre-registered with the same BRS instance.
+  target_cluster_id = var.recovery_mode == "cross-cluster" ? var.target_cluster_id : var.cluster_id
+}
 
 ##############################################################################
 # Immediate Backup Trigger for Recovery Mode

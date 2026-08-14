@@ -193,10 +193,11 @@ data "ibm_container_cluster_config" "cluster_config" {
 #
 # The default ibm provider (target account) handles all BRS resources:
 #   - BRS instance, data-source connection, registration token
+#   - ibm_backup_recovery_* resources (source registration, protection groups)
 #
 # The ibm.source_account provider alias (source account) handles all cluster
 # and VPC resources:
-#   - cluster data sources, DSC worker pool, Helm chart, source registration
+#   - cluster data sources, DSC worker pool, security group rules, cluster tags
 #
 # VPE Gateway and S2S policy are created directly in this example below the
 # module call (see "S2S IAM Authorization Policy" and "VPE Gateway" sections).
@@ -205,8 +206,8 @@ data "ibm_container_cluster_config" "cluster_config" {
 module "backup_recovery" {
   source = "../.."
   providers = {
-    ibm                = ibm        # target account — BRS instance, connection
-    ibm.source_account = ibm.source # source account — cluster, DSC worker pool
+    ibm                = ibm        # target account — BRS instance, ibm_backup_recovery_* resources
+    ibm.source_account = ibm.source # source account — cluster, VPC, DSC worker pool
   }
 
   # ---- Cluster (source account) ----
