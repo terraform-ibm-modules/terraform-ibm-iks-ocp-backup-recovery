@@ -37,8 +37,8 @@ output "auto_protect_pg_id" {
   # Two paths to the same ID — the top-level attribute (provider typo: "proetction")
   # is more reliable at plan time; the nested path is the canonical reference.
   # coalesce picks whichever is non-null first.
-  # TODO: once IBM provider fixes the typo (auto_proetction -> auto_protection), switch to
-  # the corrected attribute name. Track at: https://github.com/IBM-Cloud/terraform-provider-ibm
+  # TODO: once IBM provider fixes the typo (auto_proetction -> auto_protection),
+  # replace auto_proetction_group_id with auto_protection_group_id below.
   value = try(coalesce(
     ibm_backup_recovery_source_registration.source_registration.auto_proetction_group_id,
     ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id,

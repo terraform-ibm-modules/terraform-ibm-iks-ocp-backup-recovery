@@ -293,6 +293,7 @@ resource "terraform_data" "wait_for_backup" {
     # string) so that a null/unknown value at plan time does not cause
     # "Cannot include a null value in a string template".
     protection_group_id = local.recovery_pg_id
+    protection_group_id = local.recovery_pg_id
   }
 
   provisioner "local-exec" {
@@ -313,6 +314,11 @@ resource "terraform_data" "same_cluster_recovery" {
   count = local.is_full_recovery && var.recovery_type == "same-cluster" ? 1 : 0
 
   input = {
+    url              = module.protect_cluster.brs_instance_url
+    tenant           = module.protect_cluster.brs_tenant_id
+    endpoint_type    = var.brs_endpoint_type
+    instance_id      = module.protect_cluster.brs_instance_guid
+    source_pg_id     = local.recovery_pg_id
     url              = module.protect_cluster.brs_instance_url
     tenant           = module.protect_cluster.brs_tenant_id
     endpoint_type    = var.brs_endpoint_type
@@ -359,6 +365,11 @@ resource "terraform_data" "cross_cluster_recovery" {
   count = local.is_full_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
 
   input = {
+    url              = module.protect_cluster.brs_instance_url
+    tenant           = module.protect_cluster.brs_tenant_id
+    endpoint_type    = var.brs_endpoint_type
+    instance_id      = module.protect_cluster.brs_instance_guid
+    source_pg_id     = local.recovery_pg_id
     url              = module.protect_cluster.brs_instance_url
     tenant           = module.protect_cluster.brs_tenant_id
     endpoint_type    = var.brs_endpoint_type

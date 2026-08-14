@@ -528,22 +528,26 @@ module "brs_s2s_auth" {
 #   ibm_is_virtual_endpoint_gateway.vpe_retained — lifecycle { prevent_destroy }
 #
 # Only one block is active (count=1) at a time, controlled by the flag.
-# When the flag is flipped the moved blocks below transfer state between them
-# so the VPE is never recreated — only its lifecycle policy changes.
+# Flipping retain_brs_vpe_on_destroy recreates the VPE Gateway in IBM Cloud
+# (~30 s). DSC pods reconnect automatically after recreation.
 #
 # Workflow for shared-VPE teardown (Schematics: no CLI access required):
 #   1. Set retain_brs_vpe_on_destroy = true, run Apply.
-#      → State moves from .vpe to .vpe_retained (no API calls, same resource).
+#      → vpe destroyed, vpe_retained created (brief recreation in IBM Cloud).
 #   2. Run Destroy.
-#      → prevent_destroy causes Terraform to skip deleting the VPE gateway.
+#      → prevent_destroy blocks deletion of vpe_retained.
 #      → All other cluster resources are destroyed normally.
+#   3. Manually delete the VPE from IBM Cloud console once ALL clusters
+#      sharing it have been decommissioned.
 # ---------------------------------------------------------------------------
 
 locals {
-  brs_vpe_name_resolved = var.brs_vpe_name != null ? var.brs_vpe_name : "${var.brs_connection_name}-vpe"
+  brs_vpe_name_resolved = var.brs_vpe_name != null ? var.brs_vpe_name : "${lower(var.brs_connection_name)}-vpe"
   brs_vpe_active        = var.create_brs_vpe && local.is_vpc
+  # Keyed by zone (always plan-time-known) rather than subnet ID (unknown at plan
+  # time when the VPC is created in the same apply).
   brs_vpe_subnets_map = {
-    for s in local.resolved_vpc_subnets : s.id => s
+    for s in local.resolved_vpc_subnets : s.zone => s
   }
 }
 
@@ -551,8 +555,8 @@ locals {
 resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
   for_each = local.brs_vpe_active ? local.brs_vpe_subnets_map : {}
   provider = ibm.cluster
-  subnet   = each.key
-  name     = "${local.brs_vpe_name_resolved}-${each.value.zone}-ip"
+  subnet   = each.value.id
+  name     = "${local.brs_vpe_name_resolved}-${each.key}-ip"
 }
 
 # --- Normal gateway (destroyed with the module) ---
@@ -609,18 +613,6 @@ resource "ibm_is_virtual_endpoint_gateway_ip" "vpe_ip_retained" {
   lifecycle {
     prevent_destroy = true
   }
-}
-
-# Moved blocks: transfer state between the two gateway variants when the flag
-# is toggled. No API calls are made — only the state address changes.
-moved {
-  from = ibm_is_virtual_endpoint_gateway.vpe[0]
-  to   = ibm_is_virtual_endpoint_gateway.vpe_retained[0]
-}
-
-moved {
-  from = ibm_is_virtual_endpoint_gateway.vpe_retained[0]
-  to   = ibm_is_virtual_endpoint_gateway.vpe[0]
 }
 
 # Fetch the kube-vpegw-<vpc-id> security group that IKS/ROKS creates on every
@@ -899,6 +891,7 @@ resource "helm_release" "data_source_connector" {
   depends_on = [
     terraform_data.dsc_immutable_values,
     terraform_data.wait_for_dsc_node_ready,
+    terraform_data.check_existing_registration,
     terraform_data.purge_stale_dsc_pvc,
     ibm_container_vpc_worker_pool.data_source_connector,
     kubernetes_namespace_v1.dsc_namespace,
