@@ -122,15 +122,15 @@ if (( elapsed >= TIMEOUT_S )); then
 fi
 
 # ---------------------------------------------------------------------------
-# Phase 2: wait for at least one namespace to appear in protection-sources
+# Phase 2: wait for at least one child node to appear in protection-sources
 # so the data source read in Terraform can resolve object names to IDs.
 #
-# When --id REGISTRATION_ID is passed the CLI returns the cluster's children
-# directly at .protectionSources[].nodes[] (the cluster node itself is not
-# repeated in the response).  Namespaces have type "kNamespace".  We count
-# those directly rather than trying to find the cluster node and descend.
+# The current API response returns populated child nodes directly under
+# .protectionSources[].nodes[] without the older
+# .protectionSource.kubernetesProtectionSource.type field. Treat any child node
+# as proof that the source tree has been indexed.
 # ---------------------------------------------------------------------------
-echo "=== Phase 2: waiting for source children (namespaces) to be indexed ===" >&2
+echo "=== Phase 2: waiting for source child nodes to be indexed ===" >&2
 elapsed2=0
 while (( elapsed2 < CHILDREN_TIMEOUT_S )); do
 
@@ -145,19 +145,19 @@ while (( elapsed2 < CHILDREN_TIMEOUT_S )); do
       continue
     }
 
-  # When --id is used the API returns the cluster's children at
-  # .protectionSources[].nodes[].  Count entries whose type is kNamespace.
+  # When --id is used the API returns the source's indexed child nodes at
+  # .protectionSources[].nodes[]. Count any child node because current payloads
+  # do not include the older kubernetesProtectionSource.type field.
   child_count=$(echo "${src_raw}" | jq '
     [ .protectionSources[]?
       | .nodes[]?
-      | select(.protectionSource.kubernetesProtectionSource.type == "kNamespace")
     ] | length
   ' 2>/dev/null || echo "0")
 
-  echo "[${elapsed2}s] namespace children under source ${REGISTRATION_ID}: ${child_count}" >&2
+  echo "[${elapsed2}s] child nodes under source ${REGISTRATION_ID}: ${child_count}" >&2
 
   if (( child_count > 0 )); then
-    echo "=== wait-for-source-discovery.sh: ${child_count} namespace(s) indexed (elapsed2=${elapsed2}s) ===" >&2
+    echo "=== wait-for-source-discovery.sh: ${child_count} child node(s) indexed (elapsed2=${elapsed2}s) ===" >&2
     exit 0
   fi
 
@@ -165,7 +165,7 @@ while (( elapsed2 < CHILDREN_TIMEOUT_S )); do
   (( elapsed2 += CHILDREN_POLL_S )) || true
 done
 
-echo "WARNING: timeout after ${CHILDREN_TIMEOUT_S}s — no namespace children indexed for source ${REGISTRATION_ID}." >&2
+echo "WARNING: timeout after ${CHILDREN_TIMEOUT_S}s — no child nodes indexed for source ${REGISTRATION_ID}." >&2
 echo "Terraform protection_groups using object names may fail with 'objects.0.id required'." >&2
 # Exit 0 — non-fatal: Terraform still proceeds; will fail at protection_group if name can't be resolved.
 exit 0
