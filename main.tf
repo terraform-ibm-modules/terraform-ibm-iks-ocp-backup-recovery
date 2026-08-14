@@ -128,10 +128,6 @@ locals {
     }] : []
   )
 
-  # vpc_name is used only in the VPE name template; the actual vpc_id is passed separately.
-  # Using a fixed string keeps the final VPE gateway name within the 63-character limit.
-  brs_vpe_vpc_name = "vpc"
-
   # --- DSC worker pool zone math ---
   # Calculate workers per zone based on total replicas.
   num_zones     = local.is_vpc && var.create_dsc_worker_pool ? var.dsc_worker_pool_zones : 0
@@ -523,67 +519,108 @@ module "brs_s2s_auth" {
 # below enforces that ordering.  The VPC service-resolution layer resolves
 # the cross-account BRS CRN instantly once the S2S policy is in place —
 # no additional sleep is required.
-module "brs_vpe" {
-  count   = var.create_brs_vpe && local.is_vpc ? 1 : 0
-  source  = "terraform-ibm-modules/vpe-gateway/ibm"
-  version = "5.3.5"
-  providers = {
-    ibm = ibm.cluster
+# ---------------------------------------------------------------------------
+# BRS Virtual Private Endpoint Gateway
+#
+# Two parallel resource blocks implement the retain_brs_vpe_on_destroy toggle:
+#
+#   ibm_is_virtual_endpoint_gateway.vpe          — normal lifecycle (destroyed)
+#   ibm_is_virtual_endpoint_gateway.vpe_retained — lifecycle { prevent_destroy }
+#
+# Only one block is active (count=1) at a time, controlled by the flag.
+# When the flag is flipped the moved blocks below transfer state between them
+# so the VPE is never recreated — only its lifecycle policy changes.
+#
+# Workflow for shared-VPE teardown (Schematics: no CLI access required):
+#   1. Set retain_brs_vpe_on_destroy = true, run Apply.
+#      → State moves from .vpe to .vpe_retained (no API calls, same resource).
+#   2. Run Destroy.
+#      → prevent_destroy causes Terraform to skip deleting the VPE gateway.
+#      → All other cluster resources are destroyed normally.
+# ---------------------------------------------------------------------------
+
+locals {
+  brs_vpe_name_resolved = var.brs_vpe_name != null ? var.brs_vpe_name : "${var.brs_connection_name}-vpe"
+  brs_vpe_active        = var.create_brs_vpe && local.is_vpc
+  brs_vpe_subnets_map = {
+    for s in local.resolved_vpc_subnets : s.id => s
   }
+}
 
-  # Use var.region (the cluster's region, always known at plan time) rather than
-  # local.brs_instance_region (derived from the BRS CRN, unknown until apply).
-  # The VPE is always co-located with the cluster; the BRS instance region only
-  # diverges when using cross-region replication (not supported here).
-  region            = var.region
-  prefix            = var.brs_vpe_name != null ? var.brs_vpe_name : "brs"
-  vpc_name          = local.brs_vpe_vpc_name
-  vpc_id            = local.resolved_vpc_id
-  subnet_zone_list  = local.resolved_vpc_subnets
-  resource_group_id = var.cluster_resource_group_id
+# Reserved IPs — one per subnet, shared between both gateway variants.
+resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
+  for_each = local.brs_vpe_active ? local.brs_vpe_subnets_map : {}
+  provider = ibm.cluster
+  subnet   = each.key
+  name     = "${local.brs_vpe_name_resolved}-${each.value.zone}-ip"
+}
 
-  # Attach to the Kubernetes VPEG security group (kube-vpegw-<vpc-id>).
-  # IKS/ROKS automatically creates this SG on every VPC cluster and it is
-  # pre-configured to allow the cluster worker nodes to reach VPE targets.
-  security_group_ids = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
+# --- Normal gateway (destroyed with the module) ---
+resource "ibm_is_virtual_endpoint_gateway" "vpe" {
+  count           = local.brs_vpe_active && !var.retain_brs_vpe_on_destroy ? 1 : 0
+  provider        = ibm.cluster
+  name            = local.brs_vpe_name_resolved
+  vpc             = local.resolved_vpc_id
+  resource_group  = var.cluster_resource_group_id
+  security_groups = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
 
-  # vpe_name is set explicitly so the for_each key in the child module is a
-  # static string known at plan time (not derived from vpc_id or CRN).
-  # Without this, the key would be "${prefix}-${vpc_name}-backup-recovery"
-  # where vpc_name comes from the worker-pool data source — unknown at plan.
-  cloud_service_by_crn = [
-    {
-      crn          = module.backup_recovery_instance.brs_instance_crn
-      service_name = "backup-recovery"
-      vpe_name     = var.brs_vpe_name != null ? var.brs_vpe_name : "${lower(var.brs_connection_name)}-vpe"
-    }
-  ]
+  target {
+    crn           = module.backup_recovery_instance.brs_instance_crn
+    resource_type = "provider_cloud_service"
+  }
 
   depends_on = [module.brs_s2s_auth]
 }
 
-# When retain_brs_vpe_on_destroy = true the caller has signalled that this VPE
-# is shared with other clusters in the same VPC.  The `removed` block (Terraform
-# ≥ 1.7) drops the module's resources from state without issuing any destroy API
-# call, so a subsequent `terraform destroy` leaves the VPE intact.
-#
-# Prerequisite: set create_brs_vpe = false (count = 0) BEFORE applying this flag.
-# Terraform requires the `removed` target to be absent from the active config —
-# if create_brs_vpe is still true (count=1), Terraform will produce a plan error.
-#
-# Workflow (apply BEFORE destroy):
-#   1. Set create_brs_vpe = false, retain_brs_vpe_on_destroy = true
-#   2. terraform apply  → VPE resources removed from state, VPE untouched in cloud
-#   3. terraform destroy → only cluster-owned resources are destroyed
-#
-# When retain_brs_vpe_on_destroy = false (default) and module.brs_vpe has never
-# been instantiated, this removed block is a no-op (nothing to remove from state).
-removed {
-  from = module.brs_vpe
+resource "ibm_is_virtual_endpoint_gateway_ip" "vpe_ip" {
+  for_each    = local.brs_vpe_active && !var.retain_brs_vpe_on_destroy ? local.brs_vpe_subnets_map : {}
+  provider    = ibm.cluster
+  gateway     = ibm_is_virtual_endpoint_gateway.vpe[0].id
+  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
+}
+
+# --- Protected gateway (survives destroy when retain_brs_vpe_on_destroy = true) ---
+resource "ibm_is_virtual_endpoint_gateway" "vpe_retained" {
+  count           = local.brs_vpe_active && var.retain_brs_vpe_on_destroy ? 1 : 0
+  provider        = ibm.cluster
+  name            = local.brs_vpe_name_resolved
+  vpc             = local.resolved_vpc_id
+  resource_group  = var.cluster_resource_group_id
+  security_groups = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
+
+  target {
+    crn           = module.backup_recovery_instance.brs_instance_crn
+    resource_type = "provider_cloud_service"
+  }
 
   lifecycle {
-    destroy = false
+    prevent_destroy = true
   }
+
+  depends_on = [module.brs_s2s_auth]
+}
+
+resource "ibm_is_virtual_endpoint_gateway_ip" "vpe_ip_retained" {
+  for_each    = local.brs_vpe_active && var.retain_brs_vpe_on_destroy ? local.brs_vpe_subnets_map : {}
+  provider    = ibm.cluster
+  gateway     = ibm_is_virtual_endpoint_gateway.vpe_retained[0].id
+  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# Moved blocks: transfer state between the two gateway variants when the flag
+# is toggled. No API calls are made — only the state address changes.
+moved {
+  from = ibm_is_virtual_endpoint_gateway.vpe[0]
+  to   = ibm_is_virtual_endpoint_gateway.vpe_retained[0]
+}
+
+moved {
+  from = ibm_is_virtual_endpoint_gateway.vpe_retained[0]
+  to   = ibm_is_virtual_endpoint_gateway.vpe[0]
 }
 
 # Fetch the kube-vpegw-<vpc-id> security group that IKS/ROKS creates on every
@@ -866,12 +903,10 @@ resource "helm_release" "data_source_connector" {
     ibm_container_vpc_worker_pool.data_source_connector,
     kubernetes_namespace_v1.dsc_namespace,
     # Ensure the VPE Gateway is live before the DSC pod starts.
-    # When create_brs_vpe = true, the VPEG is module.brs_vpe[0]; DSC traffic
-    # routes to BRS via the VPEG private endpoint immediately on pod startup.
-    # When create_brs_vpe = false (cross-account, VPEG managed externally),
-    # module.brs_vpe has count = 0 so this dep is a no-op — safe in all configs.
-    module.brs_vpe,
-    terraform_data.check_existing_registration,
+    # ibm_is_virtual_endpoint_gateway.vpe / .vpe_retained both have count = 0
+    # when create_brs_vpe = false, so these deps are no-ops in that case.
+    ibm_is_virtual_endpoint_gateway.vpe,
+    ibm_is_virtual_endpoint_gateway.vpe_retained,
   ]
 
   lifecycle {

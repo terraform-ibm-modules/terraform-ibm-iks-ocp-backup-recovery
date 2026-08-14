@@ -67,7 +67,7 @@ variable "create_brs_vpe" {
 
 variable "retain_brs_vpe_on_destroy" {
   type        = bool
-  description = "Set to true (alongside create_brs_vpe=false) to remove the VPE from Terraform state without destroying it in IBM Cloud. Use when the VPE is shared with other clusters."
+  description = "Set to true when the VPE is shared with other clusters. Before destroying, manually run: terraform state rm 'module.backup_recovery.module.brs_vpe' — then destroy. Terraform will not touch what it no longer tracks."
   default     = false
   nullable    = false
 }
