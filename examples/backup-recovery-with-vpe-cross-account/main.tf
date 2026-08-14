@@ -302,6 +302,13 @@ locals {
 data "ibm_is_security_group" "kube_vpeg_sg" {
   provider = ibm.source
   name     = "kube-vpegw-${local.vpc_id}"
+
+  depends_on = [
+    ibm_container_vpc_cluster.vpc_cluster,
+    data.ibm_container_vpc_cluster.vpc_cluster_data,
+    module.backup_recovery,
+    module.brs_s2s_auth,
+  ]
 }
 
 resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {

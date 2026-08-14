@@ -361,6 +361,12 @@ module "backup_recover_protect_iks" {
 data "ibm_is_security_group" "kube_vpeg_sg" {
   count = local.brs_vpe_active ? 1 : 0
   name  = "kube-vpegw-${local.vpc_id}"
+
+  depends_on = [
+    ibm_container_vpc_cluster.vpc_cluster,
+    data.ibm_container_vpc_cluster.vpc_cluster_data,
+    module.backup_recover_protect_iks,
+  ]
 }
 
 resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
