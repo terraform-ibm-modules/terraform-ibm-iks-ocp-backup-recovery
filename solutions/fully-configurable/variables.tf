@@ -500,6 +500,28 @@ variable "brs_vpe_name" {
   default     = null
 }
 
+variable "retain_brs_vpe_on_destroy" {
+  description = <<-DESC
+    Set to `true` before destroying this module instance when the BRS Virtual
+    Private Endpoint Gateway (VPE) was created here (`create_brs_vpe = true`)
+    and is shared with other clusters in the same VPC.
+
+    **Workflow** — before running `terraform destroy` on the cluster that owns
+    the VPE:
+      1. Set `create_brs_vpe = false` and `retain_brs_vpe_on_destroy = true`.
+      2. Run `terraform apply` — Terraform removes the VPE resources from
+         state but **does not delete them** in IBM Cloud.
+      3. Run `terraform destroy` — only the cluster's own resources are removed;
+         the VPE stays in place for the remaining clusters.
+
+    Requires Terraform ≥ 1.7. Has no effect when `create_brs_vpe = false`
+    (nothing to retain) or when the VPE was never created.
+  DESC
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "dsc_worker_pool_zones" {
   description = "Number of zones to create worker pools in. Defaults to 1 for single-zone deployments. Set to 2 or 3 for multi-zone high availability. Must be between 1 and 3."
   type        = number

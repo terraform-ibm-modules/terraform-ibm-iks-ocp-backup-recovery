@@ -562,6 +562,30 @@ module "brs_vpe" {
   depends_on = [module.brs_s2s_auth]
 }
 
+# When retain_brs_vpe_on_destroy = true the caller has signalled that this VPE
+# is shared with other clusters in the same VPC.  The `removed` block (Terraform
+# ≥ 1.7) drops the module's resources from state without issuing any destroy API
+# call, so a subsequent `terraform destroy` leaves the VPE intact.
+#
+# Prerequisite: set create_brs_vpe = false (count = 0) BEFORE applying this flag.
+# Terraform requires the `removed` target to be absent from the active config —
+# if create_brs_vpe is still true (count=1), Terraform will produce a plan error.
+#
+# Workflow (apply BEFORE destroy):
+#   1. Set create_brs_vpe = false, retain_brs_vpe_on_destroy = true
+#   2. terraform apply  → VPE resources removed from state, VPE untouched in cloud
+#   3. terraform destroy → only cluster-owned resources are destroyed
+#
+# When retain_brs_vpe_on_destroy = false (default) and module.brs_vpe has never
+# been instantiated, this removed block is a no-op (nothing to remove from state).
+removed {
+  from = module.brs_vpe
+
+  lifecycle {
+    destroy = false
+  }
+}
+
 # Fetch the kube-vpegw-<vpc-id> security group that IKS/ROKS creates on every
 # VPC cluster. It is pre-scoped to allow cluster nodes to reach VPE endpoints.
 data "ibm_is_security_group" "kube_vpeg_sg" {

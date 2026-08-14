@@ -82,10 +82,11 @@ module "protect_cluster" {
   brs_create_new_connection = var.brs_create_new_connection
   connection_env_type       = var.connection_env_type
   # --- VPE + S2S (cross-account and same-account private routing) ---
-  create_brs_vpe = var.create_brs_vpe
-  vpc_id         = var.vpc_id
-  vpc_subnets    = var.vpc_subnets
-  brs_vpe_name   = var.brs_vpe_name
+  create_brs_vpe            = var.create_brs_vpe
+  vpc_id                    = var.vpc_id
+  vpc_subnets               = var.vpc_subnets
+  brs_vpe_name              = var.brs_vpe_name
+  retain_brs_vpe_on_destroy = var.retain_brs_vpe_on_destroy
   # --- Data Source Connector (DSC) ---
   dsc_chart_uri           = var.dsc_chart_uri
   dsc_name                = var.dsc_name

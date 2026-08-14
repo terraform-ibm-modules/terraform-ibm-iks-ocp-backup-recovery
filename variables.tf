@@ -321,6 +321,34 @@ variable "brs_vpe_name" {
   default     = null
 }
 
+# tflint-ignore: terraform_unused_declarations
+variable "retain_brs_vpe_on_destroy" {
+  description = <<-DESC
+    Set to `true` before destroying this module instance when the BRS Virtual
+    Private Endpoint Gateway (VPE) was created here (`create_brs_vpe = true`)
+    and is shared with other clusters in the same VPC.
+
+    **Workflow** — before running `terraform destroy` on the cluster that owns
+    the VPE:
+      1. Set `create_brs_vpe = false` and `retain_brs_vpe_on_destroy = true`.
+      2. Run `terraform apply` — Terraform removes the VPE resources from
+         state but **does not delete them** in IBM Cloud.
+      3. Run `terraform destroy` — only the cluster's own resources are removed;
+         the VPE stays in place for the remaining clusters.
+
+    Requires Terraform ≥ 1.7. Has no effect when `create_brs_vpe = false`
+    (nothing to retain) or when the VPE was never created.
+  DESC
+  type        = bool
+  default     = false
+  nullable    = false
+
+  validation {
+    condition     = !var.retain_brs_vpe_on_destroy || !var.create_brs_vpe
+    error_message = "Set `create_brs_vpe = false` before enabling `retain_brs_vpe_on_destroy = true`. The `removed` block requires module.brs_vpe[0] to be absent from the active configuration."
+  }
+}
+
 ##############################################################################
 # Use Case Control Flags
 ##############################################################################

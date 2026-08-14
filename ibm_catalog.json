@@ -589,6 +589,10 @@
               "display_name": "BRS VPE Gateway Name"
             },
             {
+              "key": "retain_brs_vpe_on_destroy",
+              "display_name": "Retain BRS VPE on Destroy"
+            },
+            {
               "key": "dsc_worker_pool_zones",
               "display_name": "DSC Worker Pool Zones"
             },
