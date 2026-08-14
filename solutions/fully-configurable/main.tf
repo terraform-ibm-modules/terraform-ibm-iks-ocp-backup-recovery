@@ -143,11 +143,13 @@ locals {
   # cross-cluster). Prefers the explicitly Terraform-managed PG when recovery_pg_name
   # is set, falls back to the BRS-assigned auto-protect PG ID, then "" as a
   # plan-time placeholder (replaced by the real value at apply).
-  recovery_pg_id = coalesce(
+  # try() wraps coalesce() so that when all arguments are null (e.g. during a
+  # plan before the module outputs are known) it gracefully returns "" instead
+  # of throwing "no non-null, non-empty-string arguments".
+  recovery_pg_id = try(coalesce(
     local.recovery_pg_name != null ? try(module.protect_cluster.protection_group_ids[local.recovery_pg_name], null) : null,
     module.protect_cluster.auto_protect_pg_id,
-    ""
-  )
+  ), "")
 }
 
 ##############################################################################
