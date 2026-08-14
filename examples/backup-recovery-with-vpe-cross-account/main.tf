@@ -6,16 +6,15 @@
 #   SOURCE account  (source_ibmcloud_api_key / ibm.source provider alias)
 #     - IKS VPC cluster  (created or existing)
 #     - VPC + subnet + public gateway  (created when cluster_name_id = null)
-#     - VPE Gateway  (created by root module when create_brs_vpe = true)
+#     - VPE Gateway  (ibm_is_virtual_endpoint_gateway.brs_vpe — source account)
 #
 #   TARGET account  (ibmcloud_api_key / default ibm provider)
 #     - BRS instance  (new or existing)
 #     - BRS data-source connection + registration token
-#     - S2S IAM authorization policy  (created automatically when cross-account
-#       is detected by comparing ibm vs ibm.cluster provider tokens)
+#     - S2S IAM authorization policy  (module.brs_s2s_auth — target account)
 #
-# Apply order (enforced by the root module's internal dependency graph)
-# -----------------------------------------------------------------------
+# Apply order
+# -----------
 # Track A (target account, starts immediately):
 #   BRS instance → connection → registration token
 #   S2S IAM auth policy  (waits only for BRS instance GUID)
@@ -54,6 +53,27 @@ locals {
       zone = ibm_is_subnet.subnet_zone_1[0].zone
     }
   ]
+}
+
+##############################################################################
+# Source account identity (used for cross-account S2S policy)
+# The ibm_iam_auth_token data source only exposes raw JWT strings.
+# Decode the payload (middle segment) to extract the BSS account ID.
+##############################################################################
+
+data "ibm_iam_auth_token" "source_account" {
+  provider = ibm.source
+}
+
+locals {
+  src_jwt_raw = split(".", data.ibm_iam_auth_token.source_account.iam_access_token)[1]
+  src_jwt_padded = format("%s%s",
+    local.src_jwt_raw,
+    substr("====", 0, (4 - (length(local.src_jwt_raw) % 4)) % 4)
+  )
+  source_account_id = jsondecode(
+    base64decode(replace(replace(local.src_jwt_padded, "-", "+"), "_", "/"))
+  ).account.bss
 }
 
 ##############################################################################
@@ -173,22 +193,20 @@ data "ibm_container_cluster_config" "cluster_config" {
 #
 # The default ibm provider (target account) handles all BRS resources:
 #   - BRS instance, data-source connection, registration token
-#   - S2S IAM authorization policy (auto-created when cross-account detected)
 #
-# The ibm.cluster provider alias (source account) handles all cluster
+# The ibm.source_account provider alias (source account) handles all cluster
 # and VPC resources:
 #   - cluster data sources, DSC worker pool, Helm chart, source registration
-#   - VPE Gateway (via create_brs_vpe = true + vpc_id / vpc_subnets)
 #
-# Resource ordering inside the root module:
-#   BRS instance → S2S auth → VPEG → Helm/DSC → source registration
+# VPE Gateway and S2S policy are created directly in this example below the
+# module call (see "S2S IAM Authorization Policy" and "VPE Gateway" sections).
 ##############################################################################
 
 module "backup_recovery" {
   source = "../.."
   providers = {
-    ibm         = ibm        # target account — BRS instance, connection, S2S auth
-    ibm.cluster = ibm.source # source account — cluster, DSC worker pool, VPEG
+    ibm                = ibm        # target account — BRS instance, connection
+    ibm.source_account = ibm.source # source account — cluster, DSC worker pool
   }
 
   # ---- Cluster (source account) ----
@@ -205,32 +223,15 @@ module "backup_recovery" {
   enable_auto_protect          = false
 
   # ---- BRS instance (target account) ----
-  # brs_resource_group_id points at the TARGET-account resource group so the
-  # BRS instance lands in the correct account.
   brs_resource_group_id     = module.target_resource_group.resource_group_id
   existing_brs_instance_crn = var.existing_brs_instance_crn
   brs_instance_name         = "${var.prefix}-brs"
   brs_connection_name       = "${var.prefix}-brs-connection"
   brs_create_new_connection = true
 
-  # ---- Endpoint settings ----
   # Use public endpoint so Terraform (CI/workstation) can reach the BRS API.
-  # DSC traffic routes privately via the VPE Gateway.
+  # DSC traffic routes privately via the VPE Gateway created below.
   brs_endpoint_type = "public"
-
-  # ---- VPE Gateway + S2S authorization (cross-account) ----
-  # create_brs_vpe = true  → root module creates the VPEG in the source-account
-  #                          VPC (using ibm.cluster provider).
-  # S2S IAM auth policy is created automatically when the module detects that
-  # the ibm.cluster provider token (source account) differs from the default
-  # ibm provider token (target/BRS account). No input variable needed.
-  # vpc_id / vpc_subnets   → supplied explicitly because the cluster is created
-  #                          in the same apply; auto-discovery from worker-pool
-  #                          data sources would be unknown at plan time.
-  create_brs_vpe = true
-  brs_vpe_name   = "${var.prefix}-brs-connection-vpe"
-  vpc_id         = local.vpc_id
-  vpc_subnets    = local.vpc_subnets
 
   # ---- Backup policy ----
   policies = [
@@ -259,4 +260,75 @@ module "backup_recovery" {
 
   resource_tags = var.resource_tags
   access_tags   = var.access_tags
+}
+
+##############################################################################
+# S2S IAM Authorization Policy (target/BRS account)
+# Allows the source-account VPC endpoint-gateway service to resolve the BRS
+# CRN across account boundaries. Created in the TARGET account (default ibm provider).
+##############################################################################
+
+module "brs_s2s_auth" {
+  source  = "terraform-ibm-modules/s2s-auth/ibm"
+  version = "2.3.1"
+
+  enable_cbr = false
+
+  service_map = {
+    "brs-vpe-source-to-brs-target" = {
+      source_service_name         = "is"
+      source_resource_type        = "endpoint-gateway"
+      source_service_account_id   = local.source_account_id
+      target_service_name         = "backup-recovery"
+      target_resource_instance_id = module.backup_recovery.brs_instance_guid
+      roles                       = ["Viewer"]
+      description                 = "Allow source-account VPC endpoint-gateway to target BRS instance ${module.backup_recovery.brs_instance_guid}"
+    }
+  }
+
+  depends_on = [module.backup_recovery]
+}
+
+##############################################################################
+# VPE Gateway (source account)
+# Routes DSC↔BRS traffic over the IBM private backbone.
+##############################################################################
+
+locals {
+  brs_vpe_name    = "${var.prefix}-brs-connection-vpe"
+  brs_vpe_subnets = { for s in local.vpc_subnets : s.zone => s }
+}
+
+data "ibm_is_security_group" "kube_vpeg_sg" {
+  provider = ibm.source
+  name     = "kube-vpegw-${local.vpc_id}"
+}
+
+resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
+  for_each = local.brs_vpe_subnets
+  provider = ibm.source
+  subnet   = each.value.id
+  name     = "${local.brs_vpe_name}-${each.key}-ip"
+}
+
+resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
+  provider        = ibm.source
+  name            = local.brs_vpe_name
+  vpc             = local.vpc_id
+  resource_group  = module.source_resource_group.resource_group_id
+  security_groups = [data.ibm_is_security_group.kube_vpeg_sg.id]
+
+  target {
+    crn           = module.backup_recovery.brs_instance_crn
+    resource_type = "provider_cloud_service"
+  }
+
+  depends_on = [module.brs_s2s_auth]
+}
+
+resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
+  for_each    = local.brs_vpe_subnets
+  provider    = ibm.source
+  gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe.id
+  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
 }

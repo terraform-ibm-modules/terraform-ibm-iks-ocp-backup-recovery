@@ -8,12 +8,12 @@
 # Both clusters live in the same account but in separate VPCs so that each
 # gets its own VPE Gateway bound to the BRS instance.
 #
-#   SOURCE cluster  (ibm / ibm.cluster = ibm)
+#   SOURCE cluster  (ibm / ibm.source_account = ibm)
 #     - IKS VPC cluster  (created or existing)
 #     - VPC + subnet + public gateway  (created when source_cluster_name_id = null)
 #     - VPE Gateway bound to source VPC  (create_brs_vpe = true)
 #
-#   TARGET cluster  (ibm / ibm.cluster = ibm)
+#   TARGET cluster  (ibm / ibm.source_account = ibm)
 #     - IKS VPC cluster  (created or existing)
 #     - VPC + subnet + public gateway  (created when target_cluster_name_id = null)
 #     - VPE Gateway bound to target VPC  (create_brs_vpe = true)
@@ -368,23 +368,15 @@ resource "terraform_data" "wait_for_source_workload" {
 
 ##############################################################################
 # Source cluster — BRS backup & recovery module
-#
-# ibm         = ibm   → BRS instance, connection, policies live in this account
-# ibm.cluster = ibm   → cluster data sources, DSC worker pool, VPEG (same account)
-#
-# create_brs_vpe = true → VPEG created in source VPC so DSC→BRS traffic stays
-#                         on the IBM private backbone instead of the public internet.
-# vpc_id / vpc_subnets  → supplied explicitly: cluster created in same apply so
-#                         auto-discovery from worker pools would be unknown at plan time.
 ##############################################################################
 
 module "source_backup_recovery" {
   source = "../.."
   providers = {
-    ibm         = ibm
-    ibm.cluster = ibm
-    helm        = helm.source
-    kubernetes  = kubernetes.source
+    ibm                = ibm
+    ibm.source_account = ibm
+    helm               = helm.source
+    kubernetes         = kubernetes.source
   }
 
   # ---- Cluster ----
@@ -407,28 +399,22 @@ module "source_backup_recovery" {
   brs_create_new_connection = var.brs_create_new_connection
 
   # Use public endpoint so Terraform (CI/workstation) can reach the BRS API.
-  # DSC traffic routes privately via the VPE Gateway.
+  # DSC traffic routes privately via the source VPE Gateway created below.
   brs_endpoint_type = "public"
-
-  # ---- VPE Gateway (source VPC) ----
-  create_brs_vpe = true
-  brs_vpe_name   = "${var.prefix}-source-vpe"
-  vpc_id         = local.source_vpc_id
-  vpc_subnets    = local.source_vpc_subnets
 
   # ---- Backup policy ----
   policies = [{
     name              = "${var.prefix}-continuous-backup"
     create_new_policy = true
     schedule = {
-      unit = "Minutes"
-      minute_schedule = {
-        frequency = 240
+      unit = "Hours"
+      hour_schedule = {
+        frequency = 4
       }
     }
     retention = {
-      unit     = "Days"
-      duration = 7
+      unit     = "Weeks"
+      duration = 1
     }
   }]
 
@@ -464,23 +450,16 @@ module "source_backup_recovery" {
 
 ##############################################################################
 # Target cluster — BRS backup & recovery module
-#
 # Reuses the same BRS instance created by module.source_backup_recovery.
-# create_new_brs_instance = false tells the root module at plan time that no
-# new BRS instance should be provisioned even though the source CRN is
-# post-apply unknown when var.existing_brs_instance_crn is null.
-#
-# create_brs_vpe = true → VPEG created in the target VPC (separate from the
-#                         source VPE) so target DSC traffic also stays private.
 ##############################################################################
 
 module "target_backup_recovery" {
   source = "../.."
   providers = {
-    ibm         = ibm
-    ibm.cluster = ibm
-    helm        = helm.target
-    kubernetes  = kubernetes.target
+    ibm                = ibm
+    ibm.source_account = ibm
+    helm               = helm.target
+    kubernetes         = kubernetes.target
   }
 
   # ---- Cluster ----
@@ -497,20 +476,11 @@ module "target_backup_recovery" {
   enable_auto_protect          = false
 
   # ---- BRS instance (reuse source instance) ----
-  # existing_brs_instance_crn references the source module output when no
-  # pre-existing CRN is provided; create_new_brs_instance = false ensures
-  # Terraform does not try to create a second instance at plan time.
   existing_brs_instance_crn = var.existing_brs_instance_crn != null ? var.existing_brs_instance_crn : module.source_backup_recovery.brs_instance_crn
   create_new_brs_instance   = false
   brs_connection_name       = var.target_connection_name != null ? var.target_connection_name : "${var.prefix}-target-connection"
   brs_create_new_connection = var.brs_create_new_connection
   brs_endpoint_type         = "public"
-
-  # ---- VPE Gateway (target VPC) ----
-  create_brs_vpe = true
-  brs_vpe_name   = "${var.prefix}-target-vpe"
-  vpc_id         = local.target_vpc_id
-  vpc_subnets    = local.target_vpc_subnets
 
   # Target cluster is a recovery destination only — no policies or protection groups
   policies          = []
@@ -519,6 +489,81 @@ module "target_backup_recovery" {
 
   resource_tags = var.resource_tags
   access_tags   = var.access_tags
+}
+
+##############################################################################
+# VPE Gateways — one per cluster VPC
+# Routes DSC↔BRS traffic over the IBM private backbone for both clusters.
+##############################################################################
+
+locals {
+  source_vpe_name    = "${var.prefix}-source-vpe"
+  target_vpe_name    = "${var.prefix}-target-vpe"
+  source_vpe_subnets = { for s in local.source_vpc_subnets : s.zone => s }
+  target_vpe_subnets = { for s in local.target_vpc_subnets : s.zone => s }
+  brs_instance_crn   = module.source_backup_recovery.brs_instance_crn
+}
+
+data "ibm_is_security_group" "source_kube_vpeg_sg" {
+  name = "kube-vpegw-${local.source_vpc_id}"
+}
+
+data "ibm_is_security_group" "target_kube_vpeg_sg" {
+  name = "kube-vpegw-${local.target_vpc_id}"
+}
+
+# Source VPE
+resource "ibm_is_subnet_reserved_ip" "source_vpe_ip" {
+  for_each = local.source_vpe_subnets
+  subnet   = each.value.id
+  name     = "${local.source_vpe_name}-${each.key}-ip"
+}
+
+resource "ibm_is_virtual_endpoint_gateway" "source_vpe" {
+  name            = local.source_vpe_name
+  vpc             = local.source_vpc_id
+  resource_group  = module.resource_group.resource_group_id
+  security_groups = [data.ibm_is_security_group.source_kube_vpeg_sg.id]
+
+  target {
+    crn           = local.brs_instance_crn
+    resource_type = "provider_cloud_service"
+  }
+
+  depends_on = [module.source_backup_recovery]
+}
+
+resource "ibm_is_virtual_endpoint_gateway_ip" "source_vpe_ip" {
+  for_each    = local.source_vpe_subnets
+  gateway     = ibm_is_virtual_endpoint_gateway.source_vpe.id
+  reserved_ip = ibm_is_subnet_reserved_ip.source_vpe_ip[each.key].reserved_ip
+}
+
+# Target VPE
+resource "ibm_is_subnet_reserved_ip" "target_vpe_ip" {
+  for_each = local.target_vpe_subnets
+  subnet   = each.value.id
+  name     = "${local.target_vpe_name}-${each.key}-ip"
+}
+
+resource "ibm_is_virtual_endpoint_gateway" "target_vpe" {
+  name            = local.target_vpe_name
+  vpc             = local.target_vpc_id
+  resource_group  = module.resource_group.resource_group_id
+  security_groups = [data.ibm_is_security_group.target_kube_vpeg_sg.id]
+
+  target {
+    crn           = local.brs_instance_crn
+    resource_type = "provider_cloud_service"
+  }
+
+  depends_on = [module.source_backup_recovery, module.target_backup_recovery]
+}
+
+resource "ibm_is_virtual_endpoint_gateway_ip" "target_vpe_ip" {
+  for_each    = local.target_vpe_subnets
+  gateway     = ibm_is_virtual_endpoint_gateway.target_vpe.id
+  reserved_ip = ibm_is_subnet_reserved_ip.target_vpe_ip[each.key].reserved_ip
 }
 
 ##############################################################################

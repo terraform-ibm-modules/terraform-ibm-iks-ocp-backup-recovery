@@ -98,15 +98,3 @@ output "brs_tags" {
   description = "BRS tags that should be added to the cluster to prevent tag drift. Include these in your cluster's tags input."
   value       = ["brs-region:${local.brs_instance_region}", "brs-guid:${local.brs_instance_guid}"]
 }
-
-output "brs_vpe_ips" {
-  description = "Map of VPEG name to reserved IP addresses. Populated only when create_brs_vpe = true; empty map otherwise."
-  value = local.brs_vpe_active ? {
-    (local.brs_vpe_name_resolved) = values(ibm_is_subnet_reserved_ip.brs_vpe_ip)[*].address
-  } : {}
-}
-
-output "s2s_auth_policies" {
-  description = "S2S IAM authorization policies created in this account. Populated only for cross-account VPE deployments (when ibm.cluster and ibm provider resolve to different accounts); empty map otherwise."
-  value       = local.is_cross_account ? module.brs_s2s_auth[0].auth_policies : {}
-}

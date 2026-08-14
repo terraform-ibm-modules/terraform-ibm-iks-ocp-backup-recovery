@@ -34,7 +34,9 @@ output "brs_private_hostname" {
 
 output "brs_vpe_ips" {
   description = "Map of VPEG name → reserved IP list. Populated only when create_brs_vpe = true and cluster is VPC-based; empty map otherwise."
-  value       = module.backup_recover_protect_iks.brs_vpe_ips
+  value = local.brs_vpe_active ? {
+    (local.brs_vpe_name) = values(ibm_is_subnet_reserved_ip.brs_vpe_ip)[*].address
+  } : {}
 }
 
 output "protection_group_ids" {

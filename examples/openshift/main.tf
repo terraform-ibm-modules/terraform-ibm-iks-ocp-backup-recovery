@@ -93,6 +93,10 @@ locals {
       zone = ibm_is_subnet.subnet_zone_1[0].zone
     }
   ] : []
+
+  brs_vpe_name    = var.brs_vpe_name != null ? var.brs_vpe_name : "${var.prefix}-brs-vpe"
+  brs_vpe_active  = var.create_brs_vpe && !var.classic_cluster
+  brs_vpe_subnets = { for s in local.vpc_subnets : s.zone => s }
 }
 
 module "ocp_base" {
@@ -187,8 +191,8 @@ resource "time_sleep" "wait_operators" {
 module "backup_recover_protect_ocp" {
   source = "../.."
   providers = {
-    ibm         = ibm
-    ibm.cluster = ibm
+    ibm                = ibm
+    ibm.source_account = ibm
   }
 
   # ---- Cluster ----
@@ -214,22 +218,8 @@ module "backup_recover_protect_ocp" {
   dsc_worker_pool_zones     = 1
 
   # Use public endpoint so Terraform (CI/workstation) can reach the BRS API.
-  # DSC traffic routes privately via the VPE Gateway when create_brs_vpe = true.
+  # DSC traffic routes privately via the VPE Gateway created below.
   brs_endpoint_type = var.brs_endpoint_type
-
-  # ---- VPE Gateway (VPC clusters only) ----
-  # create_brs_vpe = true creates a VPEG in the cluster VPC so DSC→BRS traffic
-  # stays on the IBM private backbone. Classic clusters do not support VPE.
-  # vpc_id / vpc_subnets are supplied explicitly because the cluster is created
-  # in the same apply — auto-discovery from worker pools is unknown at plan time.
-  #
-  # brs_vpe_name is always set explicitly here because the auto-generated name
-  # derives from brs_connection_name which contains uppercase ("RoksVpc") and
-  # IBM VPC resource names must be lowercase-only: ^[a-z][-a-z0-9]*[a-z0-9]$
-  create_brs_vpe = var.create_brs_vpe && !var.classic_cluster
-  brs_vpe_name   = var.brs_vpe_name != null ? var.brs_vpe_name : (var.classic_cluster ? null : "${var.prefix}-brs-vpe")
-  vpc_id         = var.create_brs_vpe && !var.classic_cluster ? local.vpc_id : null
-  vpc_subnets    = var.create_brs_vpe && !var.classic_cluster ? local.vpc_subnets : []
 
   # ---- Backup Policy ----
   auto_protect_policy_name = "${var.prefix}-retention"
@@ -252,4 +242,40 @@ module "backup_recover_protect_ocp" {
     }
   ]
   protection_groups = []
+}
+
+##############################################################################
+# VPE Gateway — routes DSC↔BRS over IBM private backbone (VPC clusters only)
+##############################################################################
+
+data "ibm_is_security_group" "kube_vpeg_sg" {
+  count = local.brs_vpe_active ? 1 : 0
+  name  = "kube-vpegw-${local.vpc_id}"
+}
+
+resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
+  for_each = local.brs_vpe_active ? local.brs_vpe_subnets : {}
+  subnet   = each.value.id
+  name     = "${local.brs_vpe_name}-${each.key}-ip"
+}
+
+resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
+  count           = local.brs_vpe_active ? 1 : 0
+  name            = local.brs_vpe_name
+  vpc             = local.vpc_id
+  resource_group  = module.resource_group.resource_group_id
+  security_groups = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
+
+  target {
+    crn           = module.backup_recover_protect_ocp.brs_instance_crn
+    resource_type = "provider_cloud_service"
+  }
+
+  depends_on = [module.backup_recover_protect_ocp]
+}
+
+resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
+  for_each    = local.brs_vpe_active ? local.brs_vpe_subnets : {}
+  gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe[0].id
+  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
 }

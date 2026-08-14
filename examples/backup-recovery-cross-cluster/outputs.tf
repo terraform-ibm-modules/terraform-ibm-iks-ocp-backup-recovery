@@ -33,13 +33,17 @@ output "brs_private_hostname" {
 }
 
 output "source_vpe_ips" {
-  description = "Map of VPEG name → list of reserved IP objects bound to each subnet in the source VPC."
-  value       = module.source_backup_recovery.brs_vpe_ips
+  description = "Map of VPEG name → list of reserved IP addresses bound to each subnet in the source VPC."
+  value = {
+    (local.source_vpe_name) = values(ibm_is_subnet_reserved_ip.source_vpe_ip)[*].address
+  }
 }
 
 output "target_vpe_ips" {
-  description = "Map of VPEG name → list of reserved IP objects bound to each subnet in the target VPC."
-  value       = module.target_backup_recovery.brs_vpe_ips
+  description = "Map of VPEG name → list of reserved IP addresses bound to each subnet in the target VPC."
+  value = {
+    (local.target_vpe_name) = values(ibm_is_subnet_reserved_ip.target_vpe_ip)[*].address
+  }
 }
 
 output "source_connection_id" {

@@ -20,11 +20,8 @@ output "brs_private_hostname" {
 }
 
 output "brs_vpe_ips" {
-  description = "Map of VPEG name → list of reserved IP objects bound to each subnet zone in the source-account VPC."
-  value       = module.backup_recovery.brs_vpe_ips
-}
-
-output "s2s_auth_policies" {
-  description = "S2S IAM authorization policies created in the target account (key = service_map key)."
-  value       = module.backup_recovery.s2s_auth_policies
+  description = "Map of VPEG name → list of reserved IP addresses bound to each subnet zone in the source-account VPC."
+  value = {
+    (local.brs_vpe_name) = values(ibm_is_subnet_reserved_ip.brs_vpe_ip)[*].address
+  }
 }

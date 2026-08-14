@@ -288,65 +288,6 @@ variable "connection_env_type" {
 }
 
 ##############################################################################
-# Virtual Private Endpoint Gateway (VPEG) for BRS
-##############################################################################
-
-variable "create_brs_vpe" {
-  description = "Set to `true` to create a Virtual Private Endpoint Gateway (VPEG) that routes traffic from the cluster VPC to the BRS instance over the IBM private backbone. For existing clusters, `vpc_id` and `vpc_subnets` are auto-discovered from the cluster's worker pools. When creating a new cluster in the same apply, supply `vpc_id` and `vpc_subnets` explicitly (the auto-discovery reads worker pools, which are unknown until after the cluster is applied). For cross-account setups (BRS in a different IBM Cloud account), the required S2S IAM authorization policy is created automatically when the module detects that the `ibm.cluster` provider belongs to a different account than the default `ibm` provider."
-  type        = bool
-  default     = false
-  nullable    = false
-}
-
-variable "vpc_id" {
-  description = "ID of the VPC where the BRS Virtual Private Endpoint Gateway will be created. Optional when create_brs_vpe is true — when omitted the VPC ID is auto-discovered from the cluster's worker-pool subnets. Supply this explicitly only when the auto-discovery would pick the wrong VPC."
-  type        = string
-  default     = null
-}
-
-variable "vpc_subnets" {
-  description = "List of subnets in which to bind reserved IPs for the BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when create_brs_vpe is true — when omitted all subnets in the cluster VPC are discovered automatically. Supply this explicitly to restrict the VPEG to a specific subset of subnets."
-  type = list(object({
-    name = string
-    id   = string
-    zone = string
-  }))
-  default  = []
-  nullable = false
-}
-
-variable "brs_vpe_name" {
-  description = "Override the name of the BRS Virtual Private Endpoint Gateway. If null, the name is auto-generated as '<brs_connection_name>-vpe'."
-  type        = string
-  default     = null
-}
-
-variable "retain_brs_vpe_on_destroy" {
-  description = <<-DESC
-    Set to `true` when the BRS Virtual Private Endpoint Gateway created by
-    this module is shared with other clusters in the same VPC and must survive
-    when this cluster's workspace is destroyed.
-
-    When `true`, Terraform moves the VPE gateway into a `prevent_destroy`
-    protected resource block. A subsequent destroy job will skip deleting the
-    VPE Gateway while destroying all other cluster resources normally.
-
-    **Workflow** (works entirely in Schematics — no CLI access required):
-      1. Set `retain_brs_vpe_on_destroy = true`, run **Apply**.
-         Terraform moves the gateway from the normal resource to the
-         protected one via a `moved` block — no API call, no recreation.
-      2. Run **Destroy**.
-         `prevent_destroy = true` prevents the VPE from being deleted.
-         All other cluster resources are destroyed normally.
-      3. Manually delete the VPE from IBM Cloud when all clusters sharing
-         it have been decommissioned.
-  DESC
-  type        = bool
-  default     = false
-  nullable    = false
-}
-
-##############################################################################
 # Use Case Control Flags
 ##############################################################################
 

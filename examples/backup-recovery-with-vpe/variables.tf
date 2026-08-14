@@ -60,15 +60,25 @@ variable "cluster_config_endpoint_type" {
 
 variable "create_brs_vpe" {
   type        = bool
-  description = "Set to true to create the BRS VPE Gateway. Set to false (with retain_brs_vpe_on_destroy=true) to drop it from state without deleting it."
+  description = "Set to true to create the BRS VPE Gateway."
   default     = true
   nullable    = false
 }
 
-variable "retain_brs_vpe_on_destroy" {
-  type        = bool
-  description = "Set to true when the VPE is shared with other clusters. Before destroying, manually run: terraform state rm 'module.backup_recovery.module.brs_vpe' — then destroy. Terraform will not touch what it no longer tracks."
-  default     = false
+variable "vpc_id" {
+  type        = string
+  description = "VPC ID for the BRS VPE Gateway. Required only when cluster_name_id is set (existing cluster) and create_brs_vpe is true."
+  default     = null
+}
+
+variable "vpc_subnets" {
+  type = list(object({
+    name = string
+    id   = string
+    zone = string
+  }))
+  description = "Subnet list for the BRS VPE Gateway. Required only when cluster_name_id is set (existing cluster) and create_brs_vpe is true."
+  default     = []
   nullable    = false
 }
 

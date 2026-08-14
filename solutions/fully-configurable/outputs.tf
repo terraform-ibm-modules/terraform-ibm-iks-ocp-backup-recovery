@@ -84,3 +84,10 @@ output "recovery_status" {
     "Cross-cluster recovery enabled. Namespaces will be restored with prefix '${var.recovery_namespace_prefix}' to target cluster '${var.target_cluster_id}'."
   ) : "Recovery is disabled. Set 'deployment_mode = \"full_backup_recovery\"' to enable automatic recovery testing."
 }
+
+output "brs_vpe_ips" {
+  description = "Map of VPE gateway name to reserved IP addresses. Populated only when create_brs_vpe = true; empty map otherwise."
+  value = local.brs_vpe_active ? {
+    (local.brs_vpe_name_resolved) = values(ibm_is_subnet_reserved_ip.brs_vpe_ip)[*].address
+  } : {}
+}

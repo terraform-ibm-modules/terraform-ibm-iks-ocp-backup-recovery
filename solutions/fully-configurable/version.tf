@@ -6,7 +6,7 @@ terraform {
     ibm = {
       source                = "IBM-Cloud/ibm"
       version               = "2.4.0"
-      configuration_aliases = [ibm.cluster]
+      configuration_aliases = [ibm.source_account]
     }
     helm = {
       source  = "hashicorp/helm"

@@ -20,19 +20,22 @@ locals {
   # cluster_id resolves to the newly-created cluster ID or the existing one.
   cluster_id = var.cluster_name_id != null ? data.ibm_container_vpc_cluster.vpc_cluster_data[0].name : ibm_container_vpc_cluster.vpc_cluster[0].id
 
-  # When a NEW cluster is created by this example, auto-discovery in the root
-  # module cannot read worker-pool subnet IDs until after the cluster apply.
-  # Pass the subnet explicitly so ibm_is_subnet count is always known at plan time.
-  # For an existing cluster (cluster_name_id != null) leave both as null/[] so
-  # the root module auto-discovers them from the cluster API.
-  vpc_id = var.cluster_name_id == null ? ibm_is_vpc.vpc[0].id : null
+  # VPC and subnet info for the VPE Gateway.
+  # For a new cluster these are known at plan time from the ibm_is_* resources.
+  # For an existing cluster (cluster_name_id != null) the caller must supply
+  # var.vpc_id and var.vpc_subnets explicitly.
+  vpc_id = var.cluster_name_id == null ? ibm_is_vpc.vpc[0].id : var.vpc_id
   vpc_subnets = var.cluster_name_id == null ? [
     {
       name = ibm_is_subnet.subnet_zone_1[0].name
       id   = ibm_is_subnet.subnet_zone_1[0].id
       zone = ibm_is_subnet.subnet_zone_1[0].zone
     }
-  ] : []
+  ] : var.vpc_subnets
+
+  brs_vpe_name     = "${var.prefix}-brs-connection-vpe"
+  brs_vpe_subnets  = { for s in local.vpc_subnets : s.zone => s }
+  brs_instance_crn = module.backup_recovery.brs_instance_crn
 }
 
 ##############################################################################
@@ -127,8 +130,8 @@ data "ibm_container_cluster_config" "cluster_config" {
 module "backup_recovery" {
   source = "../.."
   providers = {
-    ibm         = ibm
-    ibm.cluster = ibm
+    ibm                = ibm
+    ibm.source_account = ibm
   }
 
   # ---- Cluster ----
@@ -151,19 +154,9 @@ module "backup_recovery" {
   brs_create_new_connection = true
 
   # ---- Endpoint & VPEG connectivity ----
-  # brs_endpoint_type = "public" lets Terraform (workstation/CI) reach the BRS
-  # control plane. The DSC pod reads cluster_endpoint from the registration
-  # token JWT (always the BRS private hostname) and routes its own traffic
-  # through the VPE Gateway created below — not through the public endpoint.
-  brs_endpoint_type         = "public"
-  create_brs_vpe            = var.create_brs_vpe
-  retain_brs_vpe_on_destroy = var.retain_brs_vpe_on_destroy
-
-  # Supply VPC/subnet explicitly when a new cluster is being created in the
-  # same apply — auto-discovery from worker pools is unknown at plan time.
-  # For an existing cluster these are null/[] and auto-discovery is used.
-  vpc_id      = local.vpc_id
-  vpc_subnets = local.vpc_subnets
+  # brs_endpoint_type = "public" lets Terraform (workstation/CI) reach the BRS API.
+  # DSC traffic routes privately via the VPE Gateway created below.
+  brs_endpoint_type = "public"
 
   # ---- Backup policy ----
   policies = [
@@ -193,4 +186,40 @@ module "backup_recovery" {
 
   resource_tags = var.resource_tags
   access_tags   = var.access_tags
+}
+
+##############################################################################
+# VPE Gateway — routes DSC↔BRS over IBM private backbone
+##############################################################################
+
+data "ibm_is_security_group" "kube_vpeg_sg" {
+  count = var.create_brs_vpe ? 1 : 0
+  name  = "kube-vpegw-${local.vpc_id}"
+}
+
+resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
+  for_each = var.create_brs_vpe ? local.brs_vpe_subnets : {}
+  subnet   = each.value.id
+  name     = "${local.brs_vpe_name}-${each.key}-ip"
+}
+
+resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
+  count           = var.create_brs_vpe ? 1 : 0
+  name            = local.brs_vpe_name
+  vpc             = local.vpc_id
+  resource_group  = module.resource_group.resource_group_id
+  security_groups = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
+
+  target {
+    crn           = local.brs_instance_crn
+    resource_type = "provider_cloud_service"
+  }
+
+  depends_on = [module.backup_recovery]
+}
+
+resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
+  for_each    = var.create_brs_vpe ? local.brs_vpe_subnets : {}
+  gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe[0].id
+  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
 }
