@@ -177,6 +177,11 @@ data "ibm_is_security_group" "kube_vpeg_sg" {
   count    = local.brs_vpe_active ? 1 : 0
   provider = ibm.source_account
   name     = "kube-vpegw-${local.resolved_vpc_id}"
+
+  depends_on = [
+    data.ibm_container_vpc_cluster.vpc_cluster,
+    module.protect_cluster,
+  ]
 }
 
 ##############################################################################
