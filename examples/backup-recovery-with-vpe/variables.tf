@@ -55,6 +55,24 @@ variable "cluster_config_endpoint_type" {
 }
 
 ##############################################################################
+# BRS VPE
+##############################################################################
+
+variable "create_brs_vpe" {
+  type        = bool
+  description = "Set to true to create the BRS VPE Gateway. Set to false (with retain_brs_vpe_on_destroy=true) to drop it from state without deleting it."
+  default     = true
+  nullable    = false
+}
+
+variable "retain_brs_vpe_on_destroy" {
+  type        = bool
+  description = "Set to true (alongside create_brs_vpe=false) to remove the VPE from Terraform state without destroying it in IBM Cloud. Use when the VPE is shared with other clusters."
+  default     = false
+  nullable    = false
+}
+
+##############################################################################
 # BRS instance
 ##############################################################################
 

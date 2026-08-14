@@ -155,8 +155,9 @@ module "backup_recovery" {
   # control plane. The DSC pod reads cluster_endpoint from the registration
   # token JWT (always the BRS private hostname) and routes its own traffic
   # through the VPE Gateway created below — not through the public endpoint.
-  brs_endpoint_type = "public"
-  create_brs_vpe    = true
+  brs_endpoint_type         = "public"
+  create_brs_vpe            = var.create_brs_vpe
+  retain_brs_vpe_on_destroy = var.retain_brs_vpe_on_destroy
 
   # Supply VPC/subnet explicitly when a new cluster is being created in the
   # same apply — auto-discovery from worker pools is unknown at plan time.
