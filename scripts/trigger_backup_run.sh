@@ -37,6 +37,21 @@ PROTECTION_GROUP_ID=$5
 # Format: clusterid/::8009179080677672:1753125047518:126734 -> 8009179080677672:1753125047518:126734
 API_PG_ID="${PROTECTION_GROUP_ID#*::}"
 
+# ---------------------------------------------------------------------------
+# Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
+# Toggle off once the script is known-good to reduce Terraform output noise.
+# ---------------------------------------------------------------------------
+VERBOSE="${VERBOSE:-0}"
+
+# vlog LABEL JSON — print label + pretty-printed JSON to stderr when verbose.
+vlog() {
+  [[ "${VERBOSE}" == "1" ]] || return 0
+  local label="$1"
+  local body="$2"
+  echo "[VERBOSE] ${label}:" >&2
+  echo "${body}" | jq '.' 2>/dev/null >&2 || echo "${body}" >&2
+}
+
 echo "=== trigger_backup_run.sh invoked at $(date) ===" >&2
 echo "Protection Group ID (API): ${API_PG_ID}" >&2
 
@@ -60,6 +75,8 @@ call_api() {
   http_code=$(echo "$response" | tail -n1)
   local body
   body=$(echo "$response" | sed '$d')
+
+  vlog "${method} ${path} → HTTP ${http_code}" "${body}"
 
   if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
     echo "API Error: HTTP $http_code from $method $path" >&2

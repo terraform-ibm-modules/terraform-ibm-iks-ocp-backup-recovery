@@ -51,6 +51,21 @@ BRS_ENDPOINT=$4
 TIMEOUT_S="${5:-1800}"
 POLL_S="${6:-20}"
 
+# ---------------------------------------------------------------------------
+# Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
+# Toggle off once the script is known-good to reduce Terraform output noise.
+# ---------------------------------------------------------------------------
+VERBOSE="${VERBOSE:-0}"
+
+# vlog LABEL JSON — print label + pretty-printed JSON to stderr when verbose.
+vlog() {
+  [[ "${VERBOSE}" == "1" ]] || return 0
+  local label="$1"
+  local body="$2"
+  echo "[VERBOSE] ${label}:" >&2
+  echo "${body}" | jq '.' 2>/dev/null >&2 || echo "${body}" >&2
+}
+
 echo "=== wait-for-deregistration.sh invoked at $(date) ===" >&2
 echo "region=${REGION}  tenant=${TENANT}  registration_id=${REGISTRATION_ID}" >&2
 echo "timeout=${TIMEOUT_S}s  poll=${POLL_S}s" >&2
@@ -82,6 +97,7 @@ while (( elapsed < TIMEOUT_S )); do
       (( elapsed += POLL_S )) || true
       continue
     }
+  vlog "registrations-list id=${REGISTRATION_ID}" "${raw}"
 
   count=$(echo "${raw}" | jq '.registrations | length' 2>/dev/null || echo "1")
 
