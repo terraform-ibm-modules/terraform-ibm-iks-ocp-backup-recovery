@@ -4,24 +4,13 @@
 # Poll the BRS registrations list until this cluster's source registration is
 # gone, confirming BRS has completed the async deregistration cleanup. Runs as a
 # destroy-time provisioner between the source-registration DELETE and the
-# deletion of the data source connection (a connection that is still referenced
-# by a source cannot be deleted).
+# deletion of the data source connection.
 #
-# Why no registration ID
-# ----------------------
-# A destroy-time provisioner may only read `self`, so the only way to pass the
-# registration ID would be to store it in the waiter's input — which makes the
-# waiter depend on the registration resource, which makes Terraform destroy the
-# waiter BEFORE the registration. The poll would then always run against a source
-# that is still registered and could only ever time out, while the DSC pod and
-# the brsagent RBAC get torn down seconds after the DELETE — orphaning the
-# brs-backup-agent-* namespace on the cluster.
-#
-# The registration is therefore matched on identifiers that exist independently
-# of the registration resource: the data source connection ID it was registered
-# against, and the cluster API endpoint it was registered for. The match is
-# performed against the whole serialized registration object so it does not
-# depend on the exact field path BRS uses for either value.
+# Matched on connection ID / cluster endpoint rather than registration ID: a
+# destroy-time provisioner can only read `self`, so passing the ID would mean
+# referencing the registration resource, which inverts the destroy edge and runs
+# this poller before the DELETE. The match tests the whole serialized
+# registration object, so it does not depend on BRS's exact field paths.
 #
 # Usage:
 #   $0 REGION TENANT BRS_ENDPOINT CONNECTION_ID CLUSTER_ENDPOINT [TIMEOUT_S] [POLL_S]

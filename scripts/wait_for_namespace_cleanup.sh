@@ -2,16 +2,15 @@
 
 set -e
 
-# Wait for BRS to clean up runtime resources after source deregistration.
-# BRS removes the brs-backup-agent-* namespace asynchronously, driving the DSC
-# pod over its gRPC tunnel and using the brsagent cluster-admin RBAC. This script
-# polls until the namespace is gone so terraform does not tear the DSC and that
-# RBAC down while the removal is still in flight.
+# Wait for BRS to clean up runtime resources after source deregistration. BRS
+# removes the brs-backup-agent-* namespace itself, via the DSC tunnel and the
+# brsagent RBAC; this script only observes (every kubectl call is a `get`) so
+# terraform does not tear those down while the removal is in flight.
 #
-# The script always exits 0: a cluster it cannot reach must never block the rest
-# of `terraform destroy`. It is deliberately loud about every reason it gives up,
-# because a silent skip here is indistinguishable from success and leaves an
-# orphaned namespace that blocks the next apply (see check-existing-registration.sh).
+# Always exits 0 — an unreachable cluster must not block `terraform destroy` —
+# but reports why it could not observe, because a silent skip is
+# indistinguishable from success and leaves a namespace that blocks the next
+# apply (see check-existing-registration.sh).
 #
 # Usage:
 #   wait_for_namespace_cleanup.sh <dsc_namespace> [max_attempts] [binaries_path]

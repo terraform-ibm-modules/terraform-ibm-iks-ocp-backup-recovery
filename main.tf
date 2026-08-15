@@ -979,29 +979,11 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
     helm_release.data_source_connector,
     time_sleep.wait_for_dsc_stabilization,
     module.backup_recovery_instance,
-    # DESTROY ORDERING — do not remove.
-    #
-    # Deleting this resource sends DELETE /protection-sources/registrations to
-    # BRS. BRS then tears the agent down *inside the cluster* asynchronously: it
-    # drives the DSC gRPC tunnel and uses the brsagent cluster-admin RBAC to
-    # remove the brs-backup-agent-<uuid> namespace. That work starts only after
-    # the DELETE returns, so the DSC pod and the brsagent SA/CRB/token MUST
-    # outlive this resource.
-    #
-    # Terraform destroys dependents before their dependencies, so depending on
-    # the waiter here (rather than the waiter depending on this resource) is what
-    # puts the waiter *after* the DELETE:
-    #
-    #   source_registration            (DELETE sent)
-    #     -> wait_before_helm_destroy  (polls cluster until brs-backup-agent-* is gone)
-    #       -> brs_source_deregistration_wait (polls BRS until the registration is gone)
-    #         -> helm_release / brsagent SA + CRB + token
-    #           -> module.backup_recovery_instance (data source connection)
-    #
-    # A waiter that references source_registration.source_id gets the edge the
-    # other way round and runs *before* the DELETE, which is exactly the bug that
-    # orphaned brs-backup-agent-* namespaces. Keep the waiters free of any
-    # reference to this resource.
+    # BRS removes the brs-backup-agent-* namespace asynchronously after this
+    # DELETE, via the DSC tunnel and the brsagent RBAC, so both must outlive it.
+    # Depending on the waiter (rather than the reverse) is what destroys it after
+    # us. Never reference this resource from either waiter: that inverts the edge,
+    # runs them before the DELETE, and orphans the namespace.
     terraform_data.wait_before_helm_destroy,
   ]
 
@@ -1016,20 +998,14 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
   }
 }
 
-# Poll until BRS confirms the source registration is fully gone, before the data
-# source connection is deleted. Deleting a connection that a source still
-# references fails with "can't be deleted as it is being used by the source".
+# Poll until BRS confirms the source registration is gone, before the data source
+# connection is deleted — deleting a connection a source still references fails
+# with "can't be deleted as it is being used by the source". Runs after the DELETE
+# and before the helm release / brsagent RBAC are torn down.
 #
-# Destroy ordering (see the depends_on block on source_registration for the full
-# chain): this resource is destroyed AFTER wait_before_helm_destroy — which
-# depends on it — and BEFORE the helm release, the brsagent RBAC, and the
-# connection inside module.backup_recovery_instance.
-#
-# It must NOT reference ibm_backup_recovery_source_registration in any way. Doing
-# so inverts the destroy edge and makes the poller run before the DELETE, where it
-# can only ever time out. The registration is therefore identified by values that
-# exist independently of it: the data source connection ID it was registered
-# against, and the cluster API endpoint it was registered for.
+# Identified by connection ID + cluster endpoint, never by source_id: referencing
+# the registration resource inverts the destroy edge and runs this poller before
+# the DELETE it is waiting on.
 resource "terraform_data" "brs_source_deregistration_wait" {
   depends_on = [
     helm_release.data_source_connector,
@@ -1050,33 +1026,19 @@ resource "terraform_data" "brs_source_deregistration_wait" {
   provisioner "local-exec" {
     when        = destroy
     interpreter = ["/bin/bash", "-c"]
-    # Script signature:
-    #   REGION TENANT BRS_ENDPOINT CONNECTION_ID CLUSTER_ENDPOINT [TIMEOUT_S] [POLL_S]
-    # Timeout: 600s (10 min) — generous for a normal 3-8 min deregistration;
-    # exits 0 on timeout so destroy always proceeds regardless.
+    # Signature: REGION TENANT BRS_ENDPOINT CONNECTION_ID CLUSTER_ENDPOINT [TIMEOUT_S] [POLL_S]
+    # Exits 0 on timeout so destroy always proceeds.
     command = "${path.module}/scripts/wait-for-deregistration.sh '${try(self.input.region, "")}' '${try(self.input.tenant_id, "")}' '${try(self.input.brs_endpoint, "")}' '${try(self.input.connection_id, "")}' '${try(self.input.cluster_endpoint, "")}' 600 20"
     environment = {
-      # A sensitive value anywhere in a provisioner's config makes Terraform
-      # replace that provisioner's entire log output with "(output suppressed due
-      # to sensitive value in config)" — which is what hid the previous poller's
-      # ten minutes of failing polls. nonsensitive() unmarks the key for the
-      # environment map only: `input` above still stores it as sensitive so plan
-      # output stays masked, and Terraform never echoes `environment` values, only
-      # the command line. try() covers state written before the mark existed,
-      # where nonsensitive() would error on an already-unmarked value.
-      IBMCLOUD_API_KEY = try(nonsensitive(self.input.ibmcloud_api_key), self.input.ibmcloud_api_key) # pragma: allowlist secret
+      IBMCLOUD_API_KEY = self.input.ibmcloud_api_key # pragma: allowlist secret
     }
   }
 }
 
-# Destroy-time gate that keeps the DSC pod, the brsagent SA/CRB and its token
-# alive until BRS has finished removing the brs-backup-agent-* namespace from the
-# cluster. BRS performs that removal asynchronously, through the DSC tunnel and
-# the brsagent cluster-admin RBAC, only after the source registration DELETE.
-#
-# source_registration depends on this resource, so on destroy it runs strictly
-# after the DELETE; helm_release / brsagent RBAC depend on it in the other
-# direction, so they are torn down only once this gate returns.
+# Destroy-time gate: keeps the DSC pod and the brsagent SA/CRB/token alive until
+# BRS has finished removing the brs-backup-agent-* namespace. source_registration
+# depends on this, so it runs after the DELETE; helm_release and the brsagent RBAC
+# depend on it, so they are torn down only once it returns.
 resource "terraform_data" "wait_before_helm_destroy" {
   depends_on = [
     helm_release.data_source_connector,
@@ -1108,11 +1070,8 @@ resource "terraform_data" "wait_before_helm_destroy" {
   provisioner "local-exec" {
     when        = destroy
     interpreter = ["/bin/bash", "-c"]
-    # Script signature: DSC_NAMESPACE [MAX_ATTEMPTS] [BINARIES_PATH]
-    # 30 attempts x 30s = 15 min, matching the upper bound BRS needs to finish
-    # agent teardown on a large cluster. The script always exits 0 — a cluster it
-    # cannot reach must not block the rest of the destroy — but it says so loudly
-    # instead of skipping silently.
+    # Signature: DSC_NAMESPACE [MAX_ATTEMPTS] [BINARIES_PATH]. 30 x 30s = 15 min.
+    # Always exits 0 — an unreachable cluster must not block destroy — but says so.
     command = "${path.module}/scripts/wait_for_namespace_cleanup.sh '${try(self.input.dsc_namespace, "ibm-brs-data-source-connector")}' 30 '${try(self.input.binaries_path, "/tmp")}'"
     environment = {
       KUBECONFIG = try(self.input.kubeconfig_path, "")
