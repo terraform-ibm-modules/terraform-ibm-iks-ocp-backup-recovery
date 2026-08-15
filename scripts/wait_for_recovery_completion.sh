@@ -29,6 +29,21 @@ BINARIES_PATH=${8:-/tmp}
 
 export PATH="${PATH}:${BINARIES_PATH}"
 
+# ---------------------------------------------------------------------------
+# Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
+# Toggle off once the script is known-good to reduce Terraform output noise.
+# ---------------------------------------------------------------------------
+VERBOSE="${VERBOSE:-0}"
+
+# vlog LABEL JSON — print label + pretty-printed JSON to stderr when verbose.
+vlog() {
+  [[ "${VERBOSE}" == "1" ]] || return 0
+  local label="$1"
+  local body="$2"
+  echo "[VERBOSE] ${label}:" >&2
+  echo "${body}" | jq '.' 2>/dev/null >&2 || echo "${body}" >&2
+}
+
 echo "=== Waiting for Recovery Completion ===" >&2
 echo "Recovery ID: ${RECOVERY_ID}" >&2
 echo "Timeout: ${TIMEOUT_MINUTES} minutes" >&2
@@ -50,6 +65,8 @@ while [ $ELAPSED -lt $TIMEOUT_SECONDS ]; do
 
   http_code=$(echo "$response" | tail -n1)
   body=$(echo "$response" | sed '$d')
+
+  vlog "GET /v2/data-protect/recoveries/${RECOVERY_ID} → HTTP ${http_code}" "${body}"
 
   if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
     echo "Recovery Status API Error: HTTP $http_code" >&2
