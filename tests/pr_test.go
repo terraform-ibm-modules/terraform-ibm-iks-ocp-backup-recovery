@@ -299,6 +299,11 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// in this PR. The old time_sleep exists in base-version state and will be
 			// planned as a destroy.
 			"module.protect_cluster.time_sleep.brs_source_deregistration_wait",
+			// dsc_worker_pool_flavor default changed from bx2.4x16 → bxf.4x16 in this
+			// PR. Because flavor is an immutable field on ibm_container_vpc_worker_pool,
+			// the upgrade plan shows it as [delete, create]. The worker pool is
+			// immediately recreated so this is a safe one-time replacement.
+			"module.protect_cluster.ibm_container_vpc_worker_pool.data_source_connector[0]",
 		},
 	}
 	options.IgnoreAdds = testhelper.Exemptions{
