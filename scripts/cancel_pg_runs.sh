@@ -70,9 +70,11 @@ API_PG_ID="${PROTECTION_GROUP_ID#*::}"
 # Login
 # ---------------------------------------------------------------------------
 ibmcloud_login() {
-  echo "Logging in to IBM Cloud (region: ${REGION})..." >&2
+  local api_endpoint
+  api_endpoint=$(get_ibmcloud_api_endpoint "${BRS_ENDPOINT}")
+  echo "Logging in to IBM Cloud (region: ${REGION}, endpoint: ${api_endpoint})..." >&2
   local login_out
-  login_out=$(ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -r "${REGION}" -q 2>&1) || true
+  login_out=$(ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${api_endpoint}" -r "${REGION}" -q 2>&1) || true
   echo "${login_out}" | grep -v "^$" >&2 || true
   vlog "ibmcloud login" "${login_out}"
 

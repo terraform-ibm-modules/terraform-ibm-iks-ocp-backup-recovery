@@ -27,6 +27,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/common_utils.sh
+source "${SCRIPT_DIR}/common_utils.sh"
+
 if [ "$#" -lt 4 ]; then
   echo "Usage: $0 REGION TENANT REGISTRATION_ID BRS_ENDPOINT [TIMEOUT_S] [POLL_S]" >&2
   exit 1
@@ -58,8 +62,9 @@ echo "timeout=${TIMEOUT_S}s  poll=${POLL_S}s" >&2
 # ---------------------------------------------------------------------------
 # Login + set BRS service URL (same pattern as delete_auto_protect_pg.sh)
 # ---------------------------------------------------------------------------
-echo "Logging in to IBM Cloud (region: ${REGION})..." >&2
-ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -r "${REGION}" -q 2>&1 \
+IBMCLOUD_API_ENDPOINT=$(get_ibmcloud_api_endpoint "${BRS_ENDPOINT}")
+echo "Logging in to IBM Cloud (region: ${REGION}, endpoint: ${IBMCLOUD_API_ENDPOINT})..." >&2
+ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${IBMCLOUD_API_ENDPOINT}" -r "${REGION}" -q 2>&1 \
   | grep -v "^$" >&2 || true  # pragma: allowlist secret
 
 brs_url="https://${BRS_ENDPOINT}/v2"
