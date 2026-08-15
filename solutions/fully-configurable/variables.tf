@@ -470,7 +470,7 @@ variable "brs_create_new_connection" {
   nullable    = false
 }
 
-variable "create_brs_vpe" {
+variable "create_source_cluster_brs_vpe_gateway" {
   description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) that routes traffic from the cluster VPC to the BRS instance over the IBM private backbone. For existing clusters, vpc_id and vpc_subnets are auto-discovered from the cluster's worker pools. When creating a new cluster in the same apply, supply vpc_id and vpc_subnets explicitly. Set to false only if you are managing the VPEG externally or do not require private connectivity."
   type        = bool
   default     = true
@@ -478,13 +478,13 @@ variable "create_brs_vpe" {
 }
 
 variable "vpc_id" {
-  description = "ID of the VPC where the BRS Virtual Private Endpoint Gateway will be created. Optional when create_brs_vpe is true — when omitted the VPC ID is auto-discovered from the cluster's worker-pool subnets. Supply this explicitly only when the auto-discovery would pick the wrong VPC."
+  description = "ID of the VPC where the BRS Virtual Private Endpoint Gateway will be created. Optional when create_source_cluster_brs_vpe_gateway is true — when omitted the VPC ID is auto-discovered from the cluster's worker-pool subnets. Supply this explicitly only when the auto-discovery would pick the wrong VPC."
   type        = string
   default     = null
 }
 
 variable "vpc_subnets" {
-  description = "List of subnets in which to bind reserved IPs for the BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when create_brs_vpe is true — when omitted all subnets in the cluster VPC are discovered automatically."
+  description = "List of subnets in which to bind reserved IPs for the BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when create_source_cluster_brs_vpe_gateway is true — when omitted all subnets in the cluster VPC are discovered automatically."
   type = list(object({
     name = string
     id   = string
@@ -1032,21 +1032,21 @@ variable "target_create_dsc_worker_pool" {
   nullable    = false
 }
 
-variable "target_create_brs_vpe" {
-  description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) in the target cluster's VPC, routing its DSC traffic to the BRS instance over the IBM private backbone. Required when the target cluster is in a different VPC from the source cluster and private connectivity is needed. Mirrors create_brs_vpe but applies to the target cluster registration."
+variable "create_target_cluster_brs_vpe_gateway" {
+  description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) in the target cluster's VPC, routing its DSC traffic to the BRS instance over the IBM private backbone. Required when the target cluster is in a different VPC from the source cluster and private connectivity is needed. Mirrors create_source_cluster_brs_vpe_gateway but applies to the target cluster registration."
   type        = bool
   default     = false
   nullable    = false
 }
 
 variable "target_vpc_id" {
-  description = "ID of the VPC where the target cluster's BRS Virtual Private Endpoint Gateway will be created. Optional when target_create_brs_vpe is true — when omitted the VPC ID is auto-discovered from the target cluster's worker-pool subnets. Supply explicitly only when auto-discovery would pick the wrong VPC."
+  description = "ID of the VPC where the target cluster's BRS Virtual Private Endpoint Gateway will be created. Optional when create_target_cluster_brs_vpe_gateway is true — when omitted the VPC ID is auto-discovered from the target cluster's worker-pool subnets. Supply explicitly only when auto-discovery would pick the wrong VPC."
   type        = string
   default     = null
 }
 
 variable "target_vpc_subnets" {
-  description = "List of subnets in which to bind reserved IPs for the target cluster's BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when target_create_brs_vpe is true — when omitted all subnets in the target cluster VPC are discovered automatically."
+  description = "List of subnets in which to bind reserved IPs for the target cluster's BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when create_target_cluster_brs_vpe_gateway is true — when omitted all subnets in the target cluster VPC are discovered automatically."
   type = list(object({
     name = string
     id   = string

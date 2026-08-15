@@ -28,12 +28,12 @@ output "brs_instance_url" {
 }
 
 output "brs_private_hostname" {
-  description = "BRS private hostname that should resolve to the VPEG reserved IP inside the cluster VPC. Run 'getent hosts <value>' from inside a DSC pod to verify VPE routing. Only relevant when create_brs_vpe = true."
-  value       = var.create_brs_vpe && !var.classic_cluster ? "${module.backup_recover_protect_ocp.brs_instance_guid}.private.${var.region}.backup-recovery.cloud.ibm.com" : null
+  description = "BRS private hostname that should resolve to the VPEG reserved IP inside the cluster VPC. Run 'getent hosts <value>' from inside a DSC pod to verify VPE routing. Only relevant when create_source_cluster_brs_vpe_gateway = true."
+  value       = var.create_source_cluster_brs_vpe_gateway && !var.classic_cluster ? "${module.backup_recover_protect_ocp.brs_instance_guid}.private.${var.region}.backup-recovery.cloud.ibm.com" : null
 }
 
 output "brs_vpe_ips" {
-  description = "Map of VPEG name → reserved IP list. Populated only when create_brs_vpe = true and cluster is VPC-based; empty map otherwise."
+  description = "Map of VPEG name → reserved IP list. Populated only when create_source_cluster_brs_vpe_gateway = true and cluster is VPC-based; empty map otherwise."
   value = local.brs_vpe_active ? {
     (local.brs_vpe_name) = values(ibm_is_subnet_reserved_ip.brs_vpe_ip)[*].address
   } : {}

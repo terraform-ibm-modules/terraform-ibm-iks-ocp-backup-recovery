@@ -95,7 +95,7 @@ locals {
   ] : []
 
   brs_vpe_name    = var.brs_vpe_name != null ? var.brs_vpe_name : "${var.prefix}-brs-vpe"
-  brs_vpe_active  = var.create_brs_vpe && !var.classic_cluster
+  brs_vpe_active  = var.create_source_cluster_brs_vpe_gateway && !var.classic_cluster
   brs_vpe_subnets = { for s in local.vpc_subnets : s.zone => s }
 }
 

@@ -193,7 +193,7 @@ module "backup_recovery" {
 ##############################################################################
 
 data "ibm_is_security_group" "kube_vpeg_sg" {
-  count = var.create_brs_vpe ? 1 : 0
+  count = var.create_source_cluster_brs_vpe_gateway ? 1 : 0
   name  = "kube-vpegw-${local.vpc_id}"
 
   depends_on = [
@@ -203,13 +203,13 @@ data "ibm_is_security_group" "kube_vpeg_sg" {
 }
 
 resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
-  for_each = var.create_brs_vpe ? local.brs_vpe_subnets : {}
+  for_each = var.create_source_cluster_brs_vpe_gateway ? local.brs_vpe_subnets : {}
   subnet   = each.value.id
   name     = "${local.brs_vpe_name}-${each.key}-ip"
 }
 
 resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
-  count           = var.create_brs_vpe ? 1 : 0
+  count           = var.create_source_cluster_brs_vpe_gateway ? 1 : 0
   name            = local.brs_vpe_name
   vpc             = local.vpc_id
   resource_group  = module.resource_group.resource_group_id
@@ -224,7 +224,7 @@ resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
 }
 
 resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
-  for_each    = var.create_brs_vpe ? local.brs_vpe_subnets : {}
+  for_each    = var.create_source_cluster_brs_vpe_gateway ? local.brs_vpe_subnets : {}
   gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe[0].id
   reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
 }

@@ -60,7 +60,7 @@
                 "crn:v1:bluemix:public:iam::::role:Editor"
               ],
               "service_name": "is.vpc",
-              "notes": "Required for creating Security Group rules, Virtual Private Endpoint Gateways (VPEGs), and reserved IPs in Virtual Private Cloud (VPC). When create_brs_vpe is true, the deploying identity must hold this role in the source (cluster) account."
+              "notes": "Required for creating Security Group rules, Virtual Private Endpoint Gateways (VPEGs), and reserved IPs in Virtual Private Cloud (VPC). When create_source_cluster_brs_vpe_gateway is true, the deploying identity must hold this role in the source (cluster) account."
             },
             {
               "role_crns": [
@@ -274,7 +274,7 @@
               "display_name": "Create New Connection"
             },
             {
-              "key": "create_brs_vpe",
+              "key": "create_source_cluster_brs_vpe_gateway",
               "display_name": "Create BRS Virtual Private Endpoint Gateway"
             },
             {
@@ -589,7 +589,7 @@
               }
             },
             {
-              "key": "target_create_brs_vpe",
+              "key": "create_target_cluster_brs_vpe_gateway",
               "display_name": "Create BRS VPE for Target Cluster",
               "hidden": {
                 "deployment_mode": "backup_only"
