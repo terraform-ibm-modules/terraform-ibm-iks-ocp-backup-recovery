@@ -66,10 +66,10 @@ echo "timeout=${TIMEOUT_S}s  poll=${POLL_S}s" >&2
 # ---------------------------------------------------------------------------
 # Login + set BRS service URL (same pattern as delete_auto_protect_pg.sh)
 # ---------------------------------------------------------------------------
-_iam_endpoint=$(derive_iam_endpoint "${BRS_ENDPOINT}")
-echo "Logging in to IBM Cloud (region: ${REGION}, IAM: ${_iam_endpoint})..." >&2
+_api_endpoint=$(derive_api_endpoint "${BRS_ENDPOINT}")
+echo "Logging in to IBM Cloud (region: ${REGION}, endpoint: ${_api_endpoint})..." >&2
 ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -r "${REGION}" \
-  --iam-endpoint "https://${_iam_endpoint}" -q 2>&1 \
+  -a "${_api_endpoint}" -q 2>&1 \
   | grep -v "^$" >&2 || true  # pragma: allowlist secret
 
 brs_url="https://${BRS_ENDPOINT}/v2"
