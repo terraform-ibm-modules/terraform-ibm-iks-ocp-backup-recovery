@@ -22,7 +22,7 @@ set -euo pipefail
 #   IBMCLOUD_API_KEY     — IBM Cloud API key
 #
 # Optional env var:
-#   VERBOSE              — set to 1 to print every raw CLI response to stderr
+#   VERBOSE              — set to 0 to suppress raw CLI responses (default: 1 — on)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/common_utils.sh
@@ -56,7 +56,7 @@ API_PG_ID="${PROTECTION_GROUP_ID#*::}"
 # ---------------------------------------------------------------------------
 # Verbose logging
 # ---------------------------------------------------------------------------
-VERBOSE="${VERBOSE:-0}"
+VERBOSE="${VERBOSE:-1}"
 
 vlog() {
   [[ "${VERBOSE}" == "1" ]] || return 0
