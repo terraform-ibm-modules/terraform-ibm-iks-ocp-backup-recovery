@@ -1044,7 +1044,6 @@ resource "terraform_data" "wait_before_helm_destroy" {
     helm_release.data_source_connector,
     kubernetes_cluster_role_binding_v1.brsagent_admin,
     kubernetes_secret_v1.brsagent_token,
-    terraform_data.brs_source_deregistration_wait,
   ]
 
   # This resource exists solely to run a destroy-time provisioner (namespace
