@@ -39,9 +39,9 @@ API_PG_ID="${PROTECTION_GROUP_ID#*::}"
 
 # ---------------------------------------------------------------------------
 # Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
-# Toggle off once the script is known-good to reduce Terraform output noise.
+# Set VERBOSE=0 once the script is known-good to reduce Terraform output noise.
 # ---------------------------------------------------------------------------
-VERBOSE="${VERBOSE:-0}"
+VERBOSE="${VERBOSE:-1}"
 
 # vlog LABEL JSON — print label + pretty-printed JSON to stderr when verbose.
 vlog() {

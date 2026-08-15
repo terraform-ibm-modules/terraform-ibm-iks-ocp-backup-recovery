@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------
 # Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
 # Defined here so it is available to all scripts that source common_utils.sh.
-# Individual scripts set VERBOSE="${VERBOSE:-0}" before sourcing this file,
+# Individual scripts set VERBOSE="${VERBOSE:-1}" before sourcing this file,
 # or rely on the VERBOSE env var set by the caller (e.g. VERBOSE=1 terraform apply).
 # ---------------------------------------------------------------------------
 

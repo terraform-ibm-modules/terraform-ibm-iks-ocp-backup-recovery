@@ -21,11 +21,11 @@ set -euo pipefail
 #   IBMCLOUD_API_KEY     — IBM Cloud API key used to log in
 #
 # Optional env var:
-#   VERBOSE              — set to 1 to print every raw API response to stderr.
-#                          Off (0) by default to keep Terraform output clean.
-#                          Enable when diagnosing whether failures originate
-#                          in server responses or in this script's logic.
-#                          Example: VERBOSE=1 terraform destroy
+#   VERBOSE              — set to 0 to suppress raw API responses (default: 1 — on).
+#                          On by default to expose all server responses during
+#                          active development. Set to 0 once the script is
+#                          known-good to reduce Terraform output noise.
+#                          Example: VERBOSE=0 terraform destroy
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/common_utils.sh
@@ -33,9 +33,9 @@ source "${SCRIPT_DIR}/common_utils.sh"
 
 # ---------------------------------------------------------------------------
 # Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
-# Toggle off once the script is known-good to reduce Terraform output noise.
+# Set VERBOSE=0 once the script is known-good to reduce Terraform output noise.
 # ---------------------------------------------------------------------------
-VERBOSE="${VERBOSE:-0}"
+VERBOSE="${VERBOSE:-1}"
 
 # vlog LABEL JSON — print label + pretty-printed JSON to stderr when verbose.
 vlog() {
