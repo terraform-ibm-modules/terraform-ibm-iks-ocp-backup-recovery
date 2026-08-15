@@ -185,7 +185,10 @@ pg_active_backup_runs() {
     --include-object-details=false \
     --output json -q 2>&1) \
     || out='{"runs":[]}'
-  # Guard: CLI may return empty string (not JSON) on a valid 200 with no runs.
+  # Guard: CLI may return empty, whitespace-only, or non-JSON output on a valid
+  # 200 with no matching runs. Strip all whitespace before checking for '{' so
+  # that a response consisting only of spaces/newlines is also caught.
+  out="${out//[$' \t\n\r']/}"
   [[ "${out}" == *"{"* ]] || out='{"runs":[]}'
   vlog "protection-group-run list (backup)" "${out}"
   echo "${out}"
@@ -203,7 +206,10 @@ pg_active_archival_runs() {
     --include-object-details=false \
     --output json -q 2>&1) \
     || out='{"runs":[]}'
-  # Guard: CLI may return empty string (not JSON) on a valid 200 with no runs.
+  # Guard: CLI may return empty, whitespace-only, or non-JSON output on a valid
+  # 200 with no matching runs. Strip all whitespace before checking for '{' so
+  # that a response consisting only of spaces/newlines is also caught.
+  out="${out//[$' \t\n\r']/}"
   [[ "${out}" == *"{"* ]] || out='{"runs":[]}'
   vlog "protection-group-run list (archival)" "${out}"
   echo "${out}"
