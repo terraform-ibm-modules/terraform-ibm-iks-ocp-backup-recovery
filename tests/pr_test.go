@@ -364,6 +364,12 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// wait_for_source_discovery stores the kubeconfig path in input.
 			// Same ephemeral-path churn pattern as the other terraform_data resources.
 			"module.protect_cluster.terraform_data.wait_for_source_discovery",
+			// brs_source_deregistration_wait no longer identifies the source by
+			// registration_id (that reference inverted the destroy edge and made the
+			// poller run before the deregistration DELETE). It now matches on
+			// connection_id + cluster_endpoint, which is an in-place input update on
+			// upgrade; no provisioner runs on update.
+			"module.protect_cluster.terraform_data.brs_source_deregistration_wait",
 		},
 	}
 
