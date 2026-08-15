@@ -1,5 +1,9 @@
 #!/bin/bash
 # wait-for-source-discovery.sh
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/common_utils.sh
+source "${SCRIPT_DIR}/common_utils.sh"
 #
 # Poll the BRS registration-get API until the initial source refresh has
 # completed — i.e., until lastRefreshedTimeMsecs is substantially greater
@@ -41,20 +45,9 @@ BRS_ENDPOINT=$4
 TIMEOUT_S="${5:-1800}"
 POLL_S="${6:-30}"
 
-# ---------------------------------------------------------------------------
-# Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
 # Set VERBOSE=0 once the script is known-good to reduce Terraform output noise.
-# ---------------------------------------------------------------------------
+# vlog is provided by common_utils.sh (sourced above).
 VERBOSE="${VERBOSE:-1}"
-
-# vlog LABEL JSON — print label + pretty-printed JSON to stderr when verbose.
-vlog() {
-  [[ "${VERBOSE}" == "1" ]] || return 0
-  local label="$1"
-  local body="$2"
-  echo "[VERBOSE] ${label}:" >&2
-  echo "${body}" | jq '.' 2>/dev/null >&2 || echo "${body}" >&2
-}
 
 # Minimum refresh lag (ms) to consider initial discovery complete.
 # The registration sets lastRefreshedTimeMsecs only a few seconds after
@@ -79,8 +72,10 @@ echo "timeout=${TIMEOUT_S}s  poll=${POLL_S}s" >&2
 # ---------------------------------------------------------------------------
 # Login + set BRS service URL (same pattern as delete_auto_protect_pg.sh)
 # ---------------------------------------------------------------------------
-echo "Logging in to IBM Cloud (region: ${REGION})..." >&2
-ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -r "${REGION}" -q 2>&1 \
+_iam_endpoint=$(derive_iam_endpoint "${BRS_ENDPOINT}")
+echo "Logging in to IBM Cloud (region: ${REGION}, IAM: ${_iam_endpoint})..." >&2
+ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -r "${REGION}" \
+  --iam-endpoint "https://${_iam_endpoint}" -q 2>&1 \
   | grep -v "^$" >&2 || true  # pragma: allowlist secret
 
 brs_url="https://${BRS_ENDPOINT}/v2"
