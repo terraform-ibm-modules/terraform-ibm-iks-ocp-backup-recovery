@@ -120,7 +120,16 @@ data "ibm_container_cluster_config" "cluster_config" {
   cluster_name_id   = local.cluster_id
   resource_group_id = module.resource_group.resource_group_id
   admin             = true
+  config_dir        = "${path.module}/kubeconfig"
   endpoint_type     = var.cluster_config_endpoint_type != "default" ? var.cluster_config_endpoint_type : null
+}
+
+# Wait for RBAC and operator sync before the kubernetes/helm providers start
+# making API calls. Without this, providers initialise before the kubeconfig
+# host is populated and fall back to localhost:80.
+resource "time_sleep" "wait_operators" {
+  depends_on      = [data.ibm_container_cluster_config.cluster_config]
+  create_duration = "60s"
 }
 
 ##############################################################################
@@ -186,6 +195,8 @@ module "backup_recovery" {
 
   resource_tags = var.resource_tags
   access_tags   = var.access_tags
+
+  depends_on = [time_sleep.wait_operators]
 }
 
 ##############################################################################
