@@ -27,6 +27,7 @@ const fullyConfigurableTerraformDir = "solutions/fully-configurable"
 const iksExampleDir = "examples/kubernetes"
 const ocpExampleDir = "examples/openshift"
 const crossClusterExampleDir = "examples/backup-recovery-cross-cluster"
+const vpeExampleDir = "examples/backup-recovery-with-vpe"
 
 var excludeDirs = []string{".terraform", ".docs", ".github", ".git", ".idea", "common-dev-assets", "examples", "tests", "reference-architectures"}
 
@@ -36,7 +37,7 @@ var includeFiletypes = []string{".tf", ".yaml", ".py", ".tpl", ".md", ".sh"}
 // to minimise same-region collisions, which slow down IKS cluster provisioning
 // and can push total wall-clock time over the GitHub Actions job limit.
 var validRegions = []string{
-	// "us-south",
+	"us-south",
 	"us-east",
 	"eu-es",
 	"eu-gb",
@@ -223,6 +224,13 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 			// destroy-time PVC cleanup provisioner. That path differs between
 			// Schematics jobs, causing a side-effect-free in-place update.
 			"module.protect_cluster.terraform_data.dsc_immutable_values",
+			// check_existing_registration stores the kubeconfig path in input.
+			// That path differs between Schematics jobs (each runs in a fresh
+			// temp dir), causing a side-effect-free in-place update.
+			"module.protect_cluster.terraform_data.check_existing_registration",
+			// wait_for_source_discovery stores the kubeconfig path in input.
+			// Same ephemeral-path churn pattern as the other terraform_data resources.
+			"module.protect_cluster.terraform_data.wait_for_source_discovery",
 		},
 	}
 	// TODO(provider-fix): re-enable these once ibm provider PR #6906 is merged+released.
@@ -279,14 +287,23 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// from the base version. Post-merge this becomes a plain in-place update
 			// (covered by IgnoreUpdates below).
 			"module.protect_cluster.terraform_data.wait_before_helm_destroy",
-			// wait_for_source_discovery is replaced (delete+create) on upgrade
-			// because its trigger (connection_id) changes between the base and the
-			// new connection. Must be exempted from both IgnoreDestroys and IgnoreAdds.
+			// wait_for_source_discovery changed from time_sleep to terraform_data in
+			// this PR. The old time_sleep resource exists in state from the base version
+			// and must be exempted as a destroy.
 			"module.protect_cluster.time_sleep.wait_for_source_discovery",
 			// anyuid_scc_rolebinding was removed in this PR (over-permissive SCC
 			// binding). The upgrade plan shows it as a destroy because it exists
 			// in state from the base version but is no longer in the module.
 			"module.protect_cluster.kubernetes_role_binding_v1.anyuid_scc_rolebinding[0]",
+			// brs_source_deregistration_wait changed from time_sleep to terraform_data
+			// in this PR. The old time_sleep exists in base-version state and will be
+			// planned as a destroy.
+			"module.protect_cluster.time_sleep.brs_source_deregistration_wait",
+			// dsc_worker_pool_flavor default changed from bx2.4x16 → bxf.4x16 in this
+			// PR. Because flavor is an immutable field on ibm_container_vpc_worker_pool,
+			// the upgrade plan shows it as [delete, create]. The worker pool is
+			// immediately recreated so this is a safe one-time replacement.
+			"module.protect_cluster.ibm_container_vpc_worker_pool.data_source_connector[0]",
 		},
 	}
 	options.IgnoreAdds = testhelper.Exemptions{
@@ -298,9 +315,15 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// does not exist in the base version. The upgrade plan will show it
 			// as an add, which is expected and harmless.
 			"module.protect_cluster.terraform_data.wait_for_dsc_node_ready[0]",
-			// wait_for_source_discovery is replaced on upgrade because its
-			// trigger (connection_id) changes between the base and new connection.
-			"module.protect_cluster.time_sleep.wait_for_source_discovery",
+			// wait_for_source_discovery changed from time_sleep to terraform_data.
+			// The new terraform_data resource appears as an add on upgrade.
+			"module.protect_cluster.terraform_data.wait_for_source_discovery",
+			// brs_source_deregistration_wait changed from time_sleep to terraform_data.
+			// The new terraform_data resource appears as an add on upgrade.
+			"module.protect_cluster.terraform_data.brs_source_deregistration_wait",
+			// check_existing_registration is a new resource added in this PR that
+			// guards against double-registration. Does not exist in the base version.
+			"module.protect_cluster.terraform_data.check_existing_registration",
 		},
 	}
 	options.IgnoreUpdates = testhelper.Exemptions{
@@ -321,13 +344,26 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// source_registration is updated in-place on upgrade because the new
 			// module version registers updated image versions against the same source.
 			"module.protect_cluster.ibm_backup_recovery_source_registration.source_registration",
-			// brs_source_deregistration_wait destroy_duration changed from 5m
-			// to 15m — in-place update, no resource replacement.
-			"module.protect_cluster.time_sleep.brs_source_deregistration_wait",
+			// Provider binding changes from ibm → ibm.cluster for cluster-side managed
+			// resources. This is a metadata-only in-place update introduced by the
+			// dual-provider alias change in this PR; no resource is replaced.
+			"module.protect_cluster.ibm_resource_tag.cluster_brs_tag[0]",
+			"module.protect_cluster.ibm_container_vpc_worker_pool.data_source_connector[0]",
+			// wait_for_dsc_stabilization create_duration changed from 5m to 10m
+			// to allow the DSC gRPC tunnel to BRS to fully establish before
+			// source_registration is called — in-place update, no replacement.
+			"module.protect_cluster.time_sleep.wait_for_dsc_stabilization",
 			// purge_stale_dsc_pvc was added in the same release cycle; it does not
 			// exist in the previous released version so the upgrade plan shows it
 			// as an in-place update rather than an add.
 			"module.protect_cluster.terraform_data.purge_stale_dsc_pvc",
+			// check_existing_registration stores the kubeconfig path in input.
+			// That path differs between Schematics jobs, causing a side-effect-free
+			// in-place update. Also exempted in TestRunFullyConfigurableInSchematics.
+			"module.protect_cluster.terraform_data.check_existing_registration",
+			// wait_for_source_discovery stores the kubeconfig path in input.
+			// Same ephemeral-path churn pattern as the other terraform_data resources.
+			"module.protect_cluster.terraform_data.wait_for_source_discovery",
 		},
 	}
 
@@ -365,23 +401,7 @@ func setupOptions(t *testing.T, prefix string, dir string, exemptionList []strin
 func TestRunIKSExample(t *testing.T) {
 	t.Parallel()
 
-	options := setupOptions(t, "brs-iks", iksExampleDir, []string{
-		"module.backup_recover_protect_ocp.ibm_backup_recovery_source_registration.source_registration",
-		"ibm_container_vpc_cluster.vpc_cluster[0]",
-		"ibm_container_cluster.cluster[0]",
-	})
-	// TODO(provider-fix): re-enable these once ibm provider PR #6906 is merged+released.
-	// Without -refresh=false, stale BRS connection IDs in state cause the provider to
-	// hard-error on HTTP 400 "does not exist" during the consistency-plan refresh (Plan)
-	// and the pre-destroy refresh (Destroy).
-	// options.PostApplyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
-	// 	return nil
-	// }
-	// options.PreDestroyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
-	// 	return nil
-	// }
+	options := setupOptions(t, "brs-iks", iksExampleDir, []string{})
 
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
@@ -391,21 +411,23 @@ func TestRunIKSExample(t *testing.T) {
 func TestRunOCPExample(t *testing.T) {
 	t.Parallel()
 
-	options := setupOptions(t, "brs-ocp", ocpExampleDir, []string{
-		"module.backup_recover_protect_ocp.ibm_backup_recovery_source_registration.source_registration",
-		"module.ocp_base[0].ibm_container_vpc_cluster.cluster[0]",
-		"ibm_container_cluster.cluster[0]",
-	})
-	// TODO(provider-fix): re-enable these once ibm provider PR #6906 is merged+released.
-	// Same reason as TestRunIKSExample.
-	// options.PostApplyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
-	// 	return nil
-	// }
-	// options.PreDestroyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-refresh=false")
-	// 	return nil
-	// }
+	options := setupOptions(t, "brs-ocp", ocpExampleDir, []string{})
+
+	output, err := options.RunTestConsistency()
+	assert.NoError(t, err, "This should not have errored")
+	assert.NotNil(t, output, "Expected some output")
+}
+
+func TestRunVPEExample(t *testing.T) {
+	t.Parallel()
+
+	options := setupOptions(t, "brs-vpe", vpeExampleDir, []string{})
+
+	// parallelism=1 on destroy prevents VPC removal from racing worker-node cleanup.
+	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
+		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-parallelism=1")
+		return nil
+	}
 
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
@@ -415,27 +437,15 @@ func TestRunOCPExample(t *testing.T) {
 func TestRunCrossClusterExample(t *testing.T) {
 	t.Parallel()
 
-	options := setupOptions(t, "brs-cross", crossClusterExampleDir, []string{
-		"module.source_backup_recovery.ibm_backup_recovery_source_registration.source_registration",
-		"module.target_backup_recovery.ibm_backup_recovery_source_registration.source_registration",
-		"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-		"module.target_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-		"ibm_container_vpc_cluster.source_cluster[0]",
-		"ibm_container_vpc_cluster.target_cluster[0]",
-	})
+	options := setupOptions(t, "brs-cross", crossClusterExampleDir, []string{})
 
 	options.TerraformVars["brs_create_new_connection"] = true
 
 	options.IgnoreUpdates.List = append(options.IgnoreUpdates.List,
 		fmt.Sprintf(`module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-continuous-backup"]`, options.Prefix),
 	)
-	// TODO(provider-fix): re-enable -refresh=false lines once ibm provider PR #6906 is merged+released.
-	// Same reason as TestRunIKSExample. parallelism=1 is kept unconditionally — it is not
-	// provider-related; it prevents VPC destroy from racing worker-node cleanup.
-	// options.PostApplyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
-	// 	return nil
-	// }
+
+	// parallelism=1 on destroy prevents VPC removal from racing worker-node cleanup.
 	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
 		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-parallelism=1")
 		return nil
@@ -463,14 +473,7 @@ func TestRunCrossClusterExistingConnection(t *testing.T) {
 	// setupTerraform picks its own random region; read it back from the output.
 	existingRegion := terraform.OutputContext(t, context.Background(), existingTerraformOptions, "region")
 
-	options := setupOptions(t, prefix, crossClusterExampleDir, []string{
-		"module.source_backup_recovery.ibm_backup_recovery_source_registration.source_registration",
-		"module.target_backup_recovery.ibm_backup_recovery_source_registration.source_registration",
-		"module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-		"module.target_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_connection_registration_token.registration_token[0]",
-		"ibm_container_vpc_cluster.source_cluster[0]",
-		"ibm_container_vpc_cluster.target_cluster[0]",
-	})
+	options := setupOptions(t, prefix, crossClusterExampleDir, []string{})
 
 	// Override the random region chosen by setupOptions with the one used for the
 	// pre-provisioned connections so the two terraform states stay consistent.
@@ -488,12 +491,7 @@ func TestRunCrossClusterExistingConnection(t *testing.T) {
 		fmt.Sprintf(`module.source_backup_recovery.module.backup_recovery_instance.ibm_backup_recovery_protection_policy.protection_policy["%s-continuous-backup"]`, options.Prefix),
 	)
 
-	// TODO(provider-fix): re-enable -refresh=false lines once ibm provider PR #6906 is merged+released.
-	// Same reason as TestRunIKSExample. parallelism=1 is kept unconditionally.
-	// options.PostApplyHook = func(o *testhelper.TestOptions) error {
-	// 	o.TerraformOptions.ExtraArgs.Plan = append(o.TerraformOptions.ExtraArgs.Plan, "-refresh=false")
-	// 	return nil
-	// }
+	// parallelism=1 on destroy prevents VPC removal from racing worker-node cleanup.
 	options.PreDestroyHook = func(o *testhelper.TestOptions) error {
 		o.TerraformOptions.ExtraArgs.Destroy = append(o.TerraformOptions.ExtraArgs.Destroy, "-parallelism=1")
 		return nil

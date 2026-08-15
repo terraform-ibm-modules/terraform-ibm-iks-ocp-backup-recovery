@@ -18,6 +18,12 @@ variable "cluster_resource_group_id" {
   type        = string
 }
 
+variable "brs_resource_group_id" {
+  description = "The ID of the resource group where the BRS instance will be created. If this value is null, `cluster_resource_group_id` is used by default. This is suitable when the cluster and the BRS instance are in the same IBM Cloud account. Set this to a resource group in the target account when the BRS instance lives in a different IBM Cloud account from the cluster."
+  type        = string
+  default     = null
+}
+
 variable "cluster_config_endpoint_type" {
   description = "The type of endpoint to use for the cluster config access: `default`, `private`, `vpe`, or `link`. The `default` value uses the default endpoint of the cluster."
   type        = string
@@ -84,7 +90,7 @@ variable "install_required_binaries" {
 variable "add_dsc_rules_to_cluster_sg" {
   description = "Set to `true` to automatically add the security group rules required by the Data Source Connector. This is mandatory when registering the cluster via its public service endpoint. Set to `false` to only register the cluster and create the policy without modifying security groups."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "dsc_chart_uri" {
@@ -157,9 +163,9 @@ variable "dsc_worker_pool_zones" {
 }
 
 variable "dsc_worker_pool_flavor" {
-  description = "The machine flavor for the Data Source Connector worker pool. This determines the CPU, memory, and other resources available to each worker node. Common flavors: bx2.4x16 (4 vCPU, 16GB RAM), bx2.8x32 (8 vCPU, 32GB RAM), bx2.16x64 (16 vCPU, 64GB RAM)."
+  description = "The machine flavor for the Data Source Connector worker pool. `bxf.4x16` (4 vCPU, 16 GB RAM) is available in every IBM Cloud VPC zone. Override for a larger flavor (e.g. `bxf.8x32`)."
   type        = string
-  default     = "bx2.4x16"
+  default     = "bxf.4x16"
   nullable    = false
 }
 
@@ -212,13 +218,13 @@ variable "region" {
 }
 
 variable "brs_endpoint_type" {
-  description = "The endpoint type to use when connecting to the Backup and Recovery service for creating a data source connection. Allowed values are 'public' or 'private'."
+  description = "The endpoint type to use when connecting to the Backup and Recovery service for Terraform provider operations and script calls. Allowed values are 'public' or 'private'. When `create_brs_vpe`=true and this is set to 'private', the DSC pods reach BRS over the Virtual Private Endpoint Gateway (VPE) instead of the IBM Cloud Service Endpoint (CSE) — the BRS endpoint URL is automatically overridden to the VPE DNS hostname inside the cluster VPC."
   type        = string
   default     = "private"
 
   validation {
     condition     = contains(["public", "private"], var.brs_endpoint_type)
-    error_message = "`endpoint_type` must be 'public' or 'private'."
+    error_message = "`brs_endpoint_type` must be 'public' or 'private'."
   }
 }
 
@@ -279,6 +285,40 @@ variable "connection_env_type" {
     condition     = contains(["kIksVpc", "kRoksVpc", "kRoksClassic", "kIksClassic"], var.connection_env_type)
     error_message = "`connection_env_type` must be one of 'kIksVpc', 'kRoksVpc', 'kRoksClassic', or 'kIksClassic'."
   }
+}
+
+##############################################################################
+# Virtual Private Endpoint Gateway (VPEG) for BRS
+##############################################################################
+
+variable "create_brs_vpe" {
+  description = "Set to `true` to create a Virtual Private Endpoint Gateway (VPEG) that routes traffic from the cluster VPC to the BRS instance over the IBM private backbone. For existing clusters, `vpc_id` and `vpc_subnets` are auto-discovered from the cluster's worker pools. When creating a new cluster in the same apply, supply `vpc_id` and `vpc_subnets` explicitly (the auto-discovery reads worker pools, which are unknown until after the cluster is applied). For cross-account setups (BRS in a different IBM Cloud account), the required S2S IAM authorization policy is created automatically when the module detects that the `ibm.cluster` provider belongs to a different account than the default `ibm` provider."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "vpc_id" {
+  description = "ID of the VPC where the BRS Virtual Private Endpoint Gateway will be created. Optional when create_brs_vpe is true — when omitted the VPC ID is auto-discovered from the cluster's worker-pool subnets. Supply this explicitly only when the auto-discovery would pick the wrong VPC."
+  type        = string
+  default     = null
+}
+
+variable "vpc_subnets" {
+  description = "List of subnets in which to bind reserved IPs for the BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when create_brs_vpe is true — when omitted all subnets in the cluster VPC are discovered automatically. Supply this explicitly to restrict the VPEG to a specific subset of subnets."
+  type = list(object({
+    name = string
+    id   = string
+    zone = string
+  }))
+  default  = []
+  nullable = false
+}
+
+variable "brs_vpe_name" {
+  description = "Override the name of the BRS Virtual Private Endpoint Gateway. If null, the name is auto-generated as '<brs_connection_name>-vpe'."
+  type        = string
+  default     = null
 }
 
 ##############################################################################

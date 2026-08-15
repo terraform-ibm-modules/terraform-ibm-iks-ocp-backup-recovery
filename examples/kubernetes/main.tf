@@ -1,6 +1,19 @@
 locals {
   default_version = data.ibm_container_cluster_versions.cluster_versions.default_kube_version
   cluster_id      = var.cluster_name_id != null ? (var.classic_cluster ? data.ibm_container_cluster.classic_cluster_data[0].id : data.ibm_container_vpc_cluster.vpc_cluster_data[0].id) : (var.classic_cluster ? ibm_container_cluster.classic_cluster[0].id : ibm_container_vpc_cluster.vpc_cluster[0].id)
+
+  # VPC ID and subnet list for the BRS VPE Gateway.
+  # Only relevant for VPC clusters (classic clusters cannot use VPE).
+  # Supplied explicitly so plan-time values are known when the cluster is
+  # created in the same apply (worker-pool auto-discovery only works post-apply).
+  vpc_id = var.cluster_name_id == null && !var.classic_cluster ? ibm_is_vpc.vpc[0].id : null
+  vpc_subnets = var.cluster_name_id == null && !var.classic_cluster ? [
+    {
+      name = ibm_is_subnet.subnet_zone_1[0].name
+      id   = ibm_is_subnet.subnet_zone_1[0].id
+      zone = ibm_is_subnet.subnet_zone_1[0].zone
+    }
+  ] : []
 }
 ##############################################################################
 # Resource Group
@@ -139,7 +152,13 @@ resource "time_sleep" "wait_operators" {
 ########################################################################################################################
 
 module "backup_recover_protect_iks" {
-  source                       = "../.."
+  source = "../.."
+  providers = {
+    ibm         = ibm
+    ibm.cluster = ibm
+  }
+
+  # ---- Cluster ----
   cluster_id                   = local.cluster_id
   cluster_resource_group_id    = module.resource_group.resource_group_id
   cluster_config_endpoint_type = var.cluster_config_endpoint_type
@@ -147,17 +166,36 @@ module "backup_recover_protect_iks" {
   kube_type                    = "kubernetes"
   ibmcloud_api_key             = var.ibmcloud_api_key
   enable_auto_protect          = false
-  # --- B&R Instance ---
+
+  # ---- BRS instance ----
   existing_brs_instance_crn = var.existing_brs_instance_crn
-  brs_endpoint_type         = "public"
   brs_instance_name         = "${var.prefix}-brs-instance"
   brs_connection_name       = "${var.prefix}-brs-connection-${var.classic_cluster ? "IksClassic" : "IksVpc"}"
   brs_create_new_connection = true
   region                    = var.region
   connection_env_type       = var.classic_cluster ? "kIksClassic" : "kIksVpc"
   dsc_storage_class         = var.dsc_storage_class == null ? (var.classic_cluster ? "ibmc-block-silver" : "ibmc-vpc-block-metro-5iops-tier") : var.dsc_storage_class
-  dsc_worker_pool_zones     = 1 # Single-zone cluster
-  # --- Backup Policy ---
+  dsc_worker_pool_zones     = 1
+
+  # Use public endpoint so Terraform (CI/workstation) can reach the BRS API.
+  # DSC traffic routes privately via the VPE Gateway when create_brs_vpe = true.
+  brs_endpoint_type = var.brs_endpoint_type
+
+  # ---- VPE Gateway (VPC clusters only) ----
+  # create_brs_vpe = true creates a VPEG in the cluster VPC so DSC→BRS traffic
+  # stays on the IBM private backbone. Classic clusters do not support VPE.
+  # vpc_id / vpc_subnets are supplied explicitly because the cluster is created
+  # in the same apply — auto-discovery from worker pools is unknown at plan time.
+  #
+  # brs_vpe_name is always set explicitly here because the auto-generated name
+  # derives from brs_connection_name which contains uppercase ("IksVpc") and
+  # IBM VPC resource names must be lowercase-only: ^[a-z][-a-z0-9]*[a-z0-9]$
+  create_brs_vpe = var.create_brs_vpe && !var.classic_cluster
+  brs_vpe_name   = var.brs_vpe_name != null ? var.brs_vpe_name : (var.classic_cluster ? null : "${var.prefix}-brs-vpe")
+  vpc_id         = var.create_brs_vpe && !var.classic_cluster ? local.vpc_id : null
+  vpc_subnets    = var.create_brs_vpe && !var.classic_cluster ? local.vpc_subnets : []
+
+  # ---- Backup Policy ----
   auto_protect_policy_name = "${var.prefix}-retention"
   access_tags              = var.access_tags
   resource_tags            = var.resource_tags

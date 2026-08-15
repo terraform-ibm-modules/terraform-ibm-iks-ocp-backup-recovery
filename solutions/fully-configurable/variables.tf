@@ -4,8 +4,15 @@
 
 variable "ibmcloud_api_key" {
   type        = string
-  description = "The IBM Cloud API key."
+  description = "The IBM Cloud API key for the target (BRS) account. In same-account deployments this key is used for all resources."
   sensitive   = true
+}
+
+variable "source_ibmcloud_api_key" {
+  type        = string
+  description = "IBM Cloud API key for the source (cluster/VPC) account. Required only for cross-account deployments where the BRS instance lives in a different account from the cluster. When null (default), the default `ibmcloud_api_key` is used for both accounts."
+  sensitive   = true
+  default     = null
 }
 
 variable "provider_visibility" {
@@ -30,6 +37,18 @@ variable "cluster_id" {
 variable "cluster_resource_group_id" {
   type        = string
   description = "The resource group ID of the cluster."
+}
+
+variable "brs_resource_group_id" {
+  description = "Resource group ID in which to create the BRS instance. Defaults to `cluster_resource_group_id` when null (same-account deployments). Set this to a resource group in the target account when the BRS instance lives in a different IBM Cloud account from the cluster."
+  type        = string
+  default     = null
+}
+
+variable "add_cluster_tags" {
+  description = "Whether to add BRS tags to the cluster. Set to false if you manage cluster tags externally to avoid drift. When false, you should manually add the tags 'brs-region:<region>' and 'brs-guid:<guid>' to your cluster."
+  type        = bool
+  default     = true
 }
 
 variable "cluster_config_endpoint_type" {
@@ -339,9 +358,9 @@ variable "create_dsc_worker_pool" {
 }
 
 variable "dsc_worker_pool_flavor" {
-  description = "The machine flavor for the Data Source Connector worker pool. This determines the CPU, memory, and other resources available to each worker node. Common flavors: bx2.4x16 (4 vCPU, 16GB RAM), bx2.8x32 (8 vCPU, 32GB RAM), bx2.16x64 (16 vCPU, 64GB RAM)."
+  description = "The machine flavor for the Data Source Connector worker pool. `bxf.4x16` (4 vCPU, 16 GB RAM) is available in every IBM Cloud VPC zone. Override for a larger flavor (e.g. `bxf.8x32`)."
   type        = string
-  default     = "bx2.4x16"
+  default     = "bxf.4x16"
   nullable    = false
 }
 
@@ -449,6 +468,47 @@ variable "brs_create_new_connection" {
   description = "Flag to create a new connection from the Backup & Recovery Service instance to the cluster. When set to `true` (default), a new connection is created with the name specified in `brs_connection_name`. When `false`, it uses an existing connection matching `brs_connection_name`."
   default     = true
   nullable    = false
+}
+
+variable "create_brs_vpe" {
+  description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) that routes traffic from the cluster VPC to the BRS instance over the IBM private backbone. For existing clusters, vpc_id and vpc_subnets are auto-discovered from the cluster's worker pools. When creating a new cluster in the same apply, supply vpc_id and vpc_subnets explicitly. Set to false only if you are managing the VPEG externally or do not require private connectivity."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
+variable "vpc_id" {
+  description = "ID of the VPC where the BRS Virtual Private Endpoint Gateway will be created. Optional when create_brs_vpe is true — when omitted the VPC ID is auto-discovered from the cluster's worker-pool subnets. Supply this explicitly only when the auto-discovery would pick the wrong VPC."
+  type        = string
+  default     = null
+}
+
+variable "vpc_subnets" {
+  description = "List of subnets in which to bind reserved IPs for the BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when create_brs_vpe is true — when omitted all subnets in the cluster VPC are discovered automatically."
+  type = list(object({
+    name = string
+    id   = string
+    zone = string
+  }))
+  default  = []
+  nullable = false
+}
+
+variable "brs_vpe_name" {
+  description = "Override the name of the BRS Virtual Private Endpoint Gateway. If null, the name is auto-generated as '<brs_connection_name>-vpe'."
+  type        = string
+  default     = null
+}
+
+variable "dsc_worker_pool_zones" {
+  description = "Number of zones to create worker pools in. Defaults to 1 for single-zone deployments. Set to 2 or 3 for multi-zone high availability. Must be between 1 and 3."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.dsc_worker_pool_zones >= 1 && var.dsc_worker_pool_zones <= 3
+    error_message = "dsc_worker_pool_zones must be between 1 and 3."
+  }
 }
 
 variable "region" {
@@ -851,9 +911,18 @@ variable "recovery_namespace_prefix" {
 }
 
 variable "recovery_protection_group_name" {
-  description = "Name of the protection group to recover from. If null, uses the first protection group defined in the configuration."
+  description = "Name of the Terraform-managed protection group to recover from when `deployment_mode` is `full_backup_recovery` and `protection_groups` contains more than one entry. When null and only one protection group is defined, that group is used automatically. When null and `enable_auto_protect` is true, the BRS auto-protect group is used. **Required** when `protection_groups` has more than one entry — omitting it will silently recover from the first group."
   type        = string
   default     = null
+
+  validation {
+    condition = !(
+      var.recovery_protection_group_name == null &&
+      var.deployment_mode == "full_backup_recovery" &&
+      try(length(var.protection_groups), 0) > 1
+    )
+    error_message = "When deployment_mode is 'full_backup_recovery' and more than one protection_group is defined, you must set recovery_protection_group_name to specify which group to recover from."
+  }
 }
 
 variable "recovery_wait_timeout_minutes" {
@@ -936,4 +1005,34 @@ variable "target_create_dsc_worker_pool" {
   type        = bool
   default     = true
   nullable    = false
+}
+
+variable "target_create_brs_vpe" {
+  description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) in the target cluster's VPC, routing its DSC traffic to the BRS instance over the IBM private backbone. Required when the target cluster is in a different VPC from the source cluster and private connectivity is needed. Mirrors create_brs_vpe but applies to the target cluster registration."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "target_vpc_id" {
+  description = "ID of the VPC where the target cluster's BRS Virtual Private Endpoint Gateway will be created. Optional when target_create_brs_vpe is true — when omitted the VPC ID is auto-discovered from the target cluster's worker-pool subnets. Supply explicitly only when auto-discovery would pick the wrong VPC."
+  type        = string
+  default     = null
+}
+
+variable "target_vpc_subnets" {
+  description = "List of subnets in which to bind reserved IPs for the target cluster's BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when target_create_brs_vpe is true — when omitted all subnets in the target cluster VPC are discovered automatically."
+  type = list(object({
+    name = string
+    id   = string
+    zone = string
+  }))
+  default  = []
+  nullable = false
+}
+
+variable "target_brs_vpe_name" {
+  description = "Override the name of the BRS Virtual Private Endpoint Gateway for the target cluster. If null, the name is auto-generated as '<target_brs_connection_name>-vpe'."
+  type        = string
+  default     = null
 }

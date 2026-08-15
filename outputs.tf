@@ -32,6 +32,19 @@ output "protection_group_ids" {
   value       = { for k, v in ibm_backup_recovery_protection_group.protection_group : k => v.id }
 }
 
+output "auto_protect_pg_id" {
+  description = "ID of the auto-protect protection group created by BRS when enable_auto_protect=true. Null when auto-protect is not enabled or the registration has not yet propagated."
+  # Two paths to the same ID — the top-level attribute (provider typo: "proetction")
+  # is more reliable at plan time; the nested path is the canonical reference.
+  # coalesce picks whichever is non-null first.
+  # TODO: once IBM provider fixes the typo (auto_proetction -> auto_protection), switch to
+  # the corrected attribute name. Track at: https://github.com/IBM-Cloud/terraform-provider-ibm
+  value = try(coalesce(
+    ibm_backup_recovery_source_registration.source_registration.auto_proetction_group_id,
+    ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id,
+  ), null)
+}
+
 output "protection_sources" {
   description = "List of protection sources."
   value       = data.ibm_backup_recovery_protection_sources.sources
@@ -84,4 +97,14 @@ output "brs_instance_url" {
 output "brs_tags" {
   description = "BRS tags that should be added to the cluster to prevent tag drift. Include these in your cluster's tags input."
   value       = ["brs-region:${local.brs_instance_region}", "brs-guid:${local.brs_instance_guid}"]
+}
+
+output "brs_vpe_ips" {
+  description = "Map of VPEG name to reserved IP list. Populated only when create_brs_vpe = true; empty map otherwise. Each entry contains the private IPs bound to each subnet zone."
+  value       = var.create_brs_vpe && local.is_vpc ? module.brs_vpe[0].vpe_ips : {}
+}
+
+output "s2s_auth_policies" {
+  description = "S2S IAM authorization policies created in this account. Populated only for cross-account VPE deployments (when ibm.cluster and ibm provider resolve to different accounts); empty map otherwise."
+  value       = local.is_cross_account ? module.brs_s2s_auth[0].auth_policies : {}
 }

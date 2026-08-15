@@ -7,8 +7,10 @@ locals {
   is_full_recovery = var.deployment_mode == "full_backup_recovery"
 }
 # Retrieve information about an existing VPC cluster
+# Uses ibm.cluster provider — source account in cross-account deployments.
 data "ibm_container_vpc_cluster" "vpc_cluster" {
   count             = local.is_vpc ? 1 : 0
+  provider          = ibm.cluster
   name              = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
   wait_till         = var.wait_till
@@ -18,12 +20,14 @@ data "ibm_container_vpc_cluster" "vpc_cluster" {
 # Retrieve information about an existing Classic cluster
 data "ibm_container_cluster" "classic_cluster" {
   count             = local.is_classic ? 1 : 0
+  provider          = ibm.cluster
   name              = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
   wait_till         = var.wait_till
   wait_till_timeout = var.wait_till_timeout
 }
 data "ibm_container_cluster_config" "cluster_config" {
+  provider          = ibm.cluster
   cluster_name_id   = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
   config_dir        = "${path.module}/kubeconfig"
@@ -50,29 +54,38 @@ locals {
 }
 
 module "protect_cluster" {
-  source                       = "../.."
+  source = "../.."
+  providers = {
+    ibm         = ibm         # target (BRS) account — or only account in same-account mode
+    ibm.cluster = ibm.cluster # source (cluster/VPC) account — same as ibm when source_ibmcloud_api_key is null
+  }
+  # --- Cluster ---
   cluster_id                   = var.cluster_id
   cluster_resource_group_id    = var.cluster_resource_group_id
   cluster_config_endpoint_type = var.cluster_config_endpoint_type
   add_dsc_rules_to_cluster_sg  = var.add_dsc_rules_to_cluster_sg
+  add_cluster_tags             = var.add_cluster_tags
   kube_type                    = var.kube_type
-  ibmcloud_api_key             = var.ibmcloud_api_key
+  wait_till                    = var.wait_till
+  wait_till_timeout            = var.wait_till_timeout
   # --- Deployment Mode ---
   deployment_mode = var.deployment_mode
-  # --- BRS Instance Details---
+  # --- BRS Instance ---
+  ibmcloud_api_key          = var.ibmcloud_api_key
   brs_endpoint_type         = var.brs_endpoint_type
   existing_brs_instance_crn = var.existing_brs_instance_crn
   brs_instance_name         = var.brs_instance_name
-  # --- BRS Connection Details---
+  brs_resource_group_id     = var.brs_resource_group_id
+  region                    = local.region
+  # --- BRS Connection ---
   brs_connection_name       = var.brs_connection_name
   brs_create_new_connection = var.brs_create_new_connection
-  region                    = local.region
   connection_env_type       = var.connection_env_type
-  # --- Backup Policy ---
-  auto_protect_policy_name = var.auto_protect_policy_name
-  protection_groups        = var.protection_groups
-  wait_till                = var.wait_till
-  wait_till_timeout        = var.wait_till_timeout
+  # --- VPE + S2S (cross-account and same-account private routing) ---
+  create_brs_vpe = var.create_brs_vpe
+  vpc_id         = var.vpc_id
+  vpc_subnets    = var.vpc_subnets
+  brs_vpe_name   = var.brs_vpe_name
   # --- Data Source Connector (DSC) ---
   dsc_chart_uri           = var.dsc_chart_uri
   dsc_name                = var.dsc_name
@@ -81,6 +94,7 @@ module "protect_cluster" {
   dsc_helm_timeout        = var.dsc_helm_timeout
   dsc_storage_class       = var.dsc_storage_class
   create_dsc_worker_pool  = var.create_dsc_worker_pool
+  dsc_worker_pool_zones   = var.dsc_worker_pool_zones
   dsc_worker_pool_flavor  = var.dsc_worker_pool_flavor
   dsc_pod_cpu_limits      = var.dsc_pod_cpu_limits
   dsc_pod_memory_limits   = var.dsc_pod_memory_limits
@@ -89,8 +103,10 @@ module "protect_cluster" {
   # --- Registration Settings ---
   registration_images = var.registration_images
   enable_auto_protect = var.enable_auto_protect
-  # --- Policies ---
-  policies = var.policies
+  # --- Backup Policy ---
+  auto_protect_policy_name = var.auto_protect_policy_name
+  protection_groups        = var.protection_groups
+  policies                 = var.policies
   # --- Resource Tags ---
   resource_tags = var.resource_tags
   access_tags   = var.access_tags
@@ -106,20 +122,34 @@ module "protect_cluster" {
 ##############################################################################
 
 locals {
-  # Determine which protection group to use for recovery
-  # Only applicable in full_backup_recovery mode
+  # Determine which explicitly Terraform-managed protection group to use for
+  # recovery lookup. Only meaningful when protection_groups are defined —
+  # auto-protect PGs are BRS-named (e.g. "AutoProtectK8s-060826-0707") and have
+  # no relation to auto_protect_policy_name. For auto-protect, the real PG ID
+  # comes from the auto_protect_pg_id output directly; recovery_pg_name is only
+  # used to look up the protection_group_ids map and to build a label string.
   recovery_pg_name = local.is_full_recovery ? (
     var.recovery_protection_group_name != null ? var.recovery_protection_group_name :
     try(length(var.protection_groups), 0) > 0 ? var.protection_groups[0].name :
-    var.auto_protect_policy_name
+    null # auto-protect: no Terraform-managed PG name — pg_id comes from auto_protect_pg_id output
   ) : null
 
-  # Extract protection group ID for recovery.
-  # Keep the full ID returned by the module because downstream resources/scripts
-  # expect the protection group identifier in that format.
-  recovery_pg_id = local.is_full_recovery && local.recovery_pg_name != null ? (
-    try(split("::", module.protect_cluster.protection_group_ids[local.recovery_pg_name])[1], null)
-  ) : null
+  # Human-readable label used in recovery resource names. Falls back to
+  # "auto-protect" so the name is meaningful rather than using the policy name
+  # (which has no relation to the BRS-assigned PG name).
+  recovery_pg_label = local.recovery_pg_name != null ? local.recovery_pg_name : "auto-protect"
+
+  # Resolved protection-group ID used in all recovery resources (wait, same-cluster,
+  # cross-cluster). Prefers the explicitly Terraform-managed PG when recovery_pg_name
+  # is set, falls back to the BRS-assigned auto-protect PG ID, then "" as a
+  # plan-time placeholder (replaced by the real value at apply).
+  # try() wraps coalesce() so that when all arguments are null (e.g. during a
+  # plan before the module outputs are known) it gracefully returns "" instead
+  # of throwing "no non-null, non-empty-string arguments".
+  recovery_pg_id = try(coalesce(
+    local.recovery_pg_name != null ? try(module.protect_cluster.protection_group_ids[local.recovery_pg_name], null) : null,
+    module.protect_cluster.auto_protect_pg_id,
+  ), "")
 }
 
 ##############################################################################
@@ -138,6 +168,7 @@ locals {
 
 data "ibm_container_vpc_cluster" "target_cluster" {
   count             = local.deploy_target_cluster ? 1 : 0
+  provider          = ibm.cluster
   name              = var.target_cluster_id
   resource_group_id = var.target_cluster_resource_group_id
   wait_till         = var.wait_till
@@ -148,6 +179,7 @@ data "ibm_container_cluster_config" "target_cluster_config" {
   depends_on = [data.ibm_container_vpc_cluster.target_cluster]
 
   count             = local.deploy_target_cluster ? 1 : 0
+  provider          = ibm.cluster
   cluster_name_id   = var.target_cluster_id
   resource_group_id = var.target_cluster_resource_group_id
   config_dir        = "${path.module}/kubeconfig"
@@ -161,8 +193,10 @@ module "target_cluster_registration" {
   source = "../.."
 
   providers = {
-    helm       = helm.target
-    kubernetes = kubernetes.target
+    ibm         = ibm         # target (BRS) account
+    ibm.cluster = ibm.cluster # source (cluster/VPC) account — same as ibm when source_ibmcloud_api_key is null
+    helm        = helm.target
+    kubernetes  = kubernetes.target
   }
 
   cluster_id                   = var.target_cluster_id
@@ -202,6 +236,12 @@ module "target_cluster_registration" {
   # No policies or protection groups for target (it's just a recovery destination)
   policies          = []
   protection_groups = null
+
+  # --- VPE (target cluster's own VPC — needed when target is in a different VPC from source) ---
+  create_brs_vpe = var.target_create_brs_vpe
+  vpc_id         = var.target_vpc_id
+  vpc_subnets    = var.target_vpc_subnets
+  brs_vpe_name   = var.target_brs_vpe_name
 
   # Tags
   resource_tags = var.resource_tags
@@ -243,18 +283,23 @@ resource "terraform_data" "wait_for_backup" {
     tenant                = module.protect_cluster.brs_tenant_id
     endpoint_type         = var.brs_endpoint_type
     instance_id           = module.protect_cluster.brs_instance_guid
-    protection_group_id   = local.recovery_pg_id
     api_key               = sensitive(var.ibmcloud_api_key)
     timeout_minutes       = var.recovery_wait_timeout_minutes
     poll_interval_seconds = var.recovery_poll_interval_seconds
     binaries_path         = "/tmp"
+    # protection_group_id is resolved from module outputs after apply.
+    # It is passed via environment variable (not interpolated into the command
+    # string) so that a null/unknown value at plan time does not cause
+    # "Cannot include a null value in a string template".
+    protection_group_id = local.recovery_pg_id
   }
 
   provisioner "local-exec" {
-    command     = "${path.module}/../../scripts/wait_for_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' '${self.input.protection_group_id}' '${self.input.timeout_minutes}' '${self.input.poll_interval_seconds}' '${self.input.binaries_path}' > /tmp/backup_snapshot_${self.input.instance_id}.json"
+    command     = "${path.module}/../../scripts/wait_for_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' $BRS_PG_ID '${self.input.timeout_minutes}' '${self.input.poll_interval_seconds}' '${self.input.binaries_path}' > /tmp/backup_snapshot_${self.input.instance_id}.json"
     interpreter = ["/bin/bash", "-c"]
     environment = {
       IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
+      BRS_PG_ID        = self.input.protection_group_id
     }
   }
 }
@@ -274,7 +319,7 @@ resource "terraform_data" "same_cluster_recovery" {
     source_pg_id     = local.recovery_pg_id
     target_source_id = split("::", module.protect_cluster.source_registration_id)[1]
     api_key          = sensitive(var.ibmcloud_api_key)
-    recovery_name    = "recovery-${local.recovery_pg_name}-${formatdate("YYYYMMDD-hhmm", timestamp())}"
+    recovery_name    = "recovery-${local.recovery_pg_label}-${formatdate("YYYYMMDD-hhmm", timestamp())}"
     binaries_path    = "/tmp"
     namespace_prefix = var.recovery_namespace_prefix
   }
@@ -289,7 +334,7 @@ resource "terraform_data" "same_cluster_recovery" {
         '${self.input.tenant}' \
         '${self.input.endpoint_type}' \
         '${self.input.instance_id}' \
-        '${self.input.source_pg_id}' \
+        "$BRS_PG_ID" \
         '${self.input.target_source_id}' \
         "$SNAPSHOT_ID" \
         '${self.input.recovery_name}' \
@@ -298,6 +343,7 @@ resource "terraform_data" "same_cluster_recovery" {
     EOT
     environment = {
       IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
+      BRS_PG_ID        = self.input.source_pg_id
     }
   }
 
@@ -319,7 +365,7 @@ resource "terraform_data" "cross_cluster_recovery" {
     source_pg_id     = local.recovery_pg_id
     target_source_id = split("::", module.target_cluster_registration[0].source_registration_id)[1]
     api_key          = sensitive(var.ibmcloud_api_key)
-    recovery_name    = "cross-cluster-recovery-${local.recovery_pg_name}-${formatdate("YYYYMMDD-hhmm", timestamp())}"
+    recovery_name    = "cross-cluster-recovery-${local.recovery_pg_label}-${formatdate("YYYYMMDD-hhmm", timestamp())}"
     binaries_path    = "/tmp"
     namespace_prefix = var.recovery_namespace_prefix
   }
@@ -334,7 +380,7 @@ resource "terraform_data" "cross_cluster_recovery" {
         '${self.input.tenant}' \
         '${self.input.endpoint_type}' \
         '${self.input.instance_id}' \
-        '${self.input.source_pg_id}' \
+        "$BRS_PG_ID" \
         '${self.input.target_source_id}' \
         "$SNAPSHOT_ID" \
         '${self.input.recovery_name}' \
@@ -343,6 +389,7 @@ resource "terraform_data" "cross_cluster_recovery" {
     EOT
     environment = {
       IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
+      BRS_PG_ID        = self.input.source_pg_id
     }
   }
 
