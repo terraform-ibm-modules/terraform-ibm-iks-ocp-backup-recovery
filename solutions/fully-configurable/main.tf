@@ -138,7 +138,7 @@ locals {
 
   is_cross_account = local.cluster_account_id != local.brs_account_id
 
-  brs_vpe_active = var.create_brs_vpe && local.is_vpc
+  brs_vpe_active = var.create_source_cluster_brs_vpe_gateway && local.is_vpc
 
   brs_vpe_name_resolved = var.brs_vpe_name != null ? var.brs_vpe_name : "${lower(var.brs_connection_name)}-vpe"
 
@@ -405,13 +405,13 @@ module "target_cluster_registration" {
 }
 
 ##############################################################################
-# VPE Gateway for target cluster (when target_create_brs_vpe = true)
+# VPE Gateway for target cluster (when create_target_cluster_brs_vpe_gateway = true)
 # Routes target cluster's DSC↔BRS traffic over the IBM private backbone.
 # Created here in the DA because the root module no longer manages VPE.
 ##############################################################################
 
 locals {
-  target_brs_vpe_active = var.target_create_brs_vpe && local.is_vpc && local.deploy_target_cluster
+  target_brs_vpe_active = var.create_target_cluster_brs_vpe_gateway && local.is_vpc && local.deploy_target_cluster
 
   target_brs_vpe_name_resolved = var.target_brs_vpe_name != null ? var.target_brs_vpe_name : "${lower(var.target_brs_connection_name != null ? var.target_brs_connection_name : "${var.target_cluster_id}-target-connection")}-vpe"
 

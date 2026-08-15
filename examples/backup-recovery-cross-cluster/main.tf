@@ -11,12 +11,12 @@
 #   SOURCE cluster  (ibm / ibm.source_account = ibm)
 #     - IKS VPC cluster  (created or existing)
 #     - VPC + subnet + public gateway  (created when source_cluster_name_id = null)
-#     - VPE Gateway bound to source VPC  (create_brs_vpe = true)
+#     - VPE Gateway bound to source VPC  (create_source_cluster_brs_vpe_gateway = true)
 #
 #   TARGET cluster  (ibm / ibm.source_account = ibm)
 #     - IKS VPC cluster  (created or existing)
 #     - VPC + subnet + public gateway  (created when target_cluster_name_id = null)
-#     - VPE Gateway bound to target VPC  (create_brs_vpe = true)
+#     - VPE Gateway bound to target VPC  (create_source_cluster_brs_vpe_gateway = true)
 #
 # The BRS instance is created once (by module.source_backup_recovery) and
 # reused by module.target_backup_recovery via create_new_brs_instance = false.
