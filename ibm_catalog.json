@@ -262,12 +262,46 @@
               ]
             },
             {
+              "key": "brs_resource_group_id",
+              "display_name": "BRS Resource Group ID"
+            },
+            {
               "key": "brs_connection_name",
               "display_name": "Backup Recovery Service Connection Name"
             },
             {
               "key": "brs_create_new_connection",
               "display_name": "Create New Connection"
+            },
+            {
+              "key": "create_brs_vpe",
+              "display_name": "Create BRS Virtual Private Endpoint Gateway"
+            },
+            {
+              "key": "vpc_id",
+              "display_name": "VPC ID"
+            },
+            {
+              "key": "vpc_subnets",
+              "display_name": "VPC Subnets",
+              "custom_config": {
+                "type": "code_editor",
+                "grouping": "deployment",
+                "original_grouping": "deployment",
+                "config_constraints": {
+                  "supportedLanguages": [
+                    "hcl"
+                  ]
+                }
+              }
+            },
+            {
+              "key": "brs_vpe_name",
+              "display_name": "BRS VPE Gateway Name"
+            },
+            {
+              "key": "retain_brs_vpe_on_destroy",
+              "display_name": "Retain BRS VPE on Destroy"
             },
             {
               "key": "deployment_mode",
@@ -368,6 +402,10 @@
               "display_name": "Create Data Source Connector Worker Pool"
             },
             {
+              "key": "dsc_worker_pool_zones",
+              "display_name": "DSC Worker Pool Zones"
+            },
+            {
               "key": "dsc_worker_pool_flavor",
               "display_name": "Data Source Connector Worker Pool Flavor"
             },
@@ -390,6 +428,10 @@
             {
               "key": "add_dsc_rules_to_cluster_sg",
               "display_name": "Add Security Group Rules"
+            },
+            {
+              "key": "add_cluster_tags",
+              "display_name": "Add Cluster Tags"
             },
             {
               "key": "registration_images",
@@ -547,66 +589,25 @@
               }
             },
             {
-              "key": "brs_resource_group_id",
-              "display_name": "BRS Instance Resource Group",
-              "custom_config": {
-                "type": "resource_group",
-                "grouping": "deployment",
-                "original_grouping": "deployment",
-                "config_constraints": {
-                  "identifier": "rg_id"
-                }
-              }
-            },
-            {
-              "key": "add_cluster_tags",
-              "display_name": "Add BRS Tags to Cluster"
-            },
-            {
-              "key": "create_brs_vpe",
-              "display_name": "Create BRS VPE Gateway"
-            },
-            {
-              "key": "vpc_id",
-              "display_name": "VPC ID (for VPE)"
-            },
-            {
-              "key": "vpc_subnets",
-              "display_name": "VPC Subnets (for VPE)",
-              "custom_config": {
-                "type": "code_editor",
-                "grouping": "deployment",
-                "original_grouping": "deployment",
-                "config_constraints": {
-                  "supportedLanguages": [
-                    "hcl"
-                  ]
-                }
-              }
-            },
-            {
-              "key": "brs_vpe_name",
-              "display_name": "BRS VPE Gateway Name"
-            },
-            {
-              "key": "retain_brs_vpe_on_destroy",
-              "display_name": "Retain BRS VPE on Destroy"
-            },
-            {
-              "key": "dsc_worker_pool_zones",
-              "display_name": "DSC Worker Pool Zones"
-            },
-            {
               "key": "target_create_brs_vpe",
-              "display_name": "Create BRS VPE Gateway (Target Cluster)"
+              "display_name": "Create BRS VPE for Target Cluster",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
             },
             {
               "key": "target_vpc_id",
-              "display_name": "VPC ID - Target Cluster (for VPE)"
+              "display_name": "Target VPC ID",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
             },
             {
               "key": "target_vpc_subnets",
-              "display_name": "VPC Subnets - Target Cluster (for VPE)",
+              "display_name": "Target VPC Subnets",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              },
               "custom_config": {
                 "type": "code_editor",
                 "grouping": "deployment",
@@ -620,7 +621,10 @@
             },
             {
               "key": "target_brs_vpe_name",
-              "display_name": "BRS VPE Gateway Name (Target Cluster)"
+              "display_name": "Target BRS VPE Gateway Name",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
             }
           ],
           "dependencies": [],
