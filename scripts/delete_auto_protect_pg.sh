@@ -70,12 +70,12 @@ vlog() {
 # Login + set BRS service URL (identical to cancel_pg_runs.sh)
 # ---------------------------------------------------------------------------
 ibmcloud_login() {
-  local iam_endpoint
-  iam_endpoint=$(derive_iam_endpoint "${BRS_ENDPOINT}")
-  echo "Logging in to IBM Cloud (region: ${REGION}, IAM: ${iam_endpoint})..." >&2
+  local api_endpoint
+  api_endpoint=$(derive_api_endpoint "${BRS_ENDPOINT}")
+  echo "Logging in to IBM Cloud (region: ${REGION}, endpoint: ${api_endpoint})..." >&2
   local login_out
   login_out=$(ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -r "${REGION}" \
-    --iam-endpoint "https://${iam_endpoint}" -q 2>&1) || true  # pragma: allowlist secret
+    -a "${api_endpoint}" -q 2>&1) || true  # pragma: allowlist secret
   echo "${login_out}" | grep -v "^$" >&2 || true
   vlog "ibmcloud login" "${login_out}"
 
