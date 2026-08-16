@@ -243,10 +243,11 @@ check_and_cancel() {
   archival_data=$(pg_active_archival_runs)
 
   # Collect the union of all active run IDs across both responses.
+  # Use (.runs // []) to guard against "runs": null in the server response.
   local all_run_ids
   all_run_ids=$(
     { echo "$backup_data"; echo "$archival_data"; } \
-      | jq -rs '[.[].runs[].id // empty] | unique | .[]'
+      | jq -rs '[.[].runs // [] | .[].id // empty] | unique | .[]'
   )
 
   [[ -z "$all_run_ids" ]] && { echo "0"; return 0; }
