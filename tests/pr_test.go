@@ -250,10 +250,6 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 // Upgrade Test does not require KMS encryption
 func TestRunUpgradeFullyConfigurable(t *testing.T) {
 	t.Parallel()
-	// TODO: re-enable once IBM Schematics eu-de storage/worker instability is resolved.
-	// Failing with "APPLY has failed with status FAILED" inside the Schematics eu-de worker —
-	// same root cause as TestRunFullyConfigurableInSchematics.
-	t.Skip("Skipping TestRunUpgradeFullyConfigurable: Schematics eu-de instability")
 
 	tarIncludePatterns, recurseErr := getTarIncludePatternsRecursively("..", excludeDirs, includeFiletypes)
 	// if error producing tar patterns (very unexpected) fail test immediately
