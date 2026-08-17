@@ -18,29 +18,6 @@ vlog() {
   echo "${body}" | jq '.' 2>/dev/null >&2 || echo "${body}" >&2
 }
 
-# ---------------------------------------------------------------------------
-# derive_api_endpoint BRS_ENDPOINT
-#
-# Detects whether the BRS endpoint points to UAT (test.cloud.ibm.com) or
-# production (cloud.ibm.com) and returns the matching IBM Cloud API endpoint
-# to pass to 'ibmcloud login -a':
-#
-#   *.test.cloud.ibm.com  →  https://test.cloud.ibm.com   (UAT)
-#   *.cloud.ibm.com       →  https://cloud.ibm.com         (production, default)
-#
-# Usage:
-#   API_ENDPOINT=$(derive_api_endpoint "${BRS_ENDPOINT}")
-#   ibmcloud login -a "${API_ENDPOINT}" ...
-# ---------------------------------------------------------------------------
-derive_api_endpoint() {
-  local brs_endpoint="${1:-}"
-  if [[ "${brs_endpoint}" == *"test.cloud.ibm.com"* ]]; then
-    echo "https://test.cloud.ibm.com"
-  else
-    echo "https://cloud.ibm.com"
-  fi
-}
-
 # Get IAM token from IBM Cloud.
 # Usage: get_iam_token API_KEY ENDPOINT_TYPE
 # Returns: IAM access token
