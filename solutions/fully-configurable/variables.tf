@@ -15,6 +15,20 @@ variable "source_ibmcloud_api_key" {
   default     = null
 }
 
+variable "iaas_classic_username" {
+  type        = string
+  description = "IBM Cloud Classic Infrastructure username. Required only when `connection_env_type` is `kIksClassic` or `kRoksClassic`. Find it under Manage > Access (IAM) > Users > your user > VPN password > Username."
+  sensitive   = true
+  default     = null
+}
+
+variable "iaas_classic_api_key" {
+  type        = string
+  description = "IBM Cloud Classic Infrastructure API key. Required only when `connection_env_type` is `kIksClassic` or `kRoksClassic`. Generate it under Manage > Access (IAM) > Users > your user > API keys > Classic infrastructure API key."
+  sensitive   = true
+  default     = null
+}
+
 variable "provider_visibility" {
   description = "Set the visibility value for the IBM terraform provider. Supported values are `public`, `private`, `public-and-private`. [Learn more](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/guides/custom-service-endpoints)."
   type        = string
@@ -452,6 +466,18 @@ variable "kube_type" {
   }
 }
 
+variable "brs_service_type" {
+  type        = string
+  description = "The IBM Cloud service name for the Backup and Recovery instance. Use the default `backup-recovery` for production. Set to `backup-recovery-tests` to provision or connect against the test-environment service."
+  default     = "backup-recovery"
+  nullable    = false
+
+  validation {
+    condition     = contains(["backup-recovery", "backup-recovery-tests"], var.brs_service_type)
+    error_message = "`brs_service_type` must be 'backup-recovery' or 'backup-recovery-tests'."
+  }
+}
+
 variable "brs_instance_name" {
   type        = string
   description = "Name of the Backup & Recovery Service instance. Required only when `existing_brs_instance_crn` is not provided."
@@ -520,6 +546,12 @@ variable "region" {
     condition     = var.existing_brs_instance_crn != null || var.region != null
     error_message = "`region` is required when `existing_brs_instance_crn` is not provided."
   }
+}
+
+variable "cluster_region" {
+  type        = string
+  description = "IBM Cloud region for the cluster provider, which serves BOTH the source and target clusters. Only region-scoped VPC (`is`) calls depend on it: subnet lookups, the `kube-vpegw-*` security group, and the VPE gateway. Cluster lookups themselves use the global containers API and are unaffected, so a Classic cluster never constrains this value. Set it to the region of the VPC cluster whose VPC resources this deployment manages — for a Classic source to VPC target migration that is the TARGET cluster's region; for a VPC source with `create_brs_vpe` or `add_dsc_rules_to_cluster_sg` enabled it is the SOURCE cluster's region. When null (default) it falls back to `region` (the Backup & Recovery instance region), which is correct whenever that cluster and the BRS instance share a region. LIMITATION: if the source and target are BOTH VPC clusters in DIFFERENT regions, one provider cannot serve both and that topology is unsupported."
+  default     = null
 }
 
 variable "resource_tags" {
@@ -987,6 +1019,12 @@ variable "target_cluster_config_endpoint_type" {
   }
 }
 
+variable "target_connection_env_type" {
+  type        = string
+  description = "Connection environment type for the target cluster. Must be consistent with the target cluster's infrastructure type. Allowed values are 'kIksVpc', 'kIksClassic', 'kRoksVpc', 'kRoksClassic'. When null (default), falls back to `connection_env_type`. Set this explicitly for Classic→VPC cross-cluster recovery where the source is Classic and the target is VPC."
+  default     = null
+}
+
 variable "target_brs_connection_name" {
   description = "Name for the BRS connection to the target cluster in cross-cluster recovery or connected component setup. If null, defaults to '{cluster_id}-target-connection'."
   type        = string
@@ -998,6 +1036,12 @@ variable "target_brs_create_new_connection" {
   type        = bool
   default     = true
   nullable    = false
+}
+
+variable "target_dsc_storage_class" {
+  description = "Storage class for the Data Source Connector persistent volume on the target cluster. When null (default), falls back to `dsc_storage_class`. Set this explicitly for Classic→VPC cross-cluster recovery where the source uses 'ibmc-block-silver' (Classic) and the target needs 'ibmc-vpc-block-metro-5iops-tier' (VPC)."
+  type        = string
+  default     = null
 }
 
 variable "target_create_dsc_worker_pool" {
@@ -1035,4 +1079,19 @@ variable "target_brs_vpe_name" {
   description = "Override the name of the BRS Virtual Private Endpoint Gateway for the target cluster. If null, the name is auto-generated as '<target_brs_connection_name>-vpe'."
   type        = string
   default     = null
+}
+
+variable "recovery_storage_class_aliases" {
+  description = "Storage class aliases to create on the TARGET cluster so PVCs restored from the source cluster can bind. Required for Classic to VPC migrations: Velero restores each PVC with the storage class name it had on the source (e.g. 'ibmc-block-silver'), which cannot exist on a VPC cluster, leaving the PVC Pending and failing the recovery with 'Timed out while waiting for temporary pod to start'. Map each SOURCE storage class name to the VPC block profile that should back it, e.g. { \"ibmc-block-silver\" = \"5iops-tier\" }. Leave empty (default) for same-environment recoveries where the storage class already exists on the target. Note the restored volume takes on the VPC profile's characteristics, which differ from the original Classic tier."
+  type        = map(string)
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition = alltrue([
+      for profile in values(var.recovery_storage_class_aliases) :
+      contains(["general-purpose", "5iops-tier", "10iops-tier", "custom"], profile)
+    ])
+    error_message = "Each value must be a VPC block storage profile: 'general-purpose', '5iops-tier', '10iops-tier', or 'custom'."
+  }
 }

@@ -229,13 +229,13 @@ variable "brs_endpoint_type" {
 }
 
 variable "existing_brs_instance_crn" {
-  description = "CRN of the Backup & Recovery Service instance."
+  description = "CRN of the Backup & Recovery Service instance. Supports both production (`backup-recovery`) and test (`backup-recovery-tests`) service instances."
   type        = string
   default     = null
 
   validation {
     condition     = var.existing_brs_instance_crn == null || var.existing_brs_instance_crn == "null" || var.existing_brs_instance_crn == "" || can(regex("^crn:v1:[a-z0-9-]+:[a-z0-9-]*:[a-z0-9-]+:[a-z0-9-]*:a/[a-f0-9]+:[a-f0-9-]+::$", var.existing_brs_instance_crn))
-    error_message = "'existing_brs_instance_crn' must be a valid CRN. Example: crn:v1:bluemix:public:backup-recovery:<region>:a/<account-id>:<instance-guid>::"
+    error_message = "'existing_brs_instance_crn' must be a valid CRN. Examples: crn:v1:bluemix:public:backup-recovery:<region>:a/<account-id>:<instance-guid>:: (production) or crn:v1:bluemix:public:backup-recovery-tests:<region>:a/<account-id>:<instance-guid>:: (test)"
   }
 }
 
@@ -243,6 +243,18 @@ variable "create_new_brs_instance" {
   description = "Whether to provision a new Backup & Recovery Service instance. Leave as `null` (default) to infer the behaviour from `existing_brs_instance_crn` (a new instance is created when the CRN is not provided). Set to `false` to reuse an existing instance whose CRN is only known after apply — for example, when this module registers a second cluster against an instance created by a first invocation in the same apply."
   type        = bool
   default     = null
+}
+
+variable "brs_service_type" {
+  description = "The IBM Cloud service name for the Backup and Recovery instance. Use the default `backup-recovery` for production. Set to `backup-recovery-tests` to provision or connect against the test-environment service."
+  type        = string
+  default     = "backup-recovery"
+  nullable    = false
+
+  validation {
+    condition     = contains(["backup-recovery", "backup-recovery-tests"], var.brs_service_type)
+    error_message = "`brs_service_type` must be 'backup-recovery' or 'backup-recovery-tests'."
+  }
 }
 
 variable "brs_instance_name" {
