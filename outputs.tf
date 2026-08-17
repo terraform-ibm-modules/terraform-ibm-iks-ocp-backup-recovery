@@ -9,7 +9,7 @@ output "source_registration_id" {
 
 output "brs_instance_crn" {
   description = "CRN of the Backup & Recovery Service instance"
-  value       = module.backup_recovery_instance.brs_instance_crn
+  value       = var.brs_instance_crn
 }
 
 output "brs_instance_guid" {

@@ -2,20 +2,20 @@
 # Outputs
 ##############################################################################
 
-# BRS Instance Outputs
+# BRS Instance Outputs — sourced directly from module.brs_instance (DA owns it)
 output "brs_instance_guid" {
   description = "GUID of the Backup & Recovery Service instance"
-  value       = module.protect_cluster.brs_instance_guid
+  value       = module.brs_instance.brs_instance_guid
 }
 
 output "brs_instance_crn" {
   description = "CRN of the Backup & Recovery Service instance"
-  value       = module.protect_cluster.brs_instance_crn
+  value       = module.brs_instance.brs_instance_crn
 }
 
 output "brs_tenant_id" {
   description = "Tenant ID for the Backup & Recovery Service instance"
-  value       = module.protect_cluster.brs_tenant_id
+  value       = module.brs_instance.tenant_id
 }
 
 # Source Cluster Outputs

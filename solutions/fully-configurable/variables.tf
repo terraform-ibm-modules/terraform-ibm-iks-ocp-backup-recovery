@@ -463,6 +463,12 @@ variable "brs_instance_name" {
   }
 }
 
+variable "create_new_brs_instance" {
+  description = "Whether to provision a new Backup & Recovery Service instance. Leave as `null` (default) to infer the behaviour from `existing_brs_instance_crn` — a new instance is created when the CRN is not provided. Set to `false` to reuse an existing instance whose CRN is only known after apply."
+  type        = bool
+  default     = null
+}
+
 variable "brs_create_new_connection" {
   type        = bool
   description = "Flag to create a new connection from the Backup & Recovery Service instance to the cluster. When set to `true` (default), a new connection is created with the name specified in `brs_connection_name`. When `false`, it uses an existing connection matching `brs_connection_name`."

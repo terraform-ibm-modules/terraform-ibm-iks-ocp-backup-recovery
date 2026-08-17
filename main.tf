@@ -12,9 +12,6 @@ locals {
   # deployment_mode. deploy_recovery is the only mode-gated flag.
   deploy_recovery = var.deployment_mode == "full_backup_recovery"
 
-  # BRS region: cluster region for new instances, existing instance region otherwise.
-  brs_region = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? split(":", var.existing_brs_instance_crn)[5] : var.region
-
   # Cluster attributes — resolved from the VPC or Classic data source.
   cluster_crn                  = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].crn : data.ibm_container_cluster.classic_cluster[0].crn
   cluster_private_endpoint_url = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].private_service_endpoint_url : data.ibm_container_cluster.classic_cluster[0].private_service_endpoint_url
@@ -52,28 +49,26 @@ locals {
 
 ##############################################################################
 # Locals — BRS Instance
+#
+# The BRS instance is owned by the caller (DA or example) and its resolved
+# attributes are passed in as prerequisite variables.
 ##############################################################################
 
 locals {
-  # Forwarded attributes from the backup_recovery_instance module.
-  brs_tenant_id       = module.backup_recovery_instance.tenant_id
-  connection_id       = module.backup_recovery_instance.connection_id
-  registration_token  = module.backup_recovery_instance.registration_token
-  brs_instance_guid   = module.backup_recovery_instance.brs_instance_guid
-  brs_instance_region = element(split(":", module.backup_recovery_instance.brs_instance_crn), 5)
+  brs_tenant_id       = var.brs_tenant_id
+  connection_id       = var.brs_connection_id
+  registration_token  = var.brs_registration_token
+  brs_instance_guid   = var.brs_instance_guid
+  brs_instance_region = element(split(":", var.brs_instance_crn), 5)
 
-  backup_recovery_instance_public_url  = nonsensitive(module.backup_recovery_instance.brs_instance.extensions["endpoints.public"])
-  backup_recovery_instance_private_url = nonsensitive(module.backup_recovery_instance.brs_instance.extensions["endpoints.private"])
+  backup_recovery_instance_public_url  = var.brs_instance_public_url
+  backup_recovery_instance_private_url = var.brs_instance_private_url
 
   # URL used by Terraform provider resources and scripts to reach the BRS API.
-  # The DSC Helm chart does NOT use this URL — it reads the BRS private endpoint
-  # directly from the cluster_endpoint field embedded in the registration token JWT.
-  # The VPE Gateway makes that private hostname resolvable inside the VPC without
-  # any change to this URL.
   backup_recovery_instance_url = var.brs_endpoint_type == "public" ? local.backup_recovery_instance_public_url : local.backup_recovery_instance_private_url
 
-  # Resolved policy IDs forwarded from the BRS module.
-  resolved_policy_ids = module.backup_recovery_instance.resolved_policy_ids
+  # Resolved policy IDs passed in from the caller.
+  resolved_policy_ids = var.resolved_policy_ids
 }
 
 resource "terraform_data" "install_dependencies" {
@@ -91,38 +86,6 @@ resource "terraform_data" "install_dependencies" {
     command     = "${path.module}/scripts/install-binaries.sh ${self.input.binaries_path}"
     interpreter = ["/bin/bash", "-c"]
   }
-}
-
-##############################################################################
-# CRN Parser (for existing BRS instance)
-##############################################################################
-
-module "crn_parser" {
-  source  = "terraform-ibm-modules/common-utilities/ibm//modules/crn-parser"
-  version = "1.5.0"
-  crn     = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : ""
-}
-
-##############################################################################
-# Backup Recovery Service Instance
-##############################################################################
-
-module "backup_recovery_instance" {
-  source                    = "terraform-ibm-modules/backup-recovery/ibm"
-  version                   = "1.12.3"
-  region                    = local.brs_region
-  resource_group_id         = var.brs_resource_group_id != null ? var.brs_resource_group_id : var.cluster_resource_group_id
-  ibmcloud_api_key          = var.ibmcloud_api_key
-  instance_name             = var.brs_instance_name
-  existing_brs_instance_crn = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : null
-  create_new_instance       = var.create_new_brs_instance
-  connection_name           = var.brs_connection_name
-  create_new_connection     = var.brs_create_new_connection
-  resource_tags             = var.resource_tags
-  access_tags               = var.access_tags
-  endpoint_type             = var.brs_endpoint_type
-  connection_env_type       = var.connection_env_type
-  policies                  = var.policies
 }
 
 ##############################################################################
@@ -619,7 +582,6 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
   depends_on = [
     helm_release.data_source_connector,
     time_sleep.wait_for_dsc_stabilization,
-    module.backup_recovery_instance,
     # BRS removes the brs-backup-agent-* namespace asynchronously after this
     # DELETE, via the DSC tunnel and the brsagent RBAC, so both must outlive it.
     # Depending on the waiter (rather than the reverse) is what destroys it after
@@ -652,7 +614,6 @@ resource "terraform_data" "brs_source_deregistration_wait" {
     helm_release.data_source_connector,
     kubernetes_cluster_role_binding_v1.brsagent_admin,
     kubernetes_secret_v1.brsagent_token,
-    module.backup_recovery_instance,
   ]
 
   input = {

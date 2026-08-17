@@ -189,52 +189,28 @@ data "ibm_container_cluster_config" "cluster_config" {
 }
 
 ##############################################################################
-# BRS backup & recovery module
-#
-# The default ibm provider (target account) handles all BRS resources:
-#   - BRS instance, data-source connection, registration token
-#   - ibm_backup_recovery_* resources (source registration, protection groups)
-#
-# The ibm.source_account provider alias (source account) handles all cluster
-# and VPC resources:
-#   - cluster data sources, DSC worker pool, security group rules, cluster tags
-#
-# VPE Gateway and S2S policy are created directly in this example below the
-# module call (see "S2S IAM Authorization Policy" and "VPE Gateway" sections).
+# BRS Instance (owned by this example — target account)
 ##############################################################################
 
-module "backup_recovery" {
-  source = "../.."
+module "brs_instance" {
+  source  = "terraform-ibm-modules/backup-recovery/ibm"
+  version = "1.12.3"
   providers = {
-    ibm                = ibm        # target account — BRS instance, ibm_backup_recovery_* resources
-    ibm.source_account = ibm.source # source account — cluster, VPC, DSC worker pool
+    ibm = ibm # target account owns the BRS instance
   }
 
-  # ---- Cluster (source account) ----
-  cluster_id                   = local.cluster_id
-  cluster_resource_group_id    = module.source_resource_group.resource_group_id
-  cluster_config_endpoint_type = var.cluster_config_endpoint_type
-  kube_type                    = "kubernetes"
-  connection_env_type          = "kIksVpc"
-  ibmcloud_api_key             = var.ibmcloud_api_key
-  region                       = local.brs_region
-  dsc_storage_class            = "ibmc-vpc-block-metro-5iops-tier"
-  dsc_worker_pool_zones        = 1
-  add_dsc_rules_to_cluster_sg  = false
-  enable_auto_protect          = false
-
-  # ---- BRS instance (target account) ----
-  brs_resource_group_id     = module.target_resource_group.resource_group_id
-  existing_brs_instance_crn = var.existing_brs_instance_crn
-  brs_instance_name         = "${var.prefix}-brs"
-  brs_connection_name       = "${var.prefix}-brs-connection"
-  brs_create_new_connection = true
-
-  # Use public endpoint so Terraform (CI/workstation) can reach the BRS API.
-  # DSC traffic routes privately via the VPE Gateway created below.
-  brs_endpoint_type = "public"
-
-  # ---- Backup policy ----
+  region                    = local.brs_region
+  resource_group_id         = module.target_resource_group.resource_group_id
+  ibmcloud_api_key          = var.ibmcloud_api_key
+  instance_name             = "${var.prefix}-brs"
+  existing_brs_instance_crn = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : null
+  create_new_instance       = var.existing_brs_instance_crn == null
+  connection_name           = "${var.prefix}-brs-connection"
+  create_new_connection     = true
+  resource_tags             = var.resource_tags
+  access_tags               = var.access_tags
+  endpoint_type             = "public"
+  connection_env_type       = "kIksVpc"
   policies = [
     {
       name              = "${var.prefix}-retention"
@@ -250,6 +226,54 @@ module "backup_recovery" {
       use_default_backup_target = true
     }
   ]
+}
+
+##############################################################################
+# BRS backup & recovery module
+#
+# The default ibm provider (target account) handles all ibm_backup_recovery_*
+# resources (source registration, protection groups).
+#
+# The ibm.source_account provider alias (source account) handles all cluster
+# and VPC resources: cluster data sources, DSC worker pool, security group
+# rules, cluster tags.
+#
+# VPE Gateway and S2S policy are created directly in this example below the
+# module call (see "S2S IAM Authorization Policy" and "VPE Gateway" sections).
+##############################################################################
+
+module "backup_recovery" {
+  source = "../.."
+  providers = {
+    ibm                = ibm        # target account — ibm_backup_recovery_* resources
+    ibm.source_account = ibm.source # source account — cluster, VPC, DSC worker pool
+  }
+
+  # ---- Cluster (source account) ----
+  cluster_id                   = local.cluster_id
+  cluster_resource_group_id    = module.source_resource_group.resource_group_id
+  cluster_config_endpoint_type = var.cluster_config_endpoint_type
+  kube_type                    = "kubernetes"
+  connection_env_type          = "kIksVpc"
+  ibmcloud_api_key             = var.ibmcloud_api_key
+  dsc_storage_class            = "ibmc-vpc-block-metro-5iops-tier"
+  dsc_worker_pool_zones        = 1
+  add_dsc_rules_to_cluster_sg  = false
+  enable_auto_protect          = false
+
+  # ---- BRS prerequisite inputs (from module.brs_instance — target account) ----
+  # Use public endpoint so Terraform (CI/workstation) can reach the BRS API.
+  # DSC traffic routes privately via the VPE Gateway created below.
+  brs_endpoint_type        = "public"
+  brs_tenant_id            = module.brs_instance.tenant_id
+  brs_connection_id        = module.brs_instance.connection_id
+  brs_registration_token   = module.brs_instance.registration_token
+  brs_instance_guid        = module.brs_instance.brs_instance_guid
+  brs_instance_crn         = module.brs_instance.brs_instance_crn
+  brs_instance_public_url  = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.public"])
+  brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
+  resolved_policy_ids      = module.brs_instance.resolved_policy_ids
+
   protection_groups = [
     {
       name        = "${var.prefix}-pg"
@@ -258,9 +282,6 @@ module "backup_recovery" {
       objects     = [{ name = "brs-testing-10g" }]
     }
   ]
-
-  resource_tags = var.resource_tags
-  access_tags   = var.access_tags
 }
 
 ##############################################################################
@@ -281,9 +302,9 @@ module "brs_s2s_auth" {
       source_resource_type        = "endpoint-gateway"
       source_service_account_id   = local.source_account_id
       target_service_name         = "backup-recovery"
-      target_resource_instance_id = module.backup_recovery.brs_instance_guid
+      target_resource_instance_id = module.brs_instance.brs_instance_guid
       roles                       = ["Viewer"]
-      description                 = "Allow source-account VPC endpoint-gateway to target BRS instance ${module.backup_recovery.brs_instance_guid}"
+      description                 = "Allow source-account VPC endpoint-gateway to target BRS instance ${module.brs_instance.brs_instance_guid}"
     }
   }
 
@@ -326,7 +347,7 @@ resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
   security_groups = [data.ibm_is_security_group.kube_vpeg_sg.id]
 
   target {
-    crn           = module.backup_recovery.brs_instance_crn
+    crn           = module.brs_instance.brs_instance_crn
     resource_type = "provider_cloud_service"
   }
 

@@ -35,7 +35,7 @@ locals {
 
   brs_vpe_name     = "${var.prefix}-brs-connection-vpe"
   brs_vpe_subnets  = { for s in local.vpc_subnets : s.zone => s }
-  brs_instance_crn = module.backup_recovery.brs_instance_crn
+  brs_instance_crn = module.brs_instance.brs_instance_crn
 }
 
 ##############################################################################
@@ -133,6 +133,46 @@ resource "time_sleep" "wait_operators" {
 }
 
 ##############################################################################
+# BRS Instance (owned by this example)
+##############################################################################
+
+module "brs_instance" {
+  source  = "terraform-ibm-modules/backup-recovery/ibm"
+  version = "1.12.3"
+  providers = {
+    ibm = ibm
+  }
+
+  region                    = var.region
+  resource_group_id         = module.resource_group.resource_group_id
+  ibmcloud_api_key          = var.ibmcloud_api_key
+  instance_name             = "${var.prefix}-brs"
+  existing_brs_instance_crn = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : null
+  create_new_instance       = var.existing_brs_instance_crn == null
+  connection_name           = "${var.prefix}-brs-connection"
+  create_new_connection     = true
+  resource_tags             = var.resource_tags
+  access_tags               = var.access_tags
+  endpoint_type             = "public"
+  connection_env_type       = "kIksVpc"
+  policies = [
+    {
+      name              = "${var.prefix}-retention"
+      create_new_policy = true
+      schedule = {
+        unit         = "Days"
+        day_schedule = { frequency = 1 }
+      }
+      retention = {
+        unit     = "Days"
+        duration = 30
+      }
+      use_default_backup_target = true
+    }
+  ]
+}
+
+##############################################################################
 # BRS Backup & Recovery with VPEG connectivity
 ##############################################################################
 
@@ -150,39 +190,23 @@ module "backup_recovery" {
   kube_type                    = "kubernetes"
   connection_env_type          = "kIksVpc"
   ibmcloud_api_key             = var.ibmcloud_api_key
-  region                       = var.region
   dsc_storage_class            = "ibmc-vpc-block-metro-5iops-tier"
   dsc_worker_pool_zones        = 1
   add_dsc_rules_to_cluster_sg  = false
   enable_auto_protect          = false
 
-  # ---- BRS instance ----
-  existing_brs_instance_crn = var.existing_brs_instance_crn
-  brs_instance_name         = "${var.prefix}-brs"
-  brs_connection_name       = "${var.prefix}-brs-connection"
-  brs_create_new_connection = true
-
-  # ---- Endpoint & VPEG connectivity ----
+  # ---- BRS prerequisite inputs (from module.brs_instance) ----
   # brs_endpoint_type = "public" lets Terraform (workstation/CI) reach the BRS API.
   # DSC traffic routes privately via the VPE Gateway created below.
-  brs_endpoint_type = "public"
-
-  # ---- Backup policy ----
-  policies = [
-    {
-      name              = "${var.prefix}-retention"
-      create_new_policy = true
-      schedule = {
-        unit         = "Days"
-        day_schedule = { frequency = 1 }
-      }
-      retention = {
-        unit     = "Days"
-        duration = 30
-      }
-      use_default_backup_target = true
-    }
-  ]
+  brs_endpoint_type        = "public"
+  brs_tenant_id            = module.brs_instance.tenant_id
+  brs_connection_id        = module.brs_instance.connection_id
+  brs_registration_token   = module.brs_instance.registration_token
+  brs_instance_guid        = module.brs_instance.brs_instance_guid
+  brs_instance_crn         = module.brs_instance.brs_instance_crn
+  brs_instance_public_url  = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.public"])
+  brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
+  resolved_policy_ids      = module.brs_instance.resolved_policy_ids
 
   protection_groups = [
     {
@@ -192,9 +216,6 @@ module "backup_recovery" {
       objects     = [{ name = var.workload_namespace }]
     }
   ]
-
-  resource_tags = var.resource_tags
-  access_tags   = var.access_tags
 
   depends_on = [time_sleep.wait_operators]
 }
