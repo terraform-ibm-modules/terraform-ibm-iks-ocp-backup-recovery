@@ -248,6 +248,10 @@
               "display_name": "Backup Recovery Service Instance Name"
             },
             {
+              "key": "create_new_brs_instance",
+              "display_name": "Create New BRS Instance"
+            },
+            {
               "key": "brs_endpoint_type",
               "display_name": "Backup Recovery Service Endpoint Type",
               "options": [

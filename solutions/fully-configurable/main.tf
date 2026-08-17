@@ -53,6 +53,34 @@ locals {
   region = var.existing_brs_instance_crn != null ? module.existing_brs_crn_parser[0].region : var.region
 }
 
+##############################################################################
+# BRS Instance — owned by the DA, not the root module.
+#
+# The DA creates the BRS instance here (using the ibm / BRS-account provider)
+# and passes the resulting values into module.protect_cluster as prerequisites.
+# The root module's internal backup_recovery_instance is skipped when these
+# values are provided (brs_tenant_id != null).
+##############################################################################
+
+module "brs_instance" {
+  source                    = "terraform-ibm-modules/backup-recovery/ibm"
+  version                   = "1.12.3"
+  providers                 = { ibm = ibm } # always the BRS (target) account
+  region                    = local.region
+  resource_group_id         = var.brs_resource_group_id != null ? var.brs_resource_group_id : var.cluster_resource_group_id
+  ibmcloud_api_key          = var.ibmcloud_api_key
+  instance_name             = var.brs_instance_name
+  existing_brs_instance_crn = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : null
+  create_new_instance       = var.create_new_brs_instance
+  connection_name           = var.brs_connection_name
+  create_new_connection     = var.brs_create_new_connection
+  resource_tags             = var.resource_tags
+  access_tags               = var.access_tags
+  endpoint_type             = var.brs_endpoint_type
+  connection_env_type       = var.connection_env_type
+  policies                  = var.policies
+}
+
 module "protect_cluster" {
   source = "../.."
   providers = {
@@ -70,17 +98,18 @@ module "protect_cluster" {
   wait_till_timeout            = var.wait_till_timeout
   # --- Deployment Mode ---
   deployment_mode = var.deployment_mode
-  # --- BRS Instance ---
-  ibmcloud_api_key          = var.ibmcloud_api_key
-  brs_endpoint_type         = var.brs_endpoint_type
-  existing_brs_instance_crn = var.existing_brs_instance_crn
-  brs_instance_name         = var.brs_instance_name
-  brs_resource_group_id     = var.brs_resource_group_id
-  region                    = local.region
-  # --- BRS Connection ---
-  brs_connection_name       = var.brs_connection_name
-  brs_create_new_connection = var.brs_create_new_connection
-  connection_env_type       = var.connection_env_type
+  # --- BRS Prerequisite inputs (DA owns the BRS instance via module.brs_instance) ---
+  ibmcloud_api_key         = var.ibmcloud_api_key
+  brs_endpoint_type        = var.brs_endpoint_type
+  connection_env_type      = var.connection_env_type
+  brs_tenant_id            = module.brs_instance.tenant_id
+  brs_connection_id        = module.brs_instance.connection_id
+  brs_registration_token   = module.brs_instance.registration_token
+  brs_instance_guid        = module.brs_instance.brs_instance_guid
+  brs_instance_crn         = module.brs_instance.brs_instance_crn
+  brs_instance_public_url  = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.public"])
+  brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
+  resolved_policy_ids      = module.brs_instance.resolved_policy_ids
   # --- Data Source Connector (DSC) ---
   dsc_chart_uri           = var.dsc_chart_uri
   dsc_name                = var.dsc_name
@@ -101,10 +130,6 @@ module "protect_cluster" {
   # --- Backup Policy ---
   auto_protect_policy_name = var.auto_protect_policy_name
   protection_groups        = var.protection_groups
-  policies                 = var.policies
-  # --- Resource Tags ---
-  resource_tags = var.resource_tags
-  access_tags   = var.access_tags
   # --- Recovery Settings ---
   recovery_mode                    = var.recovery_type
   target_cluster_id                = var.target_cluster_id
@@ -345,6 +370,31 @@ data "ibm_container_cluster_config" "target_cluster_config" {
   admin             = true
 }
 
+# Target cluster BRS connection — reuses the same BRS instance, creates a
+# separate data-source connection for the target cluster.
+module "brs_target_connection" {
+  count   = local.deploy_target_cluster ? 1 : 0
+  source  = "terraform-ibm-modules/backup-recovery/ibm"
+  version = "1.12.3"
+  providers = {
+    ibm = ibm # target (BRS) account
+  }
+
+  region                    = local.region
+  resource_group_id         = var.brs_resource_group_id != null ? var.brs_resource_group_id : var.cluster_resource_group_id
+  ibmcloud_api_key          = var.ibmcloud_api_key
+  instance_name             = var.brs_instance_name
+  existing_brs_instance_crn = module.brs_instance.brs_instance_crn
+  create_new_instance       = false
+  connection_name           = var.target_brs_connection_name != null ? var.target_brs_connection_name : "${var.target_cluster_id}-target-connection"
+  create_new_connection     = var.target_brs_create_new_connection
+  resource_tags             = var.resource_tags
+  access_tags               = var.access_tags
+  endpoint_type             = var.brs_endpoint_type
+  connection_env_type       = var.connection_env_type
+  policies                  = []
+}
+
 # Register target cluster with BRS
 module "target_cluster_registration" {
   count  = local.deploy_target_cluster ? 1 : 0
@@ -364,19 +414,17 @@ module "target_cluster_registration" {
   kube_type                    = var.kube_type
   ibmcloud_api_key             = var.ibmcloud_api_key
 
-  # Use same BRS instance as source. The source's BRS instance CRN is only known
-  # after apply when the source creates a new instance, so create_new_instance is
-  # set explicitly to false to keep the module's count/for_each gates from
-  # depending on that unknown value at plan time.
-  existing_brs_instance_crn = module.protect_cluster.brs_instance_crn
-  create_new_brs_instance   = false
-  brs_endpoint_type         = var.brs_endpoint_type
-  region                    = local.region
-
-  # Target connection configuration
-  brs_connection_name       = var.target_brs_connection_name != null ? var.target_brs_connection_name : "${var.target_cluster_id}-target-connection"
-  brs_create_new_connection = var.target_brs_create_new_connection
-  connection_env_type       = var.connection_env_type
+  # BRS prerequisite inputs — same instance as source, target's own connection
+  brs_endpoint_type        = var.brs_endpoint_type
+  connection_env_type      = var.connection_env_type
+  brs_tenant_id            = module.brs_target_connection[0].tenant_id
+  brs_connection_id        = module.brs_target_connection[0].connection_id
+  brs_registration_token   = module.brs_target_connection[0].registration_token
+  brs_instance_guid        = module.brs_instance.brs_instance_guid
+  brs_instance_crn         = module.brs_instance.brs_instance_crn
+  brs_instance_public_url  = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.public"])
+  brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
+  resolved_policy_ids      = null
 
   # DSC configuration for target
   dsc_chart_uri          = var.dsc_chart_uri
@@ -391,13 +439,8 @@ module "target_cluster_registration" {
   registration_images = var.registration_images
   enable_auto_protect = false # Don't auto-protect target cluster
 
-  # No policies or protection groups for target (it's just a recovery destination)
-  policies          = []
+  # No protection groups for target (it's just a recovery destination)
   protection_groups = null
-
-  # Tags
-  resource_tags = var.resource_tags
-  access_tags   = var.access_tags
 
   depends_on = [
     data.ibm_container_cluster_config.target_cluster_config

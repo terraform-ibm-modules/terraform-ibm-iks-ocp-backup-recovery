@@ -188,6 +188,47 @@ resource "time_sleep" "wait_operators" {
 ########################################################################################################################
 
 
+########################################################################################################################
+# BRS Instance (owned by this example)
+########################################################################################################################
+
+module "brs_instance" {
+  source  = "terraform-ibm-modules/backup-recovery/ibm"
+  version = "1.12.3"
+  providers = {
+    ibm = ibm
+  }
+
+  region                    = var.region
+  resource_group_id         = module.resource_group.resource_group_id
+  ibmcloud_api_key          = var.ibmcloud_api_key
+  instance_name             = "${var.prefix}-brs-instance"
+  existing_brs_instance_crn = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : null
+  create_new_instance       = var.existing_brs_instance_crn == null
+  connection_name           = "${var.prefix}-brs-connection-${var.classic_cluster ? "RoksClassic" : "RoksVpc"}"
+  create_new_connection     = true
+  resource_tags             = var.resource_tags
+  access_tags               = var.access_tags
+  endpoint_type             = var.brs_endpoint_type
+  connection_env_type       = var.classic_cluster ? "kRoksClassic" : "kRoksVpc"
+  policies = [
+    {
+      name              = "${var.prefix}-retention"
+      create_new_policy = true
+      schedule = {
+        unit = "Days"
+        day_schedule = {
+          frequency = 1
+        }
+      }
+      retention = {
+        unit     = "Days"
+        duration = 30
+      }
+    }
+  ]
+}
+
 module "backup_recover_protect_ocp" {
   source = "../.."
   providers = {
@@ -207,40 +248,24 @@ module "backup_recover_protect_ocp" {
   # Disable automatic tag addition to prevent drift with the ocp_base module
   add_cluster_tags = false
 
-  # ---- BRS instance ----
-  existing_brs_instance_crn = var.existing_brs_instance_crn
-  brs_instance_name         = "${var.prefix}-brs-instance"
-  brs_connection_name       = "${var.prefix}-brs-connection-${var.classic_cluster ? "RoksClassic" : "RoksVpc"}"
-  brs_create_new_connection = true
-  region                    = var.region
-  connection_env_type       = var.classic_cluster ? "kRoksClassic" : "kRoksVpc"
-  dsc_storage_class         = var.dsc_storage_class == null ? (var.classic_cluster ? "ibmc-block-silver" : "ibmc-vpc-block-metro-5iops-tier") : var.dsc_storage_class
-  dsc_worker_pool_zones     = 1
+  # ---- BRS prerequisite inputs (from module.brs_instance) ----
+  connection_env_type      = var.classic_cluster ? "kRoksClassic" : "kRoksVpc"
+  brs_endpoint_type        = var.brs_endpoint_type
+  brs_tenant_id            = module.brs_instance.tenant_id
+  brs_connection_id        = module.brs_instance.connection_id
+  brs_registration_token   = module.brs_instance.registration_token
+  brs_instance_guid        = module.brs_instance.brs_instance_guid
+  brs_instance_crn         = module.brs_instance.brs_instance_crn
+  brs_instance_public_url  = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.public"])
+  brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
+  resolved_policy_ids      = module.brs_instance.resolved_policy_ids
 
-  # Use public endpoint so Terraform (CI/workstation) can reach the BRS API.
-  # DSC traffic routes privately via the VPE Gateway created below.
-  brs_endpoint_type = var.brs_endpoint_type
+  dsc_storage_class     = var.dsc_storage_class == null ? (var.classic_cluster ? "ibmc-block-silver" : "ibmc-vpc-block-metro-5iops-tier") : var.dsc_storage_class
+  dsc_worker_pool_zones = 1
 
   # ---- Backup Policy ----
   auto_protect_policy_name = "${var.prefix}-retention"
-  access_tags              = var.access_tags
-  resource_tags            = var.resource_tags
-  policies = [
-    {
-      name              = "${var.prefix}-retention"
-      create_new_policy = true
-      schedule = {
-        unit = "Days"
-        day_schedule = {
-          frequency = 1
-        }
-      }
-      retention = {
-        unit     = "Days"
-        duration = 30
-      }
-    }
-  ]
+
   protection_groups = []
 }
 
