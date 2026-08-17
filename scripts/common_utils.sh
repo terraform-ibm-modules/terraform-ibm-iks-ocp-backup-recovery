@@ -49,3 +49,22 @@ get_iam_token() {
 
   echo "$token"
 }
+
+# Derive the IBM Cloud API endpoint from a BRS instance endpoint URL.
+# Usage: get_ibmcloud_api_endpoint BRS_ENDPOINT_OR_URL
+# Returns: "test.cloud.ibm.com" when the BRS endpoint targets the test environment,
+#          "cloud.ibm.com" otherwise.
+#
+# Examples:
+#   32ea8bb2-fe6c-4712-b02c-25ddc33110b6.us-east.backup-recovery-tests.cloud.ibm.com
+#     → test.cloud.ibm.com   (hostname contains "test.cloud.ibm.com")
+#   32ea8bb2-fe6c-4712-b02c-25ddc33110b6.us-south.backup-recovery.cloud.ibm.com
+#     → cloud.ibm.com
+get_ibmcloud_api_endpoint() {
+  local brs_endpoint="$1"
+  if [[ "$brs_endpoint" == *"test.cloud.ibm.com"* ]]; then
+    echo "test.cloud.ibm.com"
+  else
+    echo "cloud.ibm.com"
+  fi
+}
