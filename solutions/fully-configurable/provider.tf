@@ -28,10 +28,12 @@ provider "ibm" {
 # When source_ibmcloud_api_key is null (same-account), this falls back to
 # ibmcloud_api_key so the alias is always valid regardless of deployment mode.
 provider "ibm" {
-  alias            = "cluster"
-  ibmcloud_api_key = var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key
-  region           = var.region
-  visibility       = var.provider_visibility
+  alias                 = "cluster"
+  ibmcloud_api_key      = var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key
+  iaas_classic_username = var.iaas_classic_username
+  iaas_classic_api_key  = var.iaas_classic_api_key
+  region                = var.cluster_region != null ? var.cluster_region : var.region
+  visibility            = var.provider_visibility
 }
 
 provider "kubernetes" {

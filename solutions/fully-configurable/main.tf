@@ -73,6 +73,7 @@ module "protect_cluster" {
   # --- BRS Instance ---
   ibmcloud_api_key          = var.ibmcloud_api_key
   brs_endpoint_type         = var.brs_endpoint_type
+  brs_service_type          = var.brs_service_type
   existing_brs_instance_crn = var.existing_brs_instance_crn
   brs_instance_name         = var.brs_instance_name
   brs_resource_group_id     = var.brs_resource_group_id
@@ -175,6 +176,21 @@ data "ibm_container_vpc_cluster" "target_cluster" {
   wait_till_timeout = var.wait_till_timeout
 }
 
+locals {
+  # True region of the target cluster, taken from its CRN rather than from
+  # var.cluster_region — the provider region is a caller input and can disagree
+  # with where the cluster actually lives, which is precisely the failure this
+  # guards against. CRN segment 5 is the region.
+  target_cluster_region = local.deploy_target_cluster ? split(":", data.ibm_container_vpc_cluster.target_cluster[0].crn)[5] : null
+
+  # A VPE is only ever built for a VPC target — the target module gates
+  # module.brs_vpe on (create_brs_vpe && is_vpc). Mirroring that here keeps the
+  # region precondition from rejecting a config where target_create_brs_vpe is
+  # true but the target is Classic, in which case no VPE exists and the region
+  # relationship is irrelevant.
+  target_is_vpc = length(regexall("Vpc$", coalesce(var.target_connection_env_type, var.connection_env_type))) > 0
+}
+
 data "ibm_container_cluster_config" "target_cluster_config" {
   depends_on = [data.ibm_container_vpc_cluster.target_cluster]
 
@@ -185,6 +201,30 @@ data "ibm_container_cluster_config" "target_cluster_config" {
   config_dir        = "${path.module}/kubeconfig"
   endpoint_type     = var.target_cluster_config_endpoint_type == "default" ? null : var.target_cluster_config_endpoint_type
   admin             = true
+
+  # Fail at plan time when a VPE is requested for a target cluster that is not
+  # in the BRS instance's region.
+  #
+  # The Data Source Connector always dials the BRS *private* endpoint — the
+  # hostname is embedded in the registration-token JWT and is unaffected by
+  # brs_endpoint_type. A VPC cluster can only reach that endpoint through a VPE
+  # gateway, and VPE gateways are regional: one built in a us-east VPC cannot
+  # front a us-south service endpoint. The VPC API accepts the cross-region
+  # gateway and reports it "stable", so there is nothing to observe — the DSC
+  # simply never connects, and ibm_backup_recovery_source_registration blocks
+  # for ~20 minutes before failing with "context deadline exceeded".
+  #
+  # This lives on an existing data source rather than a dedicated resource on
+  # purpose: adding a new resource to module.target_cluster_registration's
+  # depends_on would defer that module's data sources to apply time, making
+  # local.cluster_subnet_ids unknown and breaking the count on
+  # data.ibm_is_subnet.cluster_subnet.
+  lifecycle {
+    precondition {
+      condition     = !(var.target_create_brs_vpe && local.target_is_vpc) || local.target_cluster_region == local.region
+      error_message = "Target cluster region '${local.target_cluster_region}' does not match the BRS instance region '${local.region}', but target_create_brs_vpe = true. A VPE gateway is regional and cannot route to a Backup & Recovery instance in another region, so the target cluster's Data Source Connector would never connect and registration would time out after ~20 minutes. Fix by using a BRS instance in '${local.target_cluster_region}', choosing a target cluster in '${local.region}', or setting target_create_brs_vpe = false if you are providing private connectivity by other means."
+    }
+  }
 }
 
 # Register target cluster with BRS
@@ -218,7 +258,7 @@ module "target_cluster_registration" {
   # Target connection configuration
   brs_connection_name       = var.target_brs_connection_name != null ? var.target_brs_connection_name : "${var.target_cluster_id}-target-connection"
   brs_create_new_connection = var.target_brs_create_new_connection
-  connection_env_type       = var.connection_env_type
+  connection_env_type       = var.target_connection_env_type != null ? var.target_connection_env_type : var.connection_env_type
 
   # DSC configuration for target
   dsc_chart_uri          = var.dsc_chart_uri
@@ -226,7 +266,7 @@ module "target_cluster_registration" {
   dsc_replicas           = var.dsc_replicas
   dsc_namespace          = var.dsc_namespace
   dsc_helm_timeout       = var.dsc_helm_timeout
-  dsc_storage_class      = var.dsc_storage_class
+  dsc_storage_class      = var.target_dsc_storage_class != null ? var.target_dsc_storage_class : var.dsc_storage_class
   create_dsc_worker_pool = var.target_create_dsc_worker_pool
 
   # Registration settings
@@ -250,6 +290,64 @@ module "target_cluster_registration" {
   depends_on = [
     data.ibm_container_cluster_config.target_cluster_config
   ]
+}
+
+##############################################################################
+# Recovery Storage Class Aliases (target cluster)
+##############################################################################
+
+# Velero restores each PVC with the storageClassName it had on the SOURCE
+# cluster. In a Classic -> VPC migration those names (e.g. "ibmc-block-silver")
+# do not and cannot exist on the VPC target, which only has ibmc-vpc-block-*
+# classes. The restored PVC therefore stays Pending, the temporary data-mover
+# pod cannot schedule ("unbound immediate PersistentVolumeClaims"), and BRS
+# fails the recovery with "Timed out while waiting for temporary pod to start."
+#
+# The BRS recovery API exposes no storage-class remapping (kubernetesTargetParams
+# accepts only recoveryTargetConfig and renameRecoveredNamespacesParams), so the
+# mapping has to exist on the cluster. Each entry creates a StorageClass on the
+# target whose NAME matches the source class but which is backed by the VPC block
+# CSI driver, letting the restored PVC bind unchanged.
+#
+# Note this changes the storage characteristics: a Classic "silver" volume is
+# recreated as VPC block on the given profile. Choose the profile accordingly.
+resource "kubernetes_storage_class_v1" "recovery_alias" {
+  provider = kubernetes.target
+  for_each = local.deploy_target_cluster ? var.recovery_storage_class_aliases : {}
+
+  metadata {
+    name = each.key
+    labels = {
+      "app.kubernetes.io/managed-by" = "terraform-ibm-iks-ocp-backup-recovery"
+    }
+    annotations = {
+      description = "Compatibility alias created by the BRS deployable architecture so PVCs restored from a source cluster using storage class '${each.key}' can bind on this VPC cluster."
+    }
+  }
+
+  # Fixed to the VPC block CSI defaults — these mirror the stock
+  # ibmc-vpc-block-* classes. Only the profile varies, via the map value.
+  # Anyone needing different reclaim/binding semantics should create the
+  # StorageClass themselves rather than widen this interface.
+  storage_provisioner    = "vpc.block.csi.ibm.io"
+  reclaim_policy         = "Delete"
+  volume_binding_mode    = "WaitForFirstConsumer"
+  allow_volume_expansion = true
+
+  parameters = {
+    billingType                 = "hourly"
+    classVersion                = "1"
+    "csi.storage.k8s.io/fstype" = "ext4"
+    encrypted                   = "false"
+    encryptionKey               = ""
+    profile                     = each.value
+    region                      = ""
+    resourceGroup               = ""
+    tags                        = ""
+    zone                        = ""
+  }
+
+  depends_on = [data.ibm_container_cluster_config.target_cluster_config]
 }
 
 # Wait for target registration to propagate
@@ -396,7 +494,10 @@ resource "terraform_data" "cross_cluster_recovery" {
   depends_on = [
     terraform_data.wait_for_backup,
     module.target_cluster_registration,
-    time_sleep.wait_for_target_registration
+    time_sleep.wait_for_target_registration,
+    # Alias storage classes must exist before the restore creates PVCs that
+    # reference them, otherwise the PVCs stay Pending and the recovery fails.
+    kubernetes_storage_class_v1.recovery_alias
   ]
 }
 

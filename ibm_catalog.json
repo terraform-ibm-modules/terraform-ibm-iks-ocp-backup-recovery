@@ -105,8 +105,20 @@
               "display_name": "Source Account API Key"
             },
             {
+              "key": "iaas_classic_username",
+              "display_name": "Classic Infrastructure Username"
+            },
+            {
+              "key": "iaas_classic_api_key",
+              "display_name": "Classic Infrastructure API Key"
+            },
+            {
               "key": "region",
-              "display_name": "Region"
+              "display_name": "Region - Backup & Recovery Instance"
+            },
+            {
+              "key": "cluster_region",
+              "display_name": "Region - VPC Cluster (only if it differs from the instance region)"
             },
             {
               "key": "provider_visibility",
@@ -246,6 +258,20 @@
             {
               "key": "brs_instance_name",
               "display_name": "Backup Recovery Service Instance Name"
+            },
+            {
+              "key": "brs_service_type",
+              "display_name": "Backup Recovery Service Type",
+              "options": [
+                {
+                  "displayname": "Production (backup-recovery)",
+                  "value": "backup-recovery"
+                },
+                {
+                  "displayname": "Test (backup-recovery-tests)",
+                  "value": "backup-recovery-tests"
+                }
+              ]
             },
             {
               "key": "brs_endpoint_type",
@@ -526,6 +552,31 @@
               }
             },
             {
+              "key": "target_connection_env_type",
+              "display_name": "Target Connection Environment Type",
+              "options": [
+                {
+                  "displayname": "IKS VPC",
+                  "value": "kIksVpc"
+                },
+                {
+                  "displayname": "IKS Classic",
+                  "value": "kIksClassic"
+                },
+                {
+                  "displayname": "ROKS VPC",
+                  "value": "kRoksVpc"
+                },
+                {
+                  "displayname": "ROKS Classic",
+                  "value": "kRoksClassic"
+                }
+              ],
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
+            },
+            {
               "key": "target_brs_connection_name",
               "display_name": "Target BRS Connection Name",
               "hidden": {
@@ -535,6 +586,13 @@
             {
               "key": "target_brs_create_new_connection",
               "display_name": "Create New Target Connection",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
+            },
+            {
+              "key": "target_dsc_storage_class",
+              "display_name": "Target DSC Storage Class",
               "hidden": {
                 "deployment_mode": "backup_only"
               }
@@ -612,6 +670,26 @@
                     "hcl"
                   ]
                 }
+              }
+            },
+            {
+              "key": "recovery_storage_class_aliases",
+              "display_name": "Recovery Storage Class Aliases (Target Cluster)",
+              "custom_config": {
+                "type": "code_editor",
+                "grouping": "deployment",
+                "original_grouping": "deployment",
+                "config_constraints": {
+                  "supportedLanguages": [
+                    "hcl"
+                  ]
+                }
+              },
+              "hidden": {
+                "deployment_mode": [
+                  "backup_only",
+                  "connected_component"
+                ]
               }
             },
             {
