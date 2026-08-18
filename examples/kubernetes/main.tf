@@ -223,7 +223,7 @@ module "backup_recover_protect_iks" {
   brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
   resolved_policy_ids      = module.brs_instance.resolved_policy_ids
 
-  dsc_storage_class     = var.dsc_storage_class == null ? (var.classic_cluster ? "ibmc-block-silver" : "ibmc-vpc-block-metro-5iops-tier") : var.dsc_storage_class
+  dsc_storage_class     = var.dsc_storage_class
   dsc_worker_pool_zones = 1
 
   # ---- Backup Policy ----

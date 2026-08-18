@@ -140,7 +140,7 @@ variable "dsc_chart_uri" {
 }
 
 variable "enable_auto_protect" {
-  description = "Flag to enable auto-protect for the cluster."
+  description = "Enable auto-protect during the initial cluster registration. This must be set to `true` on the first run; toggling it from `false` to `true` later is not supported by the underlying API and will not retroactively create the protection group."
   type        = bool
   default     = true
   nullable    = false
@@ -433,12 +433,12 @@ variable "add_dsc_rules_to_cluster_sg" {
 
 variable "brs_endpoint_type" {
   type        = string
-  description = "The endpoint type to use when connecting to the Backup and Recovery service for creating a data source connection. Allowed values are 'public' or 'private'."
+  description = "The endpoint type to use when connecting to the Backup and Recovery service for Terraform provider operations and script calls. Allowed values are 'public' or 'private'."
   default     = "private"
 
   validation {
     condition     = contains(["public", "private"], var.brs_endpoint_type)
-    error_message = "`endpoint_type` must be 'public' or 'private'."
+    error_message = "`brs_endpoint_type` must be 'public' or 'private'."
   }
 }
 
