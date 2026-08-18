@@ -487,6 +487,8 @@ module "target_cluster_prep" {
   cluster_config_endpoint_type = var.target_cluster_config_endpoint_type
   add_dsc_rules_to_cluster_sg  = var.add_dsc_rules_to_cluster_sg
   kube_type                    = var.target_kube_type != null ? var.target_kube_type : var.kube_type
+  wait_till                    = var.wait_till
+  wait_till_timeout            = var.wait_till_timeout
   connection_env_type          = var.target_connection_env_type != null ? var.target_connection_env_type : var.connection_env_type
   ibmcloud_api_key             = var.target_ibmcloud_api_key != null ? var.target_ibmcloud_api_key : (var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key)
 
@@ -521,6 +523,8 @@ module "target_cluster_registration" {
   cluster_resource_group_id    = var.target_cluster_resource_group_id
   cluster_config_endpoint_type = var.target_cluster_config_endpoint_type
   kube_type                    = var.target_kube_type != null ? var.target_kube_type : var.kube_type
+  wait_till                    = var.wait_till
+  wait_till_timeout            = var.wait_till_timeout
   ibmcloud_api_key             = var.ibmcloud_api_key
 
   # BRS prerequisite inputs — same instance as source, target's own connection
