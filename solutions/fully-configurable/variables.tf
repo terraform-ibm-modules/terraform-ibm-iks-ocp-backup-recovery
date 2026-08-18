@@ -327,6 +327,7 @@ variable "protection_groups" {
     is_paused          = optional(bool, false)
     abort_in_blackouts = optional(bool, false)
     pause_in_blackouts = optional(bool, false)
+    delete_snapshots   = optional(bool, false) # When true, all snapshots are deleted when the Protection Group is destroyed
   }))
   default  = null
   nullable = true
