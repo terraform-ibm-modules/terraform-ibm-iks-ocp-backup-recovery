@@ -920,6 +920,7 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
   endpoint_type      = var.brs_endpoint_type
   instance_id        = local.brs_instance_guid
   region             = local.brs_instance_region
+  delete_snapshots   = each.value.delete_snapshots
 
   kubernetes_params {
     enable_indexing       = each.value.enable_indexing
