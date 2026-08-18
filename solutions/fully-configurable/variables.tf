@@ -540,31 +540,6 @@ variable "brs_vpe_name" {
   default     = null
 }
 
-variable "retain_brs_vpe_on_destroy" {
-  description = <<-DESC
-    Set to `true` when the BRS Virtual Private Endpoint Gateway created by
-    this module is shared with other clusters in the same VPC and must survive
-    when this cluster's workspace is destroyed.
-
-    When `true`, Terraform moves the VPE gateway into a `prevent_destroy`
-    protected resource block. A subsequent destroy job will skip deleting the
-    VPE Gateway while destroying all other cluster resources normally.
-
-    **Workflow** (works entirely in Schematics — no CLI access required):
-      1. Set `retain_brs_vpe_on_destroy = true`, run **Apply**.
-         Terraform moves the gateway from the normal resource to the
-         protected one via a `moved` block — no API call, no recreation.
-      2. Run **Destroy**.
-         `prevent_destroy = true` prevents the VPE from being deleted.
-         All other cluster resources are destroyed normally.
-      3. Manually delete the VPE from IBM Cloud when all clusters sharing
-         it have been decommissioned.
-  DESC
-  type        = bool
-  default     = false
-  nullable    = false
-}
-
 variable "dsc_worker_pool_zones" {
   description = "Number of zones to create worker pools in. Defaults to 1 for single-zone deployments. Set to 2 or 3 for multi-zone high availability. Must be between 1 and 3."
   type        = number
