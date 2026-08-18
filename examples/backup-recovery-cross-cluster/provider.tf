@@ -2,8 +2,7 @@
 # Provider configuration — VPE cross-cluster example (same IBM Cloud account)
 #
 # Both clusters live in the same account, so a single IBM Cloud API key is used.
-# The root module requires an explicit ibm.source_account provider alias that points to
-# the cluster account.  For same-account deployments ibm.source_account = ibm (same key).
+# The root module uses the default ibm provider for IBM Cloud resources.
 #
 # Two separate kubernetes/helm provider aliases are declared — one per cluster —
 # so the root module invocations can deploy the DSC Helm chart to each cluster

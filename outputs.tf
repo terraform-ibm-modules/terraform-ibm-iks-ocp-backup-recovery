@@ -4,7 +4,8 @@
 
 output "source_registration_id" {
   description = "ID of the registered Kubernetes source."
-  value       = try(ibm_backup_recovery_source_registration.source_registration.id, null)
+  value       = try(ibm_backup_recovery_source_registration.source_registration[0].id, null)
+  sensitive   = true
 }
 
 output "brs_instance_crn" {
@@ -20,16 +21,19 @@ output "brs_instance_guid" {
 output "brs_tenant_id" {
   description = "Tenant ID of the Backup & Recovery Service instance"
   value       = local.brs_tenant_id
+  sensitive   = true
 }
 
 output "connection_id" {
   description = "ID of the data source connection to the Backup & Recovery Service instance"
   value       = local.connection_id
+  sensitive   = true
 }
 
 output "protection_group_ids" {
   description = "Map of protection group names to their IDs. Empty if protection groups are not deployed."
   value       = { for k, v in ibm_backup_recovery_protection_group.protection_group : k => v.id }
+  sensitive   = true
 }
 
 output "auto_protect_pg_id" {
@@ -40,14 +44,14 @@ output "auto_protect_pg_id" {
   # TODO: once IBM provider fixes the typo (auto_proetction -> auto_protection),
   # replace auto_proetction_group_id with auto_protection_group_id below.
   value = try(coalesce(
-    ibm_backup_recovery_source_registration.source_registration.auto_proetction_group_id,
-    ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id,
+    ibm_backup_recovery_source_registration.source_registration[0].auto_proetction_group_id,
+    ibm_backup_recovery_source_registration.source_registration[0].kubernetes_params[0].auto_protect_config[0].protection_group_id,
   ), null)
 }
 
 output "protection_sources" {
   description = "List of protection sources."
-  value       = data.ibm_backup_recovery_protection_sources.sources
+  value       = try(data.ibm_backup_recovery_protection_sources.sources[0], null)
 }
 
 output "recovery_ids" {
@@ -91,10 +95,10 @@ output "backup_runs_summary" {
 
 output "brs_instance_url" {
   description = "Endpoint URL for the BRS instance, derived from the IBM Cloud resource extensions. Correct for both staging and production environments."
-  value       = "https://${local.backup_recovery_instance_url}"
+  value       = local.backup_recovery_instance_url != null ? "https://${local.backup_recovery_instance_url}" : null
 }
 
 output "brs_tags" {
   description = "BRS tags that should be added to the cluster to prevent tag drift. Include these in your cluster's tags input."
-  value       = ["brs-region:${local.brs_instance_region}", "brs-guid:${local.brs_instance_guid}"]
+  value       = local.brs_instance_region != null && local.brs_instance_guid != null ? ["brs-region:${local.brs_instance_region}", "brs-guid:${local.brs_instance_guid}"] : []
 }

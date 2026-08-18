@@ -22,6 +22,7 @@ output "brs_tenant_id" {
 output "source_registration_id" {
   description = "Registration ID of the source cluster in BRS"
   value       = module.protect_cluster.source_registration_id
+  sensitive   = true
 }
 
 output "source_connection_id" {
@@ -34,6 +35,7 @@ output "source_connection_id" {
 output "protection_group_ids" {
   description = "Map of protection group names to their IDs"
   value       = module.protect_cluster.protection_group_ids
+  sensitive   = true
 }
 
 # Note: protection_policy_ids, dsc_namespace, and dsc_release_name are internal to the module
@@ -68,6 +70,7 @@ output "recovery_namespace_prefix" {
 output "target_cluster_registration_id" {
   description = "Registration ID of the target cluster (cross-cluster recovery only)"
   value       = local.is_full_recovery && var.recovery_type == "cross-cluster" ? module.target_cluster_registration[0].source_registration_id : null
+  sensitive   = true
 }
 
 output "target_cluster_connection_id" {

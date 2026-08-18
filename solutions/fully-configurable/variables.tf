@@ -15,6 +15,13 @@ variable "source_ibmcloud_api_key" {
   default     = null
 }
 
+variable "target_ibmcloud_api_key" {
+  type        = string
+  description = "IBM Cloud API key for the target cluster account. When null, falls back to `source_ibmcloud_api_key`, then `ibmcloud_api_key`. Set only when the target cluster lives in a third IBM account — different from both the BRS account and the source-cluster account."
+  sensitive   = true
+  default     = null
+}
+
 variable "iaas_classic_username" {
   type        = string
   description = "IBM Cloud Classic Infrastructure username. Required only when `connection_env_type` is `kIksClassic` or `kRoksClassic`. Find it under Manage > Access (IAM) > Users > your user > VPN password > Username."
@@ -579,9 +586,15 @@ variable "region" {
   }
 }
 
-variable "cluster_region" {
+variable "source_cluster_region" {
   type        = string
-  description = "IBM Cloud region for the cluster provider, which serves BOTH the source and target clusters. Only region-scoped VPC (`is`) calls depend on it: subnet lookups, the `kube-vpegw-*` security group, and the VPE gateway. Cluster lookups themselves use the global containers API and are unaffected, so a Classic cluster never constrains this value. Set it to the region of the VPC cluster whose VPC resources this deployment manages — for a Classic source to VPC target migration that is the TARGET cluster's region; for a VPC source with `create_brs_vpe` or `add_dsc_rules_to_cluster_sg` enabled it is the SOURCE cluster's region. When null (default) it falls back to `region` (the Backup & Recovery instance region), which is correct whenever that cluster and the BRS instance share a region. LIMITATION: if the source and target are BOTH VPC clusters in DIFFERENT regions, one provider cannot serve both and that topology is unsupported."
+  description = "IBM Cloud region for the source cluster provider (`ibm.source_cluster`). Only region-scoped VPC (`is`) calls depend on it: subnet lookups, the `kube-vpegw-*` security group, and the source VPE gateway. Cluster lookups use the global containers API and are unaffected. When null, falls back to `region` (the BRS instance region), which is correct when the source cluster and BRS instance share a region."
+  default     = null
+}
+
+variable "target_cluster_region" {
+  type        = string
+  description = "IBM Cloud region of the target cluster's VPC. Used as the `region` for the `ibm.target_cluster` provider so all target VPC API calls (subnet lookups, security group, VPE gateway) use the correct region. When null, falls back to `source_cluster_region`, then `region`. Set this explicitly only when the target cluster is in a different region from the source cluster."
   default     = null
 }
 
@@ -1054,6 +1067,17 @@ variable "target_connection_env_type" {
   type        = string
   description = "Connection environment type for the target cluster. Must be consistent with the target cluster's infrastructure type. Allowed values are 'kIksVpc', 'kIksClassic', 'kRoksVpc', 'kRoksClassic'. When null (default), falls back to `connection_env_type`. Set this explicitly for Classic→VPC cross-cluster recovery where the source is Classic and the target is VPC."
   default     = null
+}
+
+variable "target_kube_type" {
+  type        = string
+  description = "Type of the target Kubernetes cluster. Allowed values are 'kubernetes' (IKS) or 'openshift' (ROKS). When null (default), falls back to `kube_type`. Set this explicitly when the source and target clusters are of different types — for example, when backing up from an IKS cluster and recovering to a ROKS cluster, or vice-versa."
+  default     = null
+
+  validation {
+    condition     = var.target_kube_type == null || contains(["kubernetes", "openshift"], var.target_kube_type)
+    error_message = "`target_kube_type` must be 'kubernetes' or 'openshift'."
+  }
 }
 
 variable "target_brs_connection_name" {
