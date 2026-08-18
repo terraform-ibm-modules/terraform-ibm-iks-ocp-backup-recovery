@@ -281,32 +281,12 @@ resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
 }
 
 # VPE Gateway — routes DSC↔BRS traffic over IBM private backbone.
+# IBM Cloud enforces one VPE per (service, VPC) pair — a second workspace
+# attempting to create a gateway for the same BRS instance in the same VPC
+# would fail. The gateway is therefore always treated as shared infrastructure
+# and is never destroyed when the workspace is torn down.
 resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
-  count           = local.brs_vpe_active && !var.retain_brs_vpe_on_destroy ? 1 : 0
-  provider        = ibm.source_cluster
-  name            = local.brs_vpe_name_resolved
-  vpc             = local.resolved_vpc_id
-  resource_group  = var.cluster_resource_group_id
-  security_groups = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
-
-  target {
-    crn           = module.protect_cluster.brs_instance_crn
-    resource_type = "provider_cloud_service"
-  }
-
-  depends_on = [module.brs_s2s_auth]
-}
-
-resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
-  for_each    = local.brs_vpe_active && !var.retain_brs_vpe_on_destroy ? local.brs_vpe_subnets_map : {}
-  provider    = ibm.source_cluster
-  gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe[0].id
-  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
-}
-
-# Protected VPE gateway — survives destroy when retain_brs_vpe_on_destroy = true.
-resource "ibm_is_virtual_endpoint_gateway" "brs_vpe_retained" {
-  count           = local.brs_vpe_active && var.retain_brs_vpe_on_destroy ? 1 : 0
+  count           = local.brs_vpe_active ? 1 : 0
   provider        = ibm.source_cluster
   name            = local.brs_vpe_name_resolved
   vpc             = local.resolved_vpc_id
@@ -325,10 +305,10 @@ resource "ibm_is_virtual_endpoint_gateway" "brs_vpe_retained" {
   depends_on = [module.brs_s2s_auth]
 }
 
-resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip_retained" {
-  for_each    = local.brs_vpe_active && var.retain_brs_vpe_on_destroy ? local.brs_vpe_subnets_map : {}
+resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
+  for_each    = local.brs_vpe_active ? local.brs_vpe_subnets_map : {}
   provider    = ibm.source_cluster
-  gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe_retained[0].id
+  gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe[0].id
   reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
 
   lifecycle {

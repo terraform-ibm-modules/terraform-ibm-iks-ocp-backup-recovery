@@ -337,10 +337,6 @@
               "display_name": "BRS VPE Gateway Name"
             },
             {
-              "key": "retain_brs_vpe_on_destroy",
-              "display_name": "Retain BRS VPE on Destroy"
-            },
-            {
               "key": "deployment_mode",
               "display_name": "Deployment Mode",
               "required": true,
