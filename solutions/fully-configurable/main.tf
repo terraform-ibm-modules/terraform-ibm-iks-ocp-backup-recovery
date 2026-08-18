@@ -466,7 +466,7 @@ module "brs_target_connection" {
   resource_tags             = var.resource_tags
   access_tags               = var.access_tags
   endpoint_type             = var.brs_endpoint_type
-  connection_env_type       = var.connection_env_type
+  connection_env_type       = var.target_connection_env_type != null ? var.target_connection_env_type : var.connection_env_type
   policies                  = []
 }
 
