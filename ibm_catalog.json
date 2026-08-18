@@ -105,6 +105,13 @@
               "display_name": "Source Account API Key"
             },
             {
+              "key": "target_ibmcloud_api_key",
+              "display_name": "Target Account API Key",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
+            },
+            {
               "key": "iaas_classic_username",
               "display_name": "Classic Infrastructure Username"
             },
@@ -117,8 +124,8 @@
               "display_name": "Region - Backup & Recovery Instance"
             },
             {
-              "key": "cluster_region",
-              "display_name": "Region - VPC Cluster (only if it differs from the instance region)"
+              "key": "source_cluster_region",
+              "display_name": "Source Cluster Region"
             },
             {
               "key": "provider_visibility",
@@ -546,6 +553,13 @@
               }
             },
             {
+              "key": "target_cluster_region",
+              "display_name": "Target Cluster Region",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
+            },
+            {
               "key": "target_cluster_id",
               "display_name": "Target Cluster",
               "custom_config": {
@@ -591,6 +605,23 @@
                 {
                   "displayname": "Link",
                   "value": "link"
+                }
+              ],
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
+            },
+            {
+              "key": "target_kube_type",
+              "display_name": "Target Cluster Type",
+              "options": [
+                {
+                  "displayname": "Kubernetes (IKS)",
+                  "value": "kubernetes"
+                },
+                {
+                  "displayname": "OpenShift (ROKS)",
+                  "value": "openshift"
                 }
               ],
               "hidden": {

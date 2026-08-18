@@ -229,36 +229,53 @@ module "brs_instance" {
 }
 
 ##############################################################################
-# BRS backup & recovery module
+# BRS backup & recovery modules (Multi-Stage Invocations)
 #
-# The default ibm provider (target account) handles all ibm_backup_recovery_*
-# resources (source registration, protection groups).
-#
-# The ibm.source_account provider alias (source account) handles all cluster
-# and VPC resources: cluster data sources, DSC worker pool, security group
-# rules, cluster tags.
+# In a cross-account deployment, the root module is invoked in two distinct stages:
+# 1. module.source_cluster_prep: runs against the source account (ibm.source) to
+#    deploy the DSC worker pool, Helm release, and Kubernetes RBAC.
+# 2. module.backup_recovery: runs against the target account (ibm) to register the
+#    cluster source with BRS and configure protection groups.
 #
 # VPE Gateway and S2S policy are created directly in this example below the
 # module call (see "S2S IAM Authorization Policy" and "VPE Gateway" sections).
 ##############################################################################
 
+module "source_cluster_prep" {
+  source = "../.."
+  providers = {
+    ibm = ibm.source # source account — cluster, VPC, DSC worker pool, Helm
+  }
+
+  execution_stage              = "cluster_prep"
+  cluster_id                   = local.cluster_id
+  cluster_resource_group_id    = module.source_resource_group.resource_group_id
+  cluster_config_endpoint_type = var.cluster_config_endpoint_type
+  kube_type                    = "kubernetes"
+  connection_env_type          = "kIksVpc"
+  ibmcloud_api_key             = var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key
+  dsc_storage_class            = "ibmc-vpc-block-metro-5iops-tier"
+  dsc_worker_pool_zones        = 1
+  add_dsc_rules_to_cluster_sg  = false
+  enable_auto_protect          = false
+
+  # Registration token passed from BRS connection so DSC Helm deployment can authenticate
+  brs_registration_token = module.brs_instance.registration_token
+}
+
 module "backup_recovery" {
   source = "../.."
   providers = {
-    ibm                = ibm        # target account — ibm_backup_recovery_* resources
-    ibm.source_account = ibm.source # source account — cluster, VPC, DSC worker pool
+    ibm = ibm # target account — ibm_backup_recovery_* resources
   }
 
-  # ---- Cluster (source account) ----
+  execution_stage              = "brs_management"
   cluster_id                   = local.cluster_id
   cluster_resource_group_id    = module.source_resource_group.resource_group_id
   cluster_config_endpoint_type = var.cluster_config_endpoint_type
   kube_type                    = "kubernetes"
   connection_env_type          = "kIksVpc"
   ibmcloud_api_key             = var.ibmcloud_api_key
-  dsc_storage_class            = "ibmc-vpc-block-metro-5iops-tier"
-  dsc_worker_pool_zones        = 1
-  add_dsc_rules_to_cluster_sg  = false
   enable_auto_protect          = false
 
   # ---- BRS prerequisite inputs (from module.brs_instance — target account) ----
@@ -281,6 +298,10 @@ module "backup_recovery" {
       description = "Backs up the brs-testing-10g namespace (StatefulSet with 20Gi VPC Block PVC)"
       objects     = [{ name = "brs-testing-10g" }]
     }
+  ]
+
+  depends_on = [
+    module.source_cluster_prep
   ]
 }
 

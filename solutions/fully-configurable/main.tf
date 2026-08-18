@@ -7,10 +7,10 @@ locals {
   is_full_recovery = var.deployment_mode == "full_backup_recovery"
 }
 # Retrieve information about an existing VPC cluster
-# Uses ibm.source_account provider — source account in cross-account deployments.
+# Uses ibm.source_cluster provider — source account in cross-account deployments.
 data "ibm_container_vpc_cluster" "vpc_cluster" {
   count             = local.is_vpc ? 1 : 0
-  provider          = ibm.source_account
+  provider          = ibm.source_cluster
   name              = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
   wait_till         = var.wait_till
@@ -20,14 +20,14 @@ data "ibm_container_vpc_cluster" "vpc_cluster" {
 # Retrieve information about an existing Classic cluster
 data "ibm_container_cluster" "classic_cluster" {
   count             = local.is_classic ? 1 : 0
-  provider          = ibm.source_account
+  provider          = ibm.source_cluster
   name              = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
   wait_till         = var.wait_till
   wait_till_timeout = var.wait_till_timeout
 }
 data "ibm_container_cluster_config" "cluster_config" {
-  provider          = ibm.source_account
+  provider          = ibm.source_cluster
   cluster_name_id   = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
   config_dir        = "${path.module}/kubeconfig"
@@ -82,36 +82,27 @@ module "brs_instance" {
   policies                  = var.policies
 }
 
-module "protect_cluster" {
+# Stage 1: Source Cluster Infrastructure & DSC Helm Deployment (Source Account)
+module "source_cluster_prep" {
   source = "../.."
   providers = {
-    ibm                = ibm                # target (BRS) account — or only account in same-account mode
-    ibm.source_account = ibm.source_account # source (cluster/VPC) account — same as ibm when source_ibmcloud_api_key is null
+    ibm        = ibm.source_cluster
+    kubernetes = kubernetes
+    helm       = helm
   }
-  # --- Cluster ---
+
+  execution_stage              = "cluster_prep"
   cluster_id                   = var.cluster_id
   cluster_resource_group_id    = var.cluster_resource_group_id
   cluster_config_endpoint_type = var.cluster_config_endpoint_type
   add_dsc_rules_to_cluster_sg  = var.add_dsc_rules_to_cluster_sg
-  add_cluster_tags             = var.add_cluster_tags
   kube_type                    = var.kube_type
   wait_till                    = var.wait_till
   wait_till_timeout            = var.wait_till_timeout
-  # --- Deployment Mode ---
-  deployment_mode = var.deployment_mode
-  # --- BRS Prerequisite inputs (DA owns the BRS instance via module.brs_instance) ---
-  ibmcloud_api_key         = var.ibmcloud_api_key
-  brs_endpoint_type        = var.brs_endpoint_type
-  connection_env_type      = var.connection_env_type
-  brs_tenant_id            = module.brs_instance.tenant_id
-  brs_connection_id        = module.brs_instance.connection_id
-  brs_registration_token   = module.brs_instance.registration_token
-  brs_instance_guid        = module.brs_instance.brs_instance_guid
-  brs_instance_crn         = module.brs_instance.brs_instance_crn
-  brs_instance_public_url  = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.public"])
-  brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
-  resolved_policy_ids      = module.brs_instance.resolved_policy_ids
-  # --- Data Source Connector (DSC) ---
+  connection_env_type          = var.connection_env_type
+  ibmcloud_api_key             = var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key
+
+  # DSC configuration for source cluster
   dsc_chart_uri           = var.dsc_chart_uri
   dsc_name                = var.dsc_name
   dsc_replicas            = var.dsc_replicas
@@ -125,16 +116,60 @@ module "protect_cluster" {
   dsc_pod_memory_limits   = var.dsc_pod_memory_limits
   dsc_pod_cpu_requests    = var.dsc_pod_cpu_requests
   dsc_pod_memory_requests = var.dsc_pod_memory_requests
-  # --- Registration Settings ---
+
+  # Auth token passed from BRS connection so DSC Helm deployment can register
+  brs_registration_token = module.brs_instance.registration_token
+}
+
+# Stage 2: Source Cluster BRS Registration, Protection Groups & Operations (BRS Account)
+module "protect_cluster" {
+  source = "../.."
+  providers = {
+    ibm = ibm # target (BRS) account
+  }
+
+  execution_stage              = "brs_management"
+  cluster_id                   = var.cluster_id
+  cluster_resource_group_id    = var.cluster_resource_group_id
+  cluster_config_endpoint_type = var.cluster_config_endpoint_type
+  add_cluster_tags             = var.add_cluster_tags
+  kube_type                    = var.kube_type
+  wait_till                    = var.wait_till
+  wait_till_timeout            = var.wait_till_timeout
+  connection_env_type          = var.connection_env_type
+  deployment_mode              = var.deployment_mode
+
+  # BRS prerequisite inputs (DA owns the BRS instance via module.brs_instance)
+  ibmcloud_api_key         = var.ibmcloud_api_key
+  brs_endpoint_type        = var.brs_endpoint_type
+  brs_tenant_id            = module.brs_instance.tenant_id
+  brs_connection_id        = module.brs_instance.connection_id
+  brs_registration_token   = module.brs_instance.registration_token
+  brs_instance_guid        = module.brs_instance.brs_instance_guid
+  brs_instance_crn         = module.brs_instance.brs_instance_crn
+  brs_instance_public_url  = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.public"])
+  brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
+  resolved_policy_ids      = module.brs_instance.resolved_policy_ids
+
+  # DSC Settings referenced during registration/discovery
+  dsc_chart_uri       = var.dsc_chart_uri
+  dsc_name            = var.dsc_name
+  dsc_namespace       = var.dsc_namespace
   registration_images = var.registration_images
   enable_auto_protect = var.enable_auto_protect
-  # --- Backup Policy ---
+
+  # Backup Policy & Groups
   auto_protect_policy_name = var.auto_protect_policy_name
   protection_groups        = var.protection_groups
-  # --- Recovery Settings ---
+
+  # Recovery Settings
   recovery_mode                    = var.recovery_type
   target_cluster_id                = var.target_cluster_id
   target_cluster_resource_group_id = var.target_cluster_resource_group_id
+
+  depends_on = [
+    module.source_cluster_prep
+  ]
 }
 
 ##############################################################################
@@ -143,7 +178,7 @@ module "protect_cluster" {
 
 locals {
   # Cross-account detection: S2S policy needed only when the VPC account
-  # (ibm.source_account) differs from the BRS instance account (ibm).
+  # (ibm.source_cluster) differs from the BRS instance account (ibm).
   tgt_jwt_raw = split(".", data.ibm_iam_auth_token.brs_account.iam_access_token)[1]
   tgt_jwt_padded = format("%s%s",
     local.tgt_jwt_raw,
@@ -188,20 +223,20 @@ locals {
 # IAM tokens used for cross-account detection.
 data "ibm_iam_auth_token" "brs_account" {}
 data "ibm_iam_auth_token" "cluster_account" {
-  provider = ibm.source_account
+  provider = ibm.source_cluster
 }
 
 # Subnet lookups for VPE auto-discovery (skipped when vpc_subnets supplied).
 data "ibm_is_subnet" "cluster_subnet" {
   count      = local.cluster_subnet_lookup_count
-  provider   = ibm.source_account
+  provider   = ibm.source_cluster
   identifier = local.cluster_subnet_ids[count.index]
 }
 
 # kube-vpegw security group — created automatically by IKS/ROKS for every VPC cluster.
 data "ibm_is_security_group" "kube_vpeg_sg" {
   count    = local.brs_vpe_active ? 1 : 0
-  provider = ibm.source_account
+  provider = ibm.source_cluster
   name     = "kube-vpegw-${local.resolved_vpc_id}"
 
   depends_on = [
@@ -240,7 +275,7 @@ module "brs_s2s_auth" {
 # Reserved IPs — one per subnet.
 resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
   for_each = local.brs_vpe_active ? local.brs_vpe_subnets_map : {}
-  provider = ibm.source_account
+  provider = ibm.source_cluster
   subnet   = each.value.id
   name     = "${local.brs_vpe_name_resolved}-${each.key}-ip"
 }
@@ -248,7 +283,7 @@ resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
 # VPE Gateway — routes DSC↔BRS traffic over IBM private backbone.
 resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
   count           = local.brs_vpe_active && !var.retain_brs_vpe_on_destroy ? 1 : 0
-  provider        = ibm.source_account
+  provider        = ibm.source_cluster
   name            = local.brs_vpe_name_resolved
   vpc             = local.resolved_vpc_id
   resource_group  = var.cluster_resource_group_id
@@ -264,7 +299,7 @@ resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
 
 resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
   for_each    = local.brs_vpe_active && !var.retain_brs_vpe_on_destroy ? local.brs_vpe_subnets_map : {}
-  provider    = ibm.source_account
+  provider    = ibm.source_cluster
   gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe[0].id
   reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
 }
@@ -272,7 +307,7 @@ resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
 # Protected VPE gateway — survives destroy when retain_brs_vpe_on_destroy = true.
 resource "ibm_is_virtual_endpoint_gateway" "brs_vpe_retained" {
   count           = local.brs_vpe_active && var.retain_brs_vpe_on_destroy ? 1 : 0
-  provider        = ibm.source_account
+  provider        = ibm.source_cluster
   name            = local.brs_vpe_name_resolved
   vpc             = local.resolved_vpc_id
   resource_group  = var.cluster_resource_group_id
@@ -292,7 +327,7 @@ resource "ibm_is_virtual_endpoint_gateway" "brs_vpe_retained" {
 
 resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip_retained" {
   for_each    = local.brs_vpe_active && var.retain_brs_vpe_on_destroy ? local.brs_vpe_subnets_map : {}
-  provider    = ibm.source_account
+  provider    = ibm.source_cluster
   gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe_retained[0].id
   reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
 
@@ -352,7 +387,7 @@ locals {
 
 data "ibm_container_vpc_cluster" "target_cluster" {
   count             = local.deploy_target_cluster ? 1 : 0
-  provider          = ibm.source_account
+  provider          = ibm.target_cluster
   name              = var.target_cluster_id
   resource_group_id = var.target_cluster_resource_group_id
   wait_till         = var.wait_till
@@ -361,7 +396,7 @@ data "ibm_container_vpc_cluster" "target_cluster" {
 
 locals {
   # True region of the target cluster, taken from its CRN rather than from
-  # var.cluster_region — the provider region is a caller input and can disagree
+  # var.source_cluster_region — the provider region is a caller input and can disagree
   # with where the cluster actually lives, which is precisely the failure this
   # guards against. CRN segment 5 is the region.
   target_cluster_region = local.deploy_target_cluster ? split(":", data.ibm_container_vpc_cluster.target_cluster[0].crn)[5] : null
@@ -378,34 +413,34 @@ data "ibm_container_cluster_config" "target_cluster_config" {
   depends_on = [data.ibm_container_vpc_cluster.target_cluster]
 
   count             = local.deploy_target_cluster ? 1 : 0
-  provider          = ibm.source_account
+  provider          = ibm.target_cluster
   cluster_name_id   = var.target_cluster_id
   resource_group_id = var.target_cluster_resource_group_id
   config_dir        = "${path.module}/kubeconfig"
   endpoint_type     = var.target_cluster_config_endpoint_type == "default" ? null : var.target_cluster_config_endpoint_type
   admin             = true
 
-  # Fail at plan time when a VPE is requested for a target cluster that is not
-  # in the BRS instance's region.
+  # Fail at plan time when a VPE is requested for a target cluster whose region
+  # does not match the BRS instance's region.
   #
-  # The Data Source Connector always dials the BRS *private* endpoint — the
-  # hostname is embedded in the registration-token JWT and is unaffected by
-  # brs_endpoint_type. A VPC cluster can only reach that endpoint through a VPE
-  # gateway, and VPE gateways are regional: one built in a us-east VPC cannot
-  # front a us-south service endpoint. The VPC API accepts the cross-region
-  # gateway and reports it "stable", so there is nothing to observe — the DSC
-  # simply never connects, and ibm_backup_recovery_source_registration blocks
-  # for ~20 minutes before failing with "context deadline exceeded".
+  # VPE gateways are regional: one built in a us-east VPC cannot front a us-south
+  # service endpoint. The VPC API accepts a cross-region gateway and reports it
+  # "stable", but the DSC simply never connects — ibm_backup_recovery_source_registration
+  # blocks for ~20 minutes before failing with "context deadline exceeded".
   #
-  # This lives on an existing data source rather than a dedicated resource on
-  # purpose: adding a new resource to module.target_cluster_registration's
-  # depends_on would defer that module's data sources to apply time, making
-  # local.cluster_subnet_ids unknown and breaking the count on
-  # data.ibm_is_subnet.cluster_subnet.
+  # To deploy the target cluster in a different region from BRS, set `target_cluster_region`
+  # to match `region` (co-locate BRS with the target), or set `region` to match the target
+  # cluster's region, or set `create_target_cluster_brs_vpe_gateway = false` if you provide
+  # private connectivity by other means.
+  #
+  # This lives on an existing data source rather than a dedicated resource on purpose:
+  # adding a new resource to module.target_cluster_registration's depends_on would defer
+  # that module's data sources to apply time, making local.cluster_subnet_ids unknown and
+  # breaking the count on data.ibm_is_subnet.cluster_subnet.
   lifecycle {
     precondition {
       condition     = !(var.create_target_cluster_brs_vpe_gateway && local.target_is_vpc) || local.target_cluster_region == local.region
-      error_message = "Target cluster region '${local.target_cluster_region}' does not match the BRS instance region '${local.region}', but create_target_cluster_brs_vpe_gateway = true. A VPE gateway is regional and cannot route to a Backup & Recovery instance in another region, so the target cluster's Data Source Connector would never connect and registration would time out after ~20 minutes. Fix by using a BRS instance in '${local.target_cluster_region}', choosing a target cluster in '${local.region}', or setting create_target_cluster_brs_vpe_gateway = false if you are providing private connectivity by other means."
+      error_message = "Target cluster region '${local.target_cluster_region}' does not match the BRS instance region '${local.region}', but create_target_cluster_brs_vpe_gateway = true. A VPE gateway is regional and cannot route to a BRS instance in a different region. Fix by: (1) setting `target_cluster_region` to '${local.region}' so the target cluster's VPC is in the same region as BRS, (2) setting `region` to '${local.target_cluster_region}' to co-locate BRS with the target cluster, or (3) setting create_target_cluster_brs_vpe_gateway = false if you provide private connectivity by other means."
     }
   }
 }
@@ -435,36 +470,25 @@ module "brs_target_connection" {
   policies                  = []
 }
 
-# Register target cluster with BRS
-module "target_cluster_registration" {
+# Stage 1 (Target): Target Cluster Infrastructure & DSC Helm Deployment (Target Account)
+module "target_cluster_prep" {
   count  = local.deploy_target_cluster ? 1 : 0
   source = "../.."
 
   providers = {
-    ibm                = ibm                # target (BRS) account
-    ibm.source_account = ibm.source_account # source (cluster/VPC) account — same as ibm when source_ibmcloud_api_key is null
-    helm               = helm.target
-    kubernetes         = kubernetes.target
+    ibm        = ibm.target_cluster
+    helm       = helm.target
+    kubernetes = kubernetes.target
   }
 
+  execution_stage              = "cluster_prep"
   cluster_id                   = var.target_cluster_id
   cluster_resource_group_id    = var.target_cluster_resource_group_id
   cluster_config_endpoint_type = var.target_cluster_config_endpoint_type
   add_dsc_rules_to_cluster_sg  = var.add_dsc_rules_to_cluster_sg
-  kube_type                    = var.kube_type
-  ibmcloud_api_key             = var.ibmcloud_api_key
-
-  # BRS prerequisite inputs — same instance as source, target's own connection
-  brs_endpoint_type        = var.brs_endpoint_type
-  connection_env_type      = var.connection_env_type
-  brs_tenant_id            = module.brs_target_connection[0].tenant_id
-  brs_connection_id        = module.brs_target_connection[0].connection_id
-  brs_registration_token   = module.brs_target_connection[0].registration_token
-  brs_instance_guid        = module.brs_instance.brs_instance_guid
-  brs_instance_crn         = module.brs_instance.brs_instance_crn
-  brs_instance_public_url  = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.public"])
-  brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
-  resolved_policy_ids      = null
+  kube_type                    = var.target_kube_type != null ? var.target_kube_type : var.kube_type
+  connection_env_type          = var.target_connection_env_type != null ? var.target_connection_env_type : var.connection_env_type
+  ibmcloud_api_key             = var.target_ibmcloud_api_key != null ? var.target_ibmcloud_api_key : (var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key)
 
   # DSC configuration for target
   dsc_chart_uri          = var.dsc_chart_uri
@@ -475,7 +499,46 @@ module "target_cluster_registration" {
   dsc_storage_class      = var.target_dsc_storage_class != null ? var.target_dsc_storage_class : var.dsc_storage_class
   create_dsc_worker_pool = var.target_create_dsc_worker_pool
 
-  # Registration settings
+  # Auth token passed from target BRS connection
+  brs_registration_token = module.brs_target_connection[0].registration_token
+
+  depends_on = [
+    data.ibm_container_cluster_config.target_cluster_config
+  ]
+}
+
+# Stage 2 (Target): Register target cluster with BRS (BRS Account)
+module "target_cluster_registration" {
+  count  = local.deploy_target_cluster ? 1 : 0
+  source = "../.."
+
+  providers = {
+    ibm = ibm # BRS account
+  }
+
+  execution_stage              = "brs_management"
+  cluster_id                   = var.target_cluster_id
+  cluster_resource_group_id    = var.target_cluster_resource_group_id
+  cluster_config_endpoint_type = var.target_cluster_config_endpoint_type
+  kube_type                    = var.target_kube_type != null ? var.target_kube_type : var.kube_type
+  ibmcloud_api_key             = var.ibmcloud_api_key
+
+  # BRS prerequisite inputs — same instance as source, target's own connection
+  brs_endpoint_type        = var.brs_endpoint_type
+  connection_env_type      = var.target_connection_env_type != null ? var.target_connection_env_type : var.connection_env_type
+  brs_tenant_id            = module.brs_target_connection[0].tenant_id
+  brs_connection_id        = module.brs_target_connection[0].connection_id
+  brs_registration_token   = module.brs_target_connection[0].registration_token
+  brs_instance_guid        = module.brs_instance.brs_instance_guid
+  brs_instance_crn         = module.brs_instance.brs_instance_crn
+  brs_instance_public_url  = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.public"])
+  brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
+  resolved_policy_ids      = null
+
+  # DSC settings referenced during registration
+  dsc_chart_uri       = var.dsc_chart_uri
+  dsc_name            = var.dsc_name
+  dsc_namespace       = var.dsc_namespace
   registration_images = var.registration_images
   enable_auto_protect = false # Don't auto-protect target cluster
 
@@ -483,7 +546,7 @@ module "target_cluster_registration" {
   protection_groups = null
 
   depends_on = [
-    data.ibm_container_cluster_config.target_cluster_config
+    module.target_cluster_prep
   ]
 }
 
@@ -514,26 +577,26 @@ locals {
 
 data "ibm_is_subnet" "target_cluster_subnet" {
   count      = local.target_cluster_subnet_lookup_count
-  provider   = ibm.source_account
+  provider   = ibm.target_cluster
   identifier = local.target_cluster_subnet_ids[count.index]
 }
 
 data "ibm_is_security_group" "target_kube_vpeg_sg" {
   count    = local.target_brs_vpe_active ? 1 : 0
-  provider = ibm.source_account
+  provider = ibm.target_cluster
   name     = "kube-vpegw-${local.target_resolved_vpc_id}"
 }
 
 resource "ibm_is_subnet_reserved_ip" "target_brs_vpe_ip" {
   for_each = local.target_brs_vpe_active ? local.target_brs_vpe_subnets_map : {}
-  provider = ibm.source_account
+  provider = ibm.target_cluster
   subnet   = each.value.id
   name     = "${local.target_brs_vpe_name_resolved}-${each.key}-ip"
 }
 
 resource "ibm_is_virtual_endpoint_gateway" "target_brs_vpe" {
   count           = local.target_brs_vpe_active ? 1 : 0
-  provider        = ibm.source_account
+  provider        = ibm.target_cluster
   name            = local.target_brs_vpe_name_resolved
   vpc             = local.target_resolved_vpc_id
   resource_group  = var.target_cluster_resource_group_id
@@ -549,7 +612,7 @@ resource "ibm_is_virtual_endpoint_gateway" "target_brs_vpe" {
 
 resource "ibm_is_virtual_endpoint_gateway_ip" "target_brs_vpe_ip" {
   for_each    = local.target_brs_vpe_active ? local.target_brs_vpe_subnets_map : {}
-  provider    = ibm.source_account
+  provider    = ibm.target_cluster
   gateway     = ibm_is_virtual_endpoint_gateway.target_brs_vpe[0].id
   reserved_ip = ibm_is_subnet_reserved_ip.target_brs_vpe_ip[each.key].reserved_ip
 }

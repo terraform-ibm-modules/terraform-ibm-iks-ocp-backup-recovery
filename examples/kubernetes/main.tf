@@ -199,8 +199,7 @@ module "brs_instance" {
 module "backup_recover_protect_iks" {
   source = "../.."
   providers = {
-    ibm                = ibm
-    ibm.source_account = ibm
+    ibm = ibm
   }
 
   # ---- Cluster ----

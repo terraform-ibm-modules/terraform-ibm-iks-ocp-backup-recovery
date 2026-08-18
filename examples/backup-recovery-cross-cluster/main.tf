@@ -8,12 +8,12 @@
 # Both clusters live in the same account but in separate VPCs so that each
 # gets its own VPE Gateway bound to the BRS instance.
 #
-#   SOURCE cluster  (ibm / ibm.source_account = ibm)
+#   SOURCE cluster  (ibm / ibm.source_cluster = ibm)
 #     - IKS VPC cluster  (created or existing)
 #     - VPC + subnet + public gateway  (created when source_cluster_name_id = null)
 #     - VPE Gateway bound to source VPC  (create_source_cluster_brs_vpe_gateway = true)
 #
-#   TARGET cluster  (ibm / ibm.source_account = ibm)
+#   TARGET cluster  (ibm / ibm.source_cluster = ibm)
 #     - IKS VPC cluster  (created or existing)
 #     - VPC + subnet + public gateway  (created when target_cluster_name_id = null)
 #     - VPE Gateway bound to target VPC  (create_source_cluster_brs_vpe_gateway = true)
@@ -439,10 +439,9 @@ module "brs_target_connection" {
 module "source_backup_recovery" {
   source = "../.."
   providers = {
-    ibm                = ibm
-    ibm.source_account = ibm
-    helm               = helm.source
-    kubernetes         = kubernetes.source
+    ibm        = ibm
+    helm       = helm.source
+    kubernetes = kubernetes.source
   }
 
   # ---- Cluster ----
@@ -505,10 +504,9 @@ module "source_backup_recovery" {
 module "target_backup_recovery" {
   source = "../.."
   providers = {
-    ibm                = ibm
-    ibm.source_account = ibm
-    helm               = helm.target
-    kubernetes         = kubernetes.target
+    ibm        = ibm
+    helm       = helm.target
+    kubernetes = kubernetes.target
   }
 
   # ---- Cluster ----

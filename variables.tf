@@ -1,4 +1,50 @@
 ##############################################################################
+# Execution Stage & Phase Control Variables
+##############################################################################
+
+variable "execution_stage" {
+  description = "Execution stage profile for the module: 'all' (runs everything end-to-end), 'cluster_prep' (runs only cluster discovery, worker pools, SG rules, and Helm DSC deployment), 'brs_management' (runs BRS source registration, protection groups, and backups/recoveries), or 'custom' (uses granular enable_* flags)."
+  type        = string
+  default     = "all"
+
+  validation {
+    condition     = contains(["all", "cluster_prep", "brs_management", "custom"], var.execution_stage)
+    error_message = "Valid values for execution_stage are 'all', 'cluster_prep', 'brs_management', or 'custom'."
+  }
+}
+
+variable "enable_cluster_infra_prep" {
+  description = "When true, fetches cluster data sources, creates DSC worker pools, and sets DSC security group rules. In 'custom' stage, this flag is evaluated directly."
+  type        = bool
+  default     = true
+}
+
+variable "enable_dsc_helm_deployment" {
+  description = "When true, creates the DSC namespace, Kubernetes RBAC/secrets, and deploys the Data Source Connector Helm chart. In 'custom' stage, this flag is evaluated directly."
+  type        = bool
+  default     = true
+}
+
+variable "enable_brs_registration" {
+  description = "When true, registers the cluster as a protection source in the BRS instance and waits for discovery. In 'custom' stage, this flag is evaluated directly."
+  type        = bool
+  default     = true
+}
+
+variable "enable_protection_groups" {
+  description = "When true, creates BRS protection groups, applies cluster BRS tags, and configures backup policies. In 'custom' stage, this flag is evaluated directly."
+  type        = bool
+  default     = true
+}
+
+variable "enable_backup_and_recovery" {
+  description = "When true, triggers on-demand backup runs, polls for completion, and executes recovery snapshots. In 'custom' stage, this flag is evaluated directly."
+  type        = bool
+  default     = true
+}
+
+
+##############################################################################
 # Cluster variables
 ##############################################################################
 
@@ -199,42 +245,49 @@ variable "brs_tenant_id" {
   description = "Tenant ID of the BRS instance. Provided by the DA or example that owns the BRS instance."
   type        = string
   sensitive   = true
+  default     = null
 }
 
 variable "brs_connection_id" {
   description = "Connection ID of the BRS data-source connection. Provided by the DA or example that owns the BRS instance."
   type        = string
   sensitive   = true
+  default     = null
 }
 
 variable "brs_registration_token" {
   description = "Registration token used to register the DSC with the BRS instance. Provided by the DA or example that owns the BRS instance."
   type        = string
   sensitive   = true
+  default     = null
 }
 
 variable "brs_instance_guid" {
   description = "GUID of the BRS service instance. Provided by the DA or example that owns the BRS instance."
   type        = string
+  default     = null
 }
 
 variable "brs_instance_crn" {
   description = "CRN of the BRS service instance. Provided by the DA or example that owns the BRS instance."
   type        = string
+  default     = null
   validation {
-    condition     = can(regex("^crn:v1:", var.brs_instance_crn))
-    error_message = "'brs_instance_crn' must be a valid CRN beginning with 'crn:v1:'."
+    condition     = var.brs_instance_crn == null || can(regex("^crn:v1:", var.brs_instance_crn))
+    error_message = "'brs_instance_crn' must be null or a valid CRN beginning with 'crn:v1:'."
   }
 }
 
 variable "brs_instance_public_url" {
   description = "Public endpoint URL of the BRS instance (without scheme). Provided by the DA or example that owns the BRS instance."
   type        = string
+  default     = null
 }
 
 variable "brs_instance_private_url" {
   description = "Private endpoint URL of the BRS instance (without scheme). Provided by the DA or example that owns the BRS instance."
   type        = string
+  default     = null
 }
 
 variable "resolved_policy_ids" {

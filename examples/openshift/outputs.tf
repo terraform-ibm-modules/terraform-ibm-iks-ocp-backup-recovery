@@ -10,6 +10,7 @@ output "cluster_id" {
 output "source_registration_id" {
   description = "ID of the registered OpenShift source."
   value       = module.backup_recover_protect_ocp.source_registration_id
+  sensitive   = true
 }
 
 output "brs_instance_crn" {
@@ -42,4 +43,5 @@ output "brs_vpe_ips" {
 output "protection_group_ids" {
   description = "Map of protection group names to their IDs."
   value       = module.backup_recover_protect_ocp.protection_group_ids
+  sensitive   = true
 }

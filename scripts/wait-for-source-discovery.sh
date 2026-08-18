@@ -78,7 +78,8 @@ echo "timeout=${TIMEOUT_S}s  poll=${POLL_S}s" >&2
 # ---------------------------------------------------------------------------
 IBMCLOUD_API_ENDPOINT=$(get_ibmcloud_api_endpoint "${BRS_ENDPOINT}")
 echo "Logging in to IBM Cloud (region: ${REGION}, endpoint: ${IBMCLOUD_API_ENDPOINT})..." >&2
-ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${IBMCLOUD_API_ENDPOINT}" -r "${REGION}" -q 2>&1 \  | grep -v "^$" >&2 || true  # pragma: allowlist secret
+ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${IBMCLOUD_API_ENDPOINT}" -r "${REGION}" -q 2>&1 \
+  | grep -v "^$" >&2 || true  # pragma: allowlist secret
 
 brs_url="https://${BRS_ENDPOINT}/v2"
 echo "Setting BRS service URL: ${brs_url}" >&2

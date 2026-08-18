@@ -179,8 +179,7 @@ module "brs_instance" {
 module "backup_recovery" {
   source = "../.."
   providers = {
-    ibm                = ibm
-    ibm.source_account = ibm
+    ibm = ibm
   }
 
   # ---- Cluster ----
