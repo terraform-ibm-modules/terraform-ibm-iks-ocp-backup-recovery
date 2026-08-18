@@ -266,7 +266,7 @@ module "target_cluster_registration" {
   dsc_replicas           = var.dsc_replicas
   dsc_namespace          = var.dsc_namespace
   dsc_helm_timeout       = var.dsc_helm_timeout
-  dsc_storage_class      = var.target_dsc_storage_class != null ? var.target_dsc_storage_class : var.dsc_storage_class
+  dsc_storage_class      = var.target_dsc_storage_class
   create_dsc_worker_pool = var.target_create_dsc_worker_pool
 
   # Registration settings
