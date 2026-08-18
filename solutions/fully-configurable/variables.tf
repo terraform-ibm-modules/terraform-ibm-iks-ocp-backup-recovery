@@ -362,7 +362,7 @@ variable "dsc_helm_timeout" {
 variable "dsc_storage_class" {
   type        = string
   description = "Storage class to use for the Data Source Connector persistent volume. By default, it uses 'ibmc-vpc-block-metro-5iops-tier' for VPC clusters and 'ibmc-block-silver' for Classic clusters."
-  default     = "ibmc-vpc-block-metro-5iops-tier"
+  default     = null
 }
 
 variable "create_dsc_worker_pool" {
@@ -1039,7 +1039,7 @@ variable "target_brs_create_new_connection" {
 }
 
 variable "target_dsc_storage_class" {
-  description = "Storage class for the Data Source Connector persistent volume on the target cluster. When null (default), falls back to `dsc_storage_class`. Set this explicitly for Classic→VPC cross-cluster recovery where the source uses 'ibmc-block-silver' (Classic) and the target needs 'ibmc-vpc-block-metro-5iops-tier' (VPC)."
+  description = "Storage class for the Data Source Connector persistent volume on the target cluster. When null (default), it automatically uses 'ibmc-vpc-block-metro-5iops-tier' for VPC target clusters and 'ibmc-block-silver' for Classic target clusters based on `target_connection_env_type`."
   type        = string
   default     = null
 }
