@@ -611,64 +611,6 @@ resource "ibm_is_virtual_endpoint_gateway_ip" "target_brs_vpe_ip" {
   reserved_ip = ibm_is_subnet_reserved_ip.target_brs_vpe_ip[each.key].reserved_ip
 }
 
-##############################################################################
-# Recovery Storage Class Aliases (target cluster)
-##############################################################################
-
-# Velero restores each PVC with the storageClassName it had on the SOURCE
-# cluster. In a Classic -> VPC migration those names (e.g. "ibmc-block-silver")
-# do not and cannot exist on the VPC target, which only has ibmc-vpc-block-*
-# classes. The restored PVC therefore stays Pending, the temporary data-mover
-# pod cannot schedule ("unbound immediate PersistentVolumeClaims"), and BRS
-# fails the recovery with "Timed out while waiting for temporary pod to start."
-#
-# The BRS recovery API exposes no storage-class remapping (kubernetesTargetParams
-# accepts only recoveryTargetConfig and renameRecoveredNamespacesParams), so the
-# mapping has to exist on the cluster. Each entry creates a StorageClass on the
-# target whose NAME matches the source class but which is backed by the VPC block
-# CSI driver, letting the restored PVC bind unchanged.
-#
-# Note this changes the storage characteristics: a Classic "silver" volume is
-# recreated as VPC block on the given profile. Choose the profile accordingly.
-resource "kubernetes_storage_class_v1" "recovery_alias" {
-  provider = kubernetes.target
-  for_each = local.deploy_target_cluster ? var.recovery_storage_class_aliases : {}
-
-  metadata {
-    name = each.key
-    labels = {
-      "app.kubernetes.io/managed-by" = "terraform-ibm-iks-ocp-backup-recovery"
-    }
-    annotations = {
-      description = "Compatibility alias created by the BRS deployable architecture so PVCs restored from a source cluster using storage class '${each.key}' can bind on this VPC cluster."
-    }
-  }
-
-  # Fixed to the VPC block CSI defaults — these mirror the stock
-  # ibmc-vpc-block-* classes. Only the profile varies, via the map value.
-  # Anyone needing different reclaim/binding semantics should create the
-  # StorageClass themselves rather than widen this interface.
-  storage_provisioner    = "vpc.block.csi.ibm.io"
-  reclaim_policy         = "Delete"
-  volume_binding_mode    = "WaitForFirstConsumer"
-  allow_volume_expansion = true
-
-  parameters = {
-    billingType                 = "hourly"
-    classVersion                = "1"
-    "csi.storage.k8s.io/fstype" = "ext4"
-    encrypted                   = "false"
-    encryptionKey               = ""
-    profile                     = each.value
-    region                      = ""
-    resourceGroup               = ""
-    tags                        = ""
-    zone                        = ""
-  }
-
-  depends_on = [data.ibm_container_cluster_config.target_cluster_config]
-}
-
 # Wait for target registration to propagate
 resource "time_sleep" "wait_for_target_registration" {
   count = local.deploy_target_cluster ? 1 : 0
@@ -712,7 +654,7 @@ resource "terraform_data" "wait_for_backup" {
   }
 
   provisioner "local-exec" {
-    command     = "${path.module}/../../scripts/wait_for_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' $BRS_PG_ID '${self.input.timeout_minutes}' '${self.input.poll_interval_seconds}' '${self.input.binaries_path}' > /tmp/backup_snapshot_${self.input.instance_id}.json"
+    command     = "${path.module}/../../scripts/wait_for_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' $BRS_PG_ID '${self.input.timeout_minutes}' '${self.input.poll_interval_seconds}' '${self.input.binaries_path}' | tee /tmp/backup_snapshot_${self.input.instance_id}.json | jq -r '.snapshot_id' > /tmp/snapshot_id_${self.input.instance_id}.txt"
     interpreter = ["/bin/bash", "-c"]
     environment = {
       IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
@@ -722,101 +664,111 @@ resource "terraform_data" "wait_for_backup" {
 }
 
 ##############################################################################
-# Same-Cluster Recovery
+# Snapshot info — read after wait_for_backup writes /tmp/backup_snapshot_*.json
 ##############################################################################
 
-resource "terraform_data" "same_cluster_recovery" {
-  count = local.is_full_recovery && var.recovery_type == "same-cluster" ? 1 : 0
+# Reads the snapshot JSON written by wait_for_backup's provisioner.
+# data.local_file is deferred to apply time by its depends_on — without it the
+# file doesn't exist yet during the refresh phase.
+data "local_file" "snapshot_info" {
+  count = local.is_full_recovery ? 1 : 0
 
-  input = {
-    url              = module.protect_cluster.brs_instance_url
-    tenant           = module.protect_cluster.brs_tenant_id
-    endpoint_type    = var.brs_endpoint_type
-    instance_id      = module.protect_cluster.brs_instance_guid
-    source_pg_id     = local.recovery_pg_id
-    target_source_id = split("::", module.protect_cluster.source_registration_id)[1]
-    api_key          = sensitive(var.ibmcloud_api_key)
-    recovery_name    = "recovery-${local.recovery_pg_label}-${formatdate("YYYYMMDD-hhmm", timestamp())}"
-    binaries_path    = "/tmp"
-    namespace_prefix = var.recovery_namespace_prefix
-  }
-
-  provisioner "local-exec" {
-    # wait_for_backup_run.sh writes snapshot info to this file before this resource is applied.
-    # jq is available in the Schematics environment (used by wait_for_backup_run.sh itself).
-    command = <<-EOT
-      SNAPSHOT_ID=$(jq -r '.snapshot_id' /tmp/backup_snapshot_${self.input.instance_id}.json)
-      ${path.module}/../../scripts/trigger_cross_cluster_recovery.sh \
-        '${self.input.url}' \
-        '${self.input.tenant}' \
-        '${self.input.endpoint_type}' \
-        '${self.input.instance_id}' \
-        "$BRS_PG_ID" \
-        '${self.input.target_source_id}' \
-        "$SNAPSHOT_ID" \
-        '${self.input.recovery_name}' \
-        '${self.input.namespace_prefix}' \
-        '${self.input.binaries_path}'
-    EOT
-    environment = {
-      IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
-      BRS_PG_ID        = self.input.source_pg_id
-    }
-  }
-
+  filename   = "/tmp/backup_snapshot_${module.protect_cluster.brs_instance_guid}.json"
   depends_on = [terraform_data.wait_for_backup]
 }
 
+locals {
+  # Snapshot fields extracted from the JSON. At plan time snapshot_data is null
+  # (the file hasn't been written yet); all consumers are apply-time resources
+  # so the unknown value is safe.
+  snapshot_data = local.is_full_recovery ? jsondecode(data.local_file.snapshot_info[0].content) : null
+}
+
 ##############################################################################
-# Cross-Cluster Recovery
+# Recovery (same-cluster and cross-cluster)
+#
+# A single ibm_backup_recovery resource replaces the two terraform_data
+# provisioner-based resources. The provider fires a POST
+# /v2/data-protect/recoveries, stores the returned recovery_id in state, and
+# returns immediately (no built-in polling). Polling is handled by the
+# wait_for_recovery_completion resource below.
+#
+# replace_triggered_by re-creates this resource — and therefore re-triggers the
+# recovery — whenever wait_for_backup is replaced (i.e. on every fresh apply
+# that completes a new backup run).
 ##############################################################################
 
-resource "terraform_data" "cross_cluster_recovery" {
-  count = local.is_full_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
+resource "ibm_backup_recovery" "recovery" {
+  count = local.is_full_recovery ? 1 : 0
 
-  input = {
-    url              = module.protect_cluster.brs_instance_url
-    tenant           = module.protect_cluster.brs_tenant_id
-    endpoint_type    = var.brs_endpoint_type
-    instance_id      = module.protect_cluster.brs_instance_guid
-    source_pg_id     = local.recovery_pg_id
-    target_source_id = split("::", module.target_cluster_registration[0].source_registration_id)[1]
-    api_key          = sensitive(var.ibmcloud_api_key)
-    recovery_name    = "cross-cluster-recovery-${local.recovery_pg_label}-${formatdate("YYYYMMDD-hhmm", timestamp())}"
-    binaries_path    = "/tmp"
-    namespace_prefix = var.recovery_namespace_prefix
+  x_ibm_tenant_id      = module.protect_cluster.brs_tenant_id
+  name                 = "${var.recovery_type == "cross-cluster" ? "cross-cluster-" : ""}recovery-${local.recovery_pg_label}-${formatdate("YYYYMMDD-hhmm", timestamp())}"
+  snapshot_environment = "kKubernetes"
+  endpoint_type        = var.brs_endpoint_type
+  instance_id          = module.protect_cluster.brs_instance_guid
+  region               = local.region
+
+  kubernetes_params {
+    recovery_action = "RecoverNamespaces"
+
+    recover_namespace_params {
+      target_environment = "kKubernetes"
+
+      kubernetes_target_params {
+        # The snapshot written by wait_for_backup. snapshot_id is unknown at plan
+        # time; it is resolved when data.local_file.snapshot_info is read during apply.
+        objects {
+          snapshot_id         = local.snapshot_data != null ? local.snapshot_data.snapshot_id : ""
+          protection_group_id = local.recovery_pg_id
+        }
+
+        recovery_target_config {
+          recover_to_new_source = var.recovery_type == "cross-cluster"
+
+          dynamic "new_source_config" {
+            for_each = var.recovery_type == "cross-cluster" ? [1] : []
+            content {
+              source {
+                # Numeric source ID of the target cluster registration.
+                # The source_registration_id output is "<type>::<numeric_id>".
+                id = tonumber(split("::", module.target_cluster_registration[0].source_registration_id)[1])
+              }
+            }
+          }
+        }
+
+        rename_recovered_namespaces_params {
+          prefix = var.recovery_namespace_prefix
+        }
+
+        # Storage class mapping — passed to BRS to remap SC names during restore.
+        # Applied only when the caller provides a non-empty mapping.
+        dynamic "storage_class" {
+          for_each = length(var.recovery_storage_class_mapping) > 0 ? [1] : []
+          content {
+            use_storage_class_mapping = true
+            dynamic "storage_class_mapping" {
+              for_each = var.recovery_storage_class_mapping
+              content {
+                key   = storage_class_mapping.key
+                value = storage_class_mapping.value
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
-  provisioner "local-exec" {
-    # wait_for_backup_run.sh writes snapshot info to this file before this resource is applied.
-    # jq is available in the Schematics environment (used by wait_for_backup_run.sh itself).
-    command = <<-EOT
-      SNAPSHOT_ID=$(jq -r '.snapshot_id' /tmp/backup_snapshot_${self.input.instance_id}.json)
-      ${path.module}/../../scripts/trigger_cross_cluster_recovery.sh \
-        '${self.input.url}' \
-        '${self.input.tenant}' \
-        '${self.input.endpoint_type}' \
-        '${self.input.instance_id}' \
-        "$BRS_PG_ID" \
-        '${self.input.target_source_id}' \
-        "$SNAPSHOT_ID" \
-        '${self.input.recovery_name}' \
-        '${self.input.namespace_prefix}' \
-        '${self.input.binaries_path}'
-    EOT
-    environment = {
-      IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
-      BRS_PG_ID        = self.input.source_pg_id
-    }
+  lifecycle {
+    replace_triggered_by = [terraform_data.wait_for_backup]
   }
 
   depends_on = [
     terraform_data.wait_for_backup,
+    data.local_file.snapshot_info,
     module.target_cluster_registration,
     time_sleep.wait_for_target_registration,
-    # Alias storage classes must exist before the restore creates PVCs that
-    # reference them, otherwise the PVCs stay Pending and the recovery fails.
-    kubernetes_storage_class_v1.recovery_alias
   ]
 }
 
@@ -824,10 +776,18 @@ resource "terraform_data" "cross_cluster_recovery" {
 # Wait for Recovery Completion
 ##############################################################################
 
-# Poll recovery status and wait for completion before refreshing the protection source
-# Recovery operations are asynchronous - this ensures namespaces are fully restored
+# Poll recovery status and wait for completion before refreshing the protection source.
+# Recovery operations are asynchronous — this ensures namespaces are fully restored.
+# The recovery_id is read directly from ibm_backup_recovery.recovery[0].recovery_id
+# (Terraform state) rather than from /tmp, eliminating cross-container fragility.
 resource "terraform_data" "wait_for_recovery_completion" {
   count = local.is_full_recovery ? 1 : 0
+
+  # Re-run the waiter whenever the recovery resource is replaced so that
+  # replace flows downstream correctly and the waiter always polls the latest run.
+  triggers_replace = {
+    recovery_id = ibm_backup_recovery.recovery[0].recovery_id
+  }
 
   input = {
     url                   = module.protect_cluster.brs_instance_url
@@ -838,17 +798,18 @@ resource "terraform_data" "wait_for_recovery_completion" {
     timeout_minutes       = var.recovery_wait_timeout_minutes
     poll_interval_seconds = var.recovery_poll_interval_seconds
     binaries_path         = "/tmp"
+    # recovery_id comes from provider state — safe across Schematics job containers.
+    recovery_id = ibm_backup_recovery.recovery[0].recovery_id
   }
 
   provisioner "local-exec" {
     command = <<-EOT
-      RECOVERY_ID=$(cat /tmp/recovery_id_${self.input.instance_id}.txt)
       ${path.module}/../../scripts/wait_for_recovery_completion.sh \
         '${self.input.url}' \
         '${self.input.tenant}' \
         '${self.input.endpoint_type}' \
         '${self.input.instance_id}' \
-        "$RECOVERY_ID" \
+        '${self.input.recovery_id}' \
         '${self.input.timeout_minutes}' \
         '${self.input.poll_interval_seconds}' \
         '${self.input.binaries_path}'
@@ -858,17 +819,15 @@ resource "terraform_data" "wait_for_recovery_completion" {
     }
   }
 
-  depends_on = [
-    terraform_data.same_cluster_recovery,
-    terraform_data.cross_cluster_recovery
-  ]
+  depends_on = [ibm_backup_recovery.recovery]
 }
 
 ##############################################################################
 # Refresh Protection Source After Recovery
 ##############################################################################
 
-# Refresh the appropriate cluster after recovery to make recovered namespaces visible in the protection source UI
+# Refresh the appropriate cluster after recovery to make recovered namespaces
+# visible in the protection source UI.
 # - For same-cluster recovery: refresh the source cluster (where recovery happened)
 # - For cross-cluster recovery: refresh the target cluster (where recovery happened)
 resource "ibm_backup_recovery_protection_source_refresh" "post_recovery_refresh" {
@@ -880,7 +839,5 @@ resource "ibm_backup_recovery_protection_source_refresh" "post_recovery_refresh"
   instance_id                          = module.protect_cluster.brs_instance_guid
   region                               = local.region
 
-  depends_on = [
-    terraform_data.wait_for_recovery_completion
-  ]
+  depends_on = [terraform_data.wait_for_recovery_completion]
 }

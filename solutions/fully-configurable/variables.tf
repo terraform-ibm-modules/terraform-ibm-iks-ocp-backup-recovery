@@ -1104,17 +1104,21 @@ variable "target_brs_vpe_name" {
   default     = null
 }
 
-variable "recovery_storage_class_aliases" {
-  description = "Storage class aliases to create on the TARGET cluster so PVCs restored from the source cluster can bind. Required for Classic to VPC migrations: Velero restores each PVC with the storage class name it had on the source (e.g. 'ibmc-block-silver'), which cannot exist on a VPC cluster, leaving the PVC Pending and failing the recovery with 'Timed out while waiting for temporary pod to start'. Map each SOURCE storage class name to the VPC block profile that should back it, e.g. { \"ibmc-block-silver\" = \"5iops-tier\" }. Leave empty (default) for same-environment recoveries where the storage class already exists on the target. Note the restored volume takes on the VPC profile's characteristics, which differ from the original Classic tier."
+variable "recovery_storage_class_mapping" {
+  description = "Maps source storage class names to target storage class names for cross-cluster recovery. Both key and value must be the exact storage class name as it appears in Kubernetes. The default covers every Classic IKS/ROKS block storage class mapped to its nearest VPC block equivalent using metro classes (WaitForFirstConsumer binding, correct for multi-zone VPC clusters). Override or extend this map if your source PVCs use different storage classes, or if your target cluster requires non-metro classes (Immediate binding). File storage classes (ibmc-file-*) cannot be mapped to VPC block — omit them and reconfigure those PVCs manually after recovery. Leave empty only when the source and target clusters share identical storage class names."
   type        = map(string)
-  default     = {}
   nullable    = false
+  default = {
+    # Classic block (Delete) → VPC block metro (Delete, WaitForFirstConsumer)
+    "ibmc-block-bronze" = "ibmc-vpc-block-metro-general-purpose"
+    "ibmc-block-silver" = "ibmc-vpc-block-metro-5iops-tier"
+    "ibmc-block-gold"   = "ibmc-vpc-block-metro-10iops-tier"
+    "ibmc-block-custom" = "ibmc-vpc-block-metro-custom"
 
-  validation {
-    condition = alltrue([
-      for profile in values(var.recovery_storage_class_aliases) :
-      contains(["general-purpose", "5iops-tier", "10iops-tier", "custom"], profile)
-    ])
-    error_message = "Each value must be a VPC block storage profile: 'general-purpose', '5iops-tier', '10iops-tier', or 'custom'."
+    # Classic block (Retain) → VPC block metro (Retain, WaitForFirstConsumer)
+    "ibmc-block-retain-bronze" = "ibmc-vpc-block-metro-retain-general-purpose"
+    "ibmc-block-retain-silver" = "ibmc-vpc-block-metro-retain-5iops-tier"
+    "ibmc-block-retain-gold"   = "ibmc-vpc-block-metro-retain-10iops-tier"
+    "ibmc-block-retain-custom" = "ibmc-vpc-block-metro-retain-custom"
   }
 }
