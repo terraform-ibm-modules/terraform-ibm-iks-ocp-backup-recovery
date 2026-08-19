@@ -53,6 +53,23 @@ variable "cluster_id" {
   type        = string
 }
 
+variable "cluster_endpoint" {
+  description = "The cluster API endpoint URL (e.g. `https://…:port`). When provided, the `ibm_container_vpc_cluster` / `ibm_container_cluster` data source is not queried for the endpoint. Required when running `execution_stage = \"brs_management\"` with a provider that cannot access the source cluster (e.g. cross-account deployments)."
+  type        = string
+  default     = null
+}
+
+variable "cluster_crn" {
+  description = "The CRN of the cluster. When provided, the `ibm_container_vpc_cluster` / `ibm_container_cluster` data source is not queried for the CRN. Required alongside `cluster_endpoint` when running `execution_stage = \"brs_management\"` with a provider that cannot access the source cluster (e.g. cross-account deployments)."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.cluster_crn == null || can(regex("^crn:v1:", var.cluster_crn))
+    error_message = "'cluster_crn' must be null or a valid CRN beginning with 'crn:v1:'."
+  }
+}
+
 variable "add_cluster_tags" {
   description = "Whether to add BRS tags to the cluster. Set to false if you manage cluster tags externally to avoid drift. When false, you should manually add the tags 'brs-region:<region>' and 'brs-guid:<guid>' to your cluster."
   type        = bool
@@ -293,6 +310,13 @@ variable "brs_instance_private_url" {
 variable "resolved_policy_ids" {
   description = "Map of policy name → policy ID resolved by the caller's BRS instance module."
   type        = map(string)
+  default     = null
+}
+
+variable "brsagent_token" {
+  description = "brsagent service account token. Required when execution_stage = 'brs_management' and the DSC was deployed in a separate module invocation (e.g. cross-account split). Pass the value of the cluster_prep module's brsagent_token output here. When null, the token is read from the kubernetes_secret_v1.brsagent_token resource created within this module invocation."
+  type        = string
+  sensitive   = true
   default     = null
 }
 

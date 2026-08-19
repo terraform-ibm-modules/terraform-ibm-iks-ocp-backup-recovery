@@ -26,12 +26,14 @@ locals {
   # deployment_mode. deploy_recovery is the only mode-gated flag.
   deploy_recovery = var.deployment_mode == "full_backup_recovery"
 
-  # Cluster attributes — resolved from the VPC or Classic data source.
-  cluster_crn                  = local.is_vpc ? try(data.ibm_container_vpc_cluster.vpc_cluster[0].crn, null) : try(data.ibm_container_cluster.classic_cluster[0].crn, null)
+  # Cluster attributes — resolved from the VPC or Classic data source, or from
+  # caller-supplied overrides (used in cross-account brs_management invocations
+  # where the provider cannot reach the source cluster).
+  cluster_crn                  = var.cluster_crn != null ? var.cluster_crn : (local.is_vpc ? try(data.ibm_container_vpc_cluster.vpc_cluster[0].crn, null) : try(data.ibm_container_cluster.classic_cluster[0].crn, null))
   cluster_private_endpoint_url = local.is_vpc ? try(data.ibm_container_vpc_cluster.vpc_cluster[0].private_service_endpoint_url, null) : try(data.ibm_container_cluster.classic_cluster[0].private_service_endpoint_url, null)
   cluster_public_endpoint_url  = local.is_vpc ? try(data.ibm_container_vpc_cluster.vpc_cluster[0].public_service_endpoint_url, null) : try(data.ibm_container_cluster.classic_cluster[0].public_service_endpoint_url, null)
   cluster_private_available    = local.is_vpc ? try(data.ibm_container_vpc_cluster.vpc_cluster[0].private_service_endpoint, false) : try(data.ibm_container_cluster.classic_cluster[0].private_service_endpoint, false)
-  cluster_endpoint             = var.cluster_config_endpoint_type == "private" && local.cluster_private_available ? local.cluster_private_endpoint_url : local.cluster_public_endpoint_url
+  cluster_endpoint             = var.cluster_endpoint != null ? var.cluster_endpoint : (var.cluster_config_endpoint_type == "private" && local.cluster_private_available ? local.cluster_private_endpoint_url : local.cluster_public_endpoint_url)
   cluster_endpoint_port        = local.cluster_endpoint != null ? element(split(":", local.cluster_endpoint), -1) : ""
 }
 
@@ -107,7 +109,9 @@ resource "terraform_data" "install_dependencies" {
 ##############################################################################
 
 data "ibm_container_vpc_cluster" "vpc_cluster" {
-  count = (local.stage_cluster_infra_prep || local.stage_brs_registration) && local.is_vpc ? 1 : 0
+  # Only query when cluster_prep is running — brs_management-only callers must
+  # supply cluster_endpoint + cluster_crn directly to avoid cross-account 404s.
+  count = local.stage_cluster_infra_prep && local.is_vpc ? 1 : 0
 
   name              = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
@@ -116,7 +120,9 @@ data "ibm_container_vpc_cluster" "vpc_cluster" {
 }
 
 data "ibm_container_cluster" "classic_cluster" {
-  count = (local.stage_cluster_infra_prep || local.stage_brs_registration) && local.is_classic ? 1 : 0
+  # Only query when cluster_prep is running — brs_management-only callers must
+  # supply cluster_endpoint + cluster_crn directly to avoid cross-account 404s.
+  count = local.stage_cluster_infra_prep && local.is_classic ? 1 : 0
 
   name              = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
@@ -602,7 +608,7 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
     init_container_image_location              = var.registration_images.init_container
     cohesity_dataprotect_plugin_image_location = var.registration_images.cohesity_dataprotect_plugin
     kubernetes_type                            = "kCluster"
-    client_private_key                         = try(chomp(kubernetes_secret_v1.brsagent_token[0].data["token"]), "")
+    client_private_key                         = try(chomp(kubernetes_secret_v1.brsagent_token[0].data["token"]), chomp(var.brsagent_token), "")
   }
 
   depends_on = [

@@ -151,6 +151,11 @@ module "protect_cluster" {
   brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
   resolved_policy_ids      = module.brs_instance.resolved_policy_ids
 
+  # brsagent SA token created by module.source_cluster_prep (cluster_prep stage).
+  # The brs_management stage has count=0 for kubernetes_secret_v1.brsagent_token,
+  # so the token must be passed in explicitly from the cluster_prep output.
+  brsagent_token = module.source_cluster_prep.brsagent_token
+
   # DSC Settings referenced during registration/discovery
   dsc_chart_uri       = var.dsc_chart_uri
   dsc_name            = var.dsc_name
@@ -518,6 +523,11 @@ module "target_cluster_registration" {
   brs_instance_public_url  = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.public"])
   brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
   resolved_policy_ids      = null
+
+  # brsagent SA token created by module.target_cluster_prep (cluster_prep stage).
+  # The brs_management stage has count=0 for kubernetes_secret_v1.brsagent_token,
+  # so the token must be passed in explicitly from the cluster_prep output.
+  brsagent_token = module.target_cluster_prep[0].brsagent_token
 
   # DSC settings referenced during registration
   dsc_chart_uri       = var.dsc_chart_uri
