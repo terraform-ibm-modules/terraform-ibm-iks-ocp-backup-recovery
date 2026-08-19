@@ -130,6 +130,7 @@ module "protect_cluster" {
 
   execution_stage              = "brs_management"
   cluster_id                   = var.cluster_id
+  cluster_crn                  = local.is_classic ? try(data.ibm_container_cluster.classic_cluster[0].crn, null) : try(data.ibm_container_vpc_cluster.vpc_cluster[0].crn, null)
   cluster_resource_group_id    = var.cluster_resource_group_id
   cluster_config_endpoint_type = var.cluster_config_endpoint_type
   add_cluster_tags             = var.add_cluster_tags
@@ -505,6 +506,7 @@ module "target_cluster_registration" {
 
   execution_stage              = "brs_management"
   cluster_id                   = var.target_cluster_id
+  cluster_crn                  = try(data.ibm_container_vpc_cluster.target_cluster[0].crn, null)
   cluster_resource_group_id    = var.target_cluster_resource_group_id
   cluster_config_endpoint_type = var.target_cluster_config_endpoint_type
   kube_type                    = var.target_kube_type != null ? var.target_kube_type : var.kube_type
