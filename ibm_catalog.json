@@ -709,8 +709,8 @@
               }
             },
             {
-              "key": "recovery_storage_class_aliases",
-              "display_name": "Recovery Storage Class Aliases (Target Cluster)",
+              "key": "recovery_storage_class_mapping",
+              "display_name": "Recovery Storage Class Mapping",
               "custom_config": {
                 "type": "code_editor",
                 "grouping": "deployment",
