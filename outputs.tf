@@ -102,3 +102,9 @@ output "brs_tags" {
   description = "BRS tags that should be added to the cluster to prevent tag drift. Include these in your cluster's tags input."
   value       = local.brs_instance_region != null && local.brs_instance_guid != null ? ["brs-region:${local.brs_instance_region}", "brs-guid:${local.brs_instance_guid}"] : []
 }
+
+output "brsagent_token" {
+  description = "The brsagent service account token. Pass this to a second module invocation with execution_stage='brs_management' as var.brsagent_token so the source registration can authenticate with the cluster using the correct SA token."
+  value       = try(kubernetes_secret_v1.brsagent_token[0].data["token"], null)
+  sensitive   = true
+}

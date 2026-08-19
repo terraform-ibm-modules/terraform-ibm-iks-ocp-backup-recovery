@@ -38,6 +38,12 @@ locals {
   # cluster_id: existing cluster name/ID or newly created cluster ID.
   cluster_id = var.cluster_name_id != null ? data.ibm_container_vpc_cluster.vpc_cluster_data[0].name : ibm_container_vpc_cluster.vpc_cluster[0].id
 
+  # cluster_endpoint / cluster_crn: resolved from whichever source-account data
+  # source or resource is active. Passed into module.backup_recovery so the root
+  # module does not need to query the cluster API with the target-account provider.
+  cluster_endpoint = var.cluster_name_id != null ? data.ibm_container_vpc_cluster.vpc_cluster_data[0].public_service_endpoint_url : ibm_container_vpc_cluster.vpc_cluster[0].public_service_endpoint_url
+  cluster_crn      = var.cluster_name_id != null ? data.ibm_container_vpc_cluster.vpc_cluster_data[0].crn : ibm_container_vpc_cluster.vpc_cluster[0].crn
+
   # vpc_id / vpc_subnets: used by module.brs_vpe and data.ibm_is_security_group.kube_vpeg_sg.
   # For a NEW cluster (cluster_name_id = null) these come from the ibm_is_vpc /
   # ibm_is_subnet resources created earlier in this file — always known at plan time.
@@ -277,6 +283,20 @@ module "backup_recovery" {
   connection_env_type          = "kIksVpc"
   ibmcloud_api_key             = var.ibmcloud_api_key
   enable_auto_protect          = false
+  # ibm_resource_tag runs with the target-account provider; Global Tagging refuses
+  # to tag a resource that belongs to a different account. Disable here — tags must
+  # be applied in the source account (or managed externally).
+  add_cluster_tags = false
+
+  # brsagent SA token created by module.source_cluster_prep (cluster_prep stage).
+  # The brs_management stage has count=0 for kubernetes_secret_v1.brsagent_token,
+  # so the token must be passed in explicitly from the cluster_prep output.
+  brsagent_token = module.source_cluster_prep.brsagent_token
+
+  # Supply cluster attributes directly so the root module does not attempt a
+  # cross-account cluster lookup (which would 404 with the target-account provider).
+  cluster_endpoint = local.cluster_endpoint
+  cluster_crn      = local.cluster_crn
 
   # ---- BRS prerequisite inputs (from module.brs_instance — target account) ----
   # Use public endpoint so Terraform (CI/workstation) can reach the BRS API.
