@@ -213,7 +213,7 @@ resource "ibm_container_worker_pool" "data_source_connector" {
   count = local.stage_cluster_infra_prep && local.is_classic && var.create_dsc_worker_pool ? local.classic_num_zones : 0
 
   cluster          = data.ibm_container_cluster.classic_cluster[0].id
-  worker_pool_name = "dsc-pool-zone-${count.index + 1}"
+  worker_pool_name = "brs-dsc-zone-${count.index + 1}"
   machine_type     = local.dsc_worker_pool_flavor
   size_per_zone    = count.index < local.classic_extra_workers ? local.classic_base_workers + 1 : local.classic_base_workers
 
