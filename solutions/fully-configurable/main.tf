@@ -771,9 +771,15 @@ resource "ibm_backup_recovery" "recovery" {
 
   lifecycle {
     replace_triggered_by = [terraform_data.wait_for_backup]
-    # Freeze `name` at creation — formatdate(timestamp()) diffs on every plan
-    # which triggers CustomizeDiff to error on the ForceNew `name` field.
-    ignore_changes = [name]
+    # The provider's CustomizeDiff marks ALL fields immutable — any diff on any
+    # attribute (name, kubernetes_params, snapshot_id, etc.) causes:
+    #   "Resource ibm_backup_recovery_recovery cannot be updated. Field: <x>"
+    # This fires whenever upstream resources (protection group, snapshot id) are
+    # unknown at plan time, cascading a diff into kubernetes_params even though
+    # nothing actually changed. ignore_changes = all prevents any post-creation
+    # diff from reaching CustomizeDiff. replace_triggered_by above is the sole
+    # mechanism that re-fires a recovery (when a new backup run completes).
+    ignore_changes = all
   }
 
   depends_on = [

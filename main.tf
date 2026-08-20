@@ -1511,9 +1511,12 @@ resource "ibm_backup_recovery" "recover_snapshot" {
 
   lifecycle {
     # BRS recoveries are immutable audit records — the API rejects DELETE.
+    # The provider's CustomizeDiff marks ALL fields immutable; any diff on any
+    # attribute causes "cannot be updated. Field: <x>". ignore_changes = all
+    # prevents post-creation diffs from reaching CustomizeDiff.
     # If terraform destroy fails on this resource, remove it from state:
     #   terraform state rm 'module.<mod>.ibm_backup_recovery.recover_snapshot["<name>"]'
-    ignore_changes = [name]
+    ignore_changes = all
 
     precondition {
       condition     = length(local.latest_snapshots) > 0
