@@ -234,9 +234,10 @@ data "ibm_is_security_group" "kube_vpeg_sg" {
 }
 
 resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
-  for_each = var.create_source_cluster_brs_vpe_gateway ? local.brs_vpe_subnets : {}
-  subnet   = each.value.id
-  name     = "${local.brs_vpe_name}-${each.key}-ip"
+  for_each    = var.create_source_cluster_brs_vpe_gateway ? local.brs_vpe_subnets : {}
+  subnet      = each.value.id
+  name        = "${local.brs_vpe_name}-${each.key}-ip"
+  auto_delete = true
 }
 
 resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
