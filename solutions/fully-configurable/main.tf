@@ -95,7 +95,6 @@ module "source_cluster_prep" {
   cluster_id                   = var.source_cluster_id
   cluster_resource_group_id    = var.source_cluster_resource_group_id
   cluster_config_endpoint_type = var.source_cluster_config_endpoint_type
-  add_dsc_rules_to_cluster_sg  = var.add_dsc_rules_to_cluster_sg
   kube_type                    = var.source_kube_type
   wait_till                    = var.wait_till
   wait_till_timeout            = var.wait_till_timeout
@@ -108,10 +107,10 @@ module "source_cluster_prep" {
   dsc_replicas            = var.dsc_replicas
   dsc_namespace           = var.dsc_namespace
   dsc_helm_timeout        = var.dsc_helm_timeout
-  dsc_storage_class       = var.dsc_storage_class
-  create_dsc_worker_pool  = var.create_dsc_worker_pool
+  dsc_storage_class       = var.source_dsc_storage_class
+  create_dsc_worker_pool  = var.source_create_dsc_worker_pool
   dsc_worker_pool_zones   = var.dsc_worker_pool_zones
-  dsc_worker_pool_flavor  = var.dsc_worker_pool_flavor
+  dsc_worker_pool_flavor  = var.source_dsc_worker_pool_flavor
   dsc_pod_cpu_limits      = var.dsc_pod_cpu_limits
   dsc_pod_memory_limits   = var.dsc_pod_memory_limits
   dsc_pod_cpu_requests    = var.dsc_pod_cpu_requests
@@ -473,7 +472,6 @@ module "target_cluster_prep" {
   cluster_id                   = var.target_cluster_id
   cluster_resource_group_id    = var.target_cluster_resource_group_id
   cluster_config_endpoint_type = var.target_cluster_config_endpoint_type
-  add_dsc_rules_to_cluster_sg  = var.add_dsc_rules_to_cluster_sg
   kube_type                    = var.target_kube_type != null ? var.target_kube_type : var.source_kube_type
   wait_till                    = var.wait_till
   wait_till_timeout            = var.wait_till_timeout
@@ -488,6 +486,7 @@ module "target_cluster_prep" {
   dsc_helm_timeout       = var.dsc_helm_timeout
   dsc_storage_class      = var.target_dsc_storage_class
   create_dsc_worker_pool = var.target_create_dsc_worker_pool
+  dsc_worker_pool_flavor = var.target_dsc_worker_pool_flavor
 
   # Auth token passed from target BRS connection
   brs_registration_token = module.brs_target_connection[0].registration_token

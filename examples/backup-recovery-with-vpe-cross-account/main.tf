@@ -262,7 +262,6 @@ module "source_cluster_prep" {
   ibmcloud_api_key             = var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key
   dsc_storage_class            = "ibmc-vpc-block-metro-5iops-tier"
   dsc_worker_pool_zones        = 1
-  add_dsc_rules_to_cluster_sg  = false
   enable_auto_protect          = false
 
   # Registration token passed from BRS connection so DSC Helm deployment can authenticate
