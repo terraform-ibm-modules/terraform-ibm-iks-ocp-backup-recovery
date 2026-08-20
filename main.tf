@@ -1510,6 +1510,11 @@ resource "ibm_backup_recovery" "recover_snapshot" {
   ]
 
   lifecycle {
+    # BRS recoveries are immutable audit records — the API rejects DELETE.
+    # If terraform destroy fails on this resource, remove it from state:
+    #   terraform state rm 'module.<mod>.ibm_backup_recovery.recover_snapshot["<name>"]'
+    ignore_changes = [name]
+
     precondition {
       condition     = length(local.latest_snapshots) > 0
       error_message = <<-EOT
