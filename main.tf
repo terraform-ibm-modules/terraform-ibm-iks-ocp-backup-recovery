@@ -54,11 +54,30 @@ locals {
   # the diagnostics script so the expression is not repeated.
   dsc_storage_class = var.dsc_storage_class != null ? var.dsc_storage_class : (local.is_vpc ? "ibmc-vpc-block-metro-5iops-tier" : "ibmc-block-silver")
 
-  # DSC worker pool zone math — calculates workers per zone based on total replicas.
+  # Resolved worker pool flavor — bxf.4x16 is a VPC-only flavor; classic clusters
+  # require classic flavors (b3c.* prefix). When the user has explicitly set
+  # dsc_worker_pool_flavor away from the default we honour it; otherwise we pick
+  # the correct default for the cluster type.
+  dsc_worker_pool_flavor = var.dsc_worker_pool_flavor != "bxf.4x16" ? var.dsc_worker_pool_flavor : (local.is_vpc ? "bxf.4x16" : "b3c.4x16")
+
+  # VPC DSC worker pool zone math — calculates workers per zone based on total replicas.
   num_zones     = local.is_vpc && var.create_dsc_worker_pool ? var.dsc_worker_pool_zones : 0
   zones_list    = local.is_vpc && var.create_dsc_worker_pool ? try([for zone in data.ibm_container_vpc_worker_pool.pool[0].zones : zone], []) : []
   base_workers  = local.num_zones > 0 ? floor(var.dsc_replicas / local.num_zones) : 0
   extra_workers = local.num_zones > 0 ? var.dsc_replicas % local.num_zones : 0
+
+  # Classic DSC worker pool zone math — read zone names and VLANs from the
+  # cluster's default pool, then take the first dsc_worker_pool_zones entries.
+  # One pool is created per zone (mirroring VPC); each pool gets its own
+  # size_per_zone so dsc_replicas is distributed exactly with zero over-provisioning:
+  #   pools[0..extra-1] → base + 1 nodes   (remainder zones)
+  #   pools[extra..Z-1] → base nodes        (even zones)
+  # e.g. dsc_replicas=7, zones=3 → pools [3, 2, 2] = 7 total (exact)
+  classic_all_zones     = local.is_classic && var.create_dsc_worker_pool ? try(data.ibm_container_cluster.classic_cluster[0].worker_pools[0].zones, []) : []
+  classic_zones_list    = slice(local.classic_all_zones, 0, min(var.dsc_worker_pool_zones, length(local.classic_all_zones)))
+  classic_num_zones     = length(local.classic_zones_list)
+  classic_base_workers  = local.classic_num_zones > 0 ? floor(var.dsc_replicas / local.classic_num_zones) : 1
+  classic_extra_workers = local.classic_num_zones > 0 ? var.dsc_replicas % local.classic_num_zones : 0
 
   binaries_path = "/tmp"
 }
@@ -204,7 +223,7 @@ resource "ibm_container_vpc_worker_pool" "data_source_connector" {
 
   cluster           = data.ibm_container_vpc_cluster.vpc_cluster[0].id
   worker_pool_name  = "dsc-pool-zone-${count.index + 1}"
-  flavor            = var.dsc_worker_pool_flavor
+  flavor            = local.dsc_worker_pool_flavor
   vpc_id            = data.ibm_container_vpc_worker_pool.pool[0].vpc_id
   worker_count      = count.index < local.extra_workers ? local.base_workers + 1 : local.base_workers
   resource_group_id = var.cluster_resource_group_id
@@ -225,15 +244,19 @@ resource "ibm_container_vpc_worker_pool" "data_source_connector" {
   }
 }
 
-# Classic clusters — a single pool sized to dsc_replicas; zone attachment is
-# managed by the cluster itself so no zones block is needed here.
+# Classic clusters — one pool per zone (mirrors VPC), each with its own
+# size_per_zone so dsc_replicas is distributed exactly:
+#   first classic_extra_workers pools → base_workers + 1
+#   remaining pools                  → base_workers
+# Total nodes = dsc_replicas exactly, zero over-provisioning.
+# Each pool has exactly one zone attached via the zone attachment below.
 resource "ibm_container_worker_pool" "data_source_connector" {
-  count = local.stage_cluster_infra_prep && local.is_classic && var.create_dsc_worker_pool ? 1 : 0
+  count = local.stage_cluster_infra_prep && local.is_classic && var.create_dsc_worker_pool ? local.classic_num_zones : 0
 
   cluster          = data.ibm_container_cluster.classic_cluster[0].id
-  worker_pool_name = "dsc-pool"
-  machine_type     = var.dsc_worker_pool_flavor
-  size_per_zone    = var.dsc_replicas
+  worker_pool_name = "dsc-pool-zone-${count.index + 1}"
+  machine_type     = local.dsc_worker_pool_flavor
+  size_per_zone    = count.index < local.classic_extra_workers ? local.classic_base_workers + 1 : local.classic_base_workers
 
   labels = {
     "dedicated" = "data-source-connector"
@@ -243,6 +266,25 @@ resource "ibm_container_worker_pool" "data_source_connector" {
     key    = "dedicated"
     value  = "data-source-connector"
     effect = "NoSchedule"
+  }
+}
+
+# Classic clusters — attach exactly one zone per pool, reusing the VLANs from
+# the default pool.  Since each pool has a single zone, size_per_zone on pool[i]
+# applies only to zone[i] — no cross-zone bleed.
+resource "ibm_container_worker_pool_zone_attachment" "data_source_connector" {
+  count = local.stage_cluster_infra_prep && local.is_classic && var.create_dsc_worker_pool ? local.classic_num_zones : 0
+
+  cluster         = data.ibm_container_cluster.classic_cluster[0].id
+  worker_pool     = element(split("/", ibm_container_worker_pool.data_source_connector[count.index].id), 1)
+  zone            = local.classic_zones_list[count.index].zone
+  private_vlan_id = local.classic_zones_list[count.index].private_vlan
+  public_vlan_id  = local.classic_zones_list[count.index].public_vlan
+
+  timeouts {
+    create = "90m"
+    update = "90m"
+    delete = "30m"
   }
 }
 
@@ -264,6 +306,7 @@ resource "terraform_data" "wait_for_dsc_node_ready" {
   depends_on = [
     ibm_container_vpc_worker_pool.data_source_connector,
     ibm_container_worker_pool.data_source_connector,
+    ibm_container_worker_pool_zone_attachment.data_source_connector,
   ]
 
   input = {
