@@ -554,7 +554,7 @@ module "target_cluster_registration" {
 ##############################################################################
 
 locals {
-  target_brs_vpe_active = var.create_target_cluster_brs_vpe_gateway && local.is_vpc && local.deploy_target_cluster
+  target_brs_vpe_active = var.create_target_cluster_brs_vpe_gateway && local.target_is_vpc && local.deploy_target_cluster
 
   target_brs_vpe_name_resolved = var.target_brs_vpe_name != null ? var.target_brs_vpe_name : "${lower(var.target_brs_connection_name != null ? var.target_brs_connection_name : "${var.target_cluster_id}-target-connection")}-vpe"
 
@@ -672,13 +672,26 @@ resource "terraform_data" "wait_for_backup" {
 # Snapshot info — read after wait_for_backup writes /tmp/backup_snapshot_*.json
 ##############################################################################
 
-# Reads the snapshot JSON written by wait_for_backup's provisioner.
-# data.local_file is deferred to apply time by its depends_on — without it the
-# file doesn't exist yet during the refresh phase.
-data "local_file" "snapshot_info" {
+# Stores the snapshot JSON in Terraform state so subsequent refreshes always
+# have a known value. data.local_file is a data source that Terraform re-reads
+# on every refresh — when the /tmp file is absent (different Schematics worker,
+# cold environment) the read fails and the resulting unknown value cascades into
+# kubernetes_params.snapshot_id, triggering the provider's CustomizeDiff
+# immutability check. By using terraform_data instead, the snapshot content is
+# persisted in state and never re-read from disk on refresh.
+resource "terraform_data" "snapshot_info" {
   count = local.is_full_recovery ? 1 : 0
 
-  filename   = "/tmp/backup_snapshot_${module.protect_cluster.brs_instance_guid}.json"
+  input = jsondecode(file("/tmp/backup_snapshot_${module.protect_cluster.brs_instance_guid}.json"))
+
+  lifecycle {
+    # Re-read the file only when the backup run that wrote it is replaced.
+    # This mirrors the old data.local_file depends_on behaviour while keeping
+    # the value stable across refreshes.
+    replace_triggered_by = [terraform_data.wait_for_backup]
+    ignore_changes       = all
+  }
+
   depends_on = [terraform_data.wait_for_backup]
 }
 
@@ -686,7 +699,7 @@ locals {
   # Snapshot fields extracted from the JSON. At plan time snapshot_data is null
   # (the file hasn't been written yet); all consumers are apply-time resources
   # so the unknown value is safe.
-  snapshot_data = local.is_full_recovery ? jsondecode(data.local_file.snapshot_info[0].content) : null
+  snapshot_data = local.is_full_recovery ? terraform_data.snapshot_info[0].output : null
 }
 
 ##############################################################################
@@ -701,11 +714,14 @@ locals {
 # apply that completes a new backup run).
 #
 # KNOWN PROVIDER BEHAVIOUR (ibm-cloud/ibm v2.4.0):
-#   * The `name` field is ForceNew in the provider schema. Because
-#     formatdate(timestamp()) changes on every plan, CustomizeDiff would
-#     error with "Field: name cannot be updated" on every refresh/plan.
-#     `ignore_changes = [name]` suppresses the diff so the name is frozen
-#     at the value set during creation and never re-evaluated.
+#   * The provider's CustomizeDiff marks ALL fields immutable — any diff on
+#     any attribute causes "Field: <x> cannot be updated". This fires during
+#     terraform refresh when upstream values (snapshot_id, protection_group_id)
+#     are unknown. `ignore_changes = all` suppresses plan-time diffs but does
+#     NOT suppress CustomizeDiff during refresh. The fix: snapshot data is
+#     stored in terraform_data.snapshot_info (a managed resource whose output
+#     persists in state), so the value is always known during refresh and no
+#     diff reaches CustomizeDiff.
 #   * The BRS API does not implement DELETE for recovery records (they are
 #     immutable audit history). On `terraform destroy` the provider will
 #     attempt DELETE, receive an error, and surface it. If destroy fails
@@ -785,7 +801,7 @@ resource "ibm_backup_recovery" "recovery" {
 
   depends_on = [
     terraform_data.wait_for_backup,
-    data.local_file.snapshot_info,
+    terraform_data.snapshot_info,
     module.target_cluster_registration,
     time_sleep.wait_for_target_registration,
   ]
