@@ -49,13 +49,30 @@ echo "Recovery ID: ${RECOVERY_ID}" >&2
 echo "Timeout: ${TIMEOUT_MINUTES} minutes" >&2
 echo "Poll Interval: ${POLL_INTERVAL_SECONDS} seconds" >&2
 
-IAM_TOKEN=$(get_iam_token "${IBMCLOUD_API_KEY}" "${ENDPOINT_TYPE}")
+API_KEY="${IBMCLOUD_API_KEY}"
+
+IAM_TOKEN=$(get_iam_token "${API_KEY}" "${ENDPOINT_TYPE}")
+export IAM_TOKEN
+token_obtained_at=$(date +%s)
+token_refresh_threshold=3300  # Refresh before 60-minute IAM token expiry
 
 TIMEOUT_SECONDS=$((TIMEOUT_MINUTES * 60))
-ELAPSED=0
+deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
 
-while [ $ELAPSED -lt $TIMEOUT_SECONDS ]; do
-  echo "Checking recovery status (elapsed: ${ELAPSED}s)..." >&2
+while [ "$(date +%s)" -lt "$deadline" ]; do
+  now=$(date +%s)
+  elapsed=$(( now - (deadline - TIMEOUT_SECONDS) ))
+  echo "Checking recovery status (elapsed: ${elapsed}s)..." >&2
+
+  # Refresh IAM token if approaching expiry
+  if (( now - token_obtained_at >= token_refresh_threshold )); then
+    echo "Refreshing IAM token..." >&2
+    unset IAM_TOKEN
+    IAM_TOKEN=$(get_iam_token "${API_KEY}" "${ENDPOINT_TYPE}")
+    export IAM_TOKEN
+    token_obtained_at=$(date +%s)
+    echo "IAM token refreshed" >&2
+  fi
 
   # Get recovery status
   response=$(curl --retry 3 -s -w "\n%{http_code}" -X GET "${URL}/v2/data-protect/recoveries/${RECOVERY_ID}" \
@@ -112,7 +129,6 @@ while [ $ELAPSED -lt $TIMEOUT_SECONDS ]; do
   esac
 
   sleep "$POLL_INTERVAL_SECONDS"
-  ELAPSED=$((ELAPSED + POLL_INTERVAL_SECONDS))
 done
 
 echo "ERROR: Recovery did not complete within ${TIMEOUT_MINUTES} minutes" >&2

@@ -195,10 +195,10 @@ module "dsc_sg_rule" {
 }
 
 ##############################################################################
-# Data Source Connector Worker Pools (Single-Zone)
+# Data Source Connector Worker Pools
 ##############################################################################
 
-
+# VPC clusters — one pool per zone, spread dsc_replicas evenly across zones.
 resource "ibm_container_vpc_worker_pool" "data_source_connector" {
   count = local.stage_cluster_infra_prep && local.is_vpc && var.create_dsc_worker_pool ? local.num_zones : 0
 
@@ -225,6 +225,27 @@ resource "ibm_container_vpc_worker_pool" "data_source_connector" {
   }
 }
 
+# Classic clusters — a single pool sized to dsc_replicas; zone attachment is
+# managed by the cluster itself so no zones block is needed here.
+resource "ibm_container_worker_pool" "data_source_connector" {
+  count = local.stage_cluster_infra_prep && local.is_classic && var.create_dsc_worker_pool ? 1 : 0
+
+  cluster          = data.ibm_container_cluster.classic_cluster[0].id
+  worker_pool_name = "dsc-pool"
+  machine_type     = var.dsc_worker_pool_flavor
+  size_per_zone    = var.dsc_replicas
+
+  labels = {
+    "dedicated" = "data-source-connector"
+  }
+
+  taints {
+    key    = "dedicated"
+    value  = "data-source-connector"
+    effect = "NoSchedule"
+  }
+}
+
 ##############################################################################
 # Wait for DSC Worker Pool Node(s) to be Ready
 ##############################################################################
@@ -238,9 +259,12 @@ resource "ibm_container_vpc_worker_pool" "data_source_connector" {
 # until at least one node with the "dedicated=data-source-connector" label is
 # schedulable.  It is a no-op when create_dsc_worker_pool is false.
 resource "terraform_data" "wait_for_dsc_node_ready" {
-  count = local.stage_cluster_infra_prep && local.is_vpc && var.create_dsc_worker_pool ? 1 : 0
+  count = local.stage_cluster_infra_prep && var.create_dsc_worker_pool && (local.is_vpc || local.is_classic) ? 1 : 0
 
-  depends_on = [ibm_container_vpc_worker_pool.data_source_connector]
+  depends_on = [
+    ibm_container_vpc_worker_pool.data_source_connector,
+    ibm_container_worker_pool.data_source_connector,
+  ]
 
   input = {
     kubeconfig_path = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
@@ -450,10 +474,10 @@ resource "helm_release" "data_source_connector" {
           memory = var.dsc_pod_memory_requests
         }
       }
-      nodeSelector = local.is_vpc && var.create_dsc_worker_pool ? {
+      nodeSelector = var.create_dsc_worker_pool ? {
         "dedicated" = "data-source-connector"
       } : {}
-      tolerations = local.is_vpc && var.create_dsc_worker_pool ? [
+      tolerations = var.create_dsc_worker_pool ? [
         {
           key      = "dedicated"
           operator = "Equal"
@@ -474,6 +498,7 @@ resource "helm_release" "data_source_connector" {
     terraform_data.check_existing_registration,
     terraform_data.purge_stale_dsc_pvc,
     ibm_container_vpc_worker_pool.data_source_connector,
+    ibm_container_worker_pool.data_source_connector,
     kubernetes_namespace_v1.dsc_namespace,
   ]
 

@@ -203,7 +203,7 @@ variable "dsc_storage_class" {
 }
 
 variable "create_dsc_worker_pool" {
-  description = "Set to `true` to create a dedicated worker pool for the Data Source Connector in VPC clusters. If set to `false`, the connector will be deployed on existing worker nodes."
+  description = "Set to `true` to create a dedicated worker pool for the Data Source Connector. For VPC clusters, one pool per zone is created using `ibm_container_vpc_worker_pool`. For Classic clusters, a single pool sized to `dsc_replicas` is created using `ibm_container_worker_pool`. If set to `false`, the connector is deployed on existing worker nodes."
   type        = bool
   default     = true
 }
