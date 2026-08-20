@@ -691,15 +691,26 @@ locals {
 ##############################################################################
 # Recovery (same-cluster and cross-cluster)
 #
-# A single ibm_backup_recovery resource replaces the two terraform_data
-# provisioner-based resources. The provider fires a POST
-# /v2/data-protect/recoveries, stores the returned recovery_id in state, and
-# returns immediately (no built-in polling). Polling is handled by the
+# ibm_backup_recovery fires POST /v2/data-protect/recoveries and stores the
+# returned recovery_id in state. No polling — that is handled by the
 # wait_for_recovery_completion resource below.
 #
-# replace_triggered_by re-creates this resource — and therefore re-triggers the
-# recovery — whenever wait_for_backup is replaced (i.e. on every fresh apply
-# that completes a new backup run).
+# replace_triggered_by re-creates this resource — and therefore re-triggers
+# the recovery — whenever wait_for_backup is replaced (i.e. on every fresh
+# apply that completes a new backup run).
+#
+# KNOWN PROVIDER BEHAVIOUR (ibm-cloud/ibm v2.4.0):
+#   * The `name` field is ForceNew in the provider schema. Because
+#     formatdate(timestamp()) changes on every plan, CustomizeDiff would
+#     error with "Field: name cannot be updated" on every refresh/plan.
+#     `ignore_changes = [name]` suppresses the diff so the name is frozen
+#     at the value set during creation and never re-evaluated.
+#   * The BRS API does not implement DELETE for recovery records (they are
+#     immutable audit history). On `terraform destroy` the provider will
+#     attempt DELETE, receive an error, and surface it. If destroy fails
+#     on this resource, remove it from state manually:
+#       terraform state rm 'ibm_backup_recovery.recovery[0]'
+#     then re-run destroy.
 ##############################################################################
 
 resource "ibm_backup_recovery" "recovery" {
@@ -719,8 +730,6 @@ resource "ibm_backup_recovery" "recovery" {
       target_environment = "kKubernetes"
 
       kubernetes_target_params {
-        # The snapshot written by wait_for_backup. snapshot_id is unknown at plan
-        # time; it is resolved when data.local_file.snapshot_info is read during apply.
         objects {
           snapshot_id         = local.snapshot_data != null ? local.snapshot_data.snapshot_id : ""
           protection_group_id = local.recovery_pg_id
@@ -733,8 +742,6 @@ resource "ibm_backup_recovery" "recovery" {
             for_each = var.recovery_type == "cross-cluster" ? [1] : []
             content {
               source {
-                # Numeric source ID of the target cluster registration.
-                # The source_registration_id output is "<type>::<numeric_id>".
                 id = tonumber(split("::", module.target_cluster_registration[0].source_registration_id)[1])
               }
             }
@@ -745,8 +752,6 @@ resource "ibm_backup_recovery" "recovery" {
           prefix = var.recovery_namespace_prefix
         }
 
-        # Storage class mapping — passed to BRS to remap SC names during restore.
-        # Applied only when the caller provides a non-empty mapping.
         dynamic "storage_class" {
           for_each = length(var.recovery_storage_class_mapping) > 0 ? [1] : []
           content {
@@ -766,6 +771,9 @@ resource "ibm_backup_recovery" "recovery" {
 
   lifecycle {
     replace_triggered_by = [terraform_data.wait_for_backup]
+    # Freeze `name` at creation — formatdate(timestamp()) diffs on every plan
+    # which triggers CustomizeDiff to error on the ForceNew `name` field.
+    ignore_changes = [name]
   }
 
   depends_on = [
@@ -782,13 +790,11 @@ resource "ibm_backup_recovery" "recovery" {
 
 # Poll recovery status and wait for completion before refreshing the protection source.
 # Recovery operations are asynchronous — this ensures namespaces are fully restored.
-# The recovery_id is read directly from ibm_backup_recovery.recovery[0].recovery_id
-# (Terraform state) rather than from /tmp, eliminating cross-container fragility.
+# The recovery_id is read from ibm_backup_recovery.recovery[0].recovery_id in state.
 resource "terraform_data" "wait_for_recovery_completion" {
   count = local.is_full_recovery ? 1 : 0
 
-  # Re-run the waiter whenever the recovery resource is replaced so that
-  # replace flows downstream correctly and the waiter always polls the latest run.
+  # Re-run whenever the recovery resource is replaced (new backup run completed).
   triggers_replace = {
     recovery_id = ibm_backup_recovery.recovery[0].recovery_id
   }
@@ -802,18 +808,14 @@ resource "terraform_data" "wait_for_recovery_completion" {
     timeout_minutes       = var.recovery_wait_timeout_minutes
     poll_interval_seconds = var.recovery_poll_interval_seconds
     binaries_path         = "/tmp"
-    # recovery_id comes from provider state — safe across Schematics job containers.
-    recovery_id = ibm_backup_recovery.recovery[0].recovery_id
+    recovery_id           = ibm_backup_recovery.recovery[0].recovery_id
   }
 
   provisioner "local-exec" {
-    # on_failure = continue: recovery runs asynchronously in BRS — if the
+    # on_failure = continue: recovery runs asynchronously in BRS. If the
     # Schematics job wall-clock timeout kills this poller before recovery
-    # finishes, the apply still succeeds. The recovery_id is stored in state
-    # and the BRS UI shows live status. The post_recovery_refresh resource
-    # depends on this provisioner completing successfully, so it will simply
-    # be skipped on this apply and re-run on the next apply once the waiter
-    # exits 0.
+    # finishes, the apply still succeeds. The recovery_id is in state and
+    # the BRS UI shows live status.
     on_failure = continue
 
     command = <<-EOT
