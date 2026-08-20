@@ -359,20 +359,27 @@ variable "dsc_helm_timeout" {
   nullable    = false
 }
 
-variable "dsc_storage_class" {
+variable "source_dsc_storage_class" {
   type        = string
   description = "Storage class to use for the Data Source Connector persistent volume. By default, it uses 'ibmc-vpc-block-metro-5iops-tier' for VPC clusters and 'ibmc-block-silver' for Classic clusters."
   default     = null
 }
 
-variable "create_dsc_worker_pool" {
+variable "source_create_dsc_worker_pool" {
   description = "Set to `true` to create a dedicated worker pool for the Data Source Connector. For VPC clusters, one pool per zone is created, distributing `dsc_replicas` nodes across zones. For Classic clusters, a single pool is created with one node per zone; zones are attached using the VLANs of the default pool, up to `dsc_worker_pool_zones` zones. If set to `false`, the connector is deployed on existing worker nodes."
   type        = bool
   default     = true
 }
 
-variable "dsc_worker_pool_flavor" {
-  description = "The machine flavor for the Data Source Connector worker pool. Defaults to `bxf.4x16` for VPC clusters and `b3c.4x16` for classic clusters when left at the default. Override with any compatible flavor for the cluster type (e.g. `bxf.8x32` for VPC, `b3c.8x32` for classic)."
+variable "source_dsc_worker_pool_flavor" {
+  description = "The machine flavor for the source cluster Data Source Connector worker pool. Defaults to `bxf.4x16` for VPC clusters and `b3c.4x16` for classic clusters when left at the default. Override with any compatible flavor for the cluster type (e.g. `bxf.8x32` for VPC, `b3c.8x32` for classic)."
+  type        = string
+  default     = "bxf.4x16"
+  nullable    = false
+}
+
+variable "target_dsc_worker_pool_flavor" {
+  description = "The machine flavor for the target cluster Data Source Connector worker pool. Defaults to `bxf.4x16` for VPC clusters and `b3c.4x16` for classic clusters when left at the default. Override with any compatible flavor for the cluster type (e.g. `bxf.8x32` for VPC, `b3c.8x32` for classic)."
   type        = string
   default     = "bxf.4x16"
   nullable    = false
@@ -416,12 +423,6 @@ variable "existing_brs_instance_crn" {
   type        = string
   description = "CRN of the Backup & Recovery Service instance."
   default     = null
-}
-
-variable "add_dsc_rules_to_cluster_sg" {
-  type        = bool
-  description = "Set to `true` to automatically add the security group rules required by the Data Source Connector. This is mandatory when registering the cluster via its public service endpoint. Set to `false` to only register the cluster and create the policy without modifying security groups."
-  default     = false
 }
 
 variable "brs_endpoint_type" {

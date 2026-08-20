@@ -144,12 +144,6 @@ variable "install_required_binaries" {
 # Data Source Connector (DSC)
 ##############################################################################
 
-variable "add_dsc_rules_to_cluster_sg" {
-  description = "Set to `true` to automatically add the security group rules required by the Data Source Connector. This is mandatory when registering the cluster via its public service endpoint. Set to `false` to only register the cluster and create the policy without modifying security groups."
-  type        = bool
-  default     = false
-}
-
 variable "dsc_chart_uri" {
   description = "The full OCI registry URI for the Data Source Connector Helm chart, including the digest."
   type        = string

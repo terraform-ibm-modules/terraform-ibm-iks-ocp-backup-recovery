@@ -448,7 +448,6 @@ module "source_backup_recovery" {
   cluster_id                   = local.source_cluster_id
   cluster_resource_group_id    = module.resource_group.resource_group_id
   cluster_config_endpoint_type = var.cluster_config_endpoint_type
-  add_dsc_rules_to_cluster_sg  = false
   kube_type                    = "kubernetes"
   connection_env_type          = "kIksVpc"
   ibmcloud_api_key             = var.ibmcloud_api_key
@@ -513,7 +512,6 @@ module "target_backup_recovery" {
   cluster_id                   = local.target_cluster_id
   cluster_resource_group_id    = module.resource_group.resource_group_id
   cluster_config_endpoint_type = var.cluster_config_endpoint_type
-  add_dsc_rules_to_cluster_sg  = false
   kube_type                    = "kubernetes"
   connection_env_type          = "kIksVpc"
   ibmcloud_api_key             = var.ibmcloud_api_key

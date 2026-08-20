@@ -435,20 +435,20 @@
               "display_name": "Helm Timeout (Seconds)"
             },
             {
-              "key": "dsc_storage_class",
-              "display_name": "Data Source Connector Storage Class"
+              "key": "source_dsc_storage_class",
+              "display_name": "Source DSC Storage Class"
             },
             {
-              "key": "create_dsc_worker_pool",
-              "display_name": "Create Data Source Connector Worker Pool"
+              "key": "source_create_dsc_worker_pool",
+              "display_name": "Create DSC Worker Pool on Source"
             },
             {
               "key": "dsc_worker_pool_zones",
               "display_name": "DSC Worker Pool Zones"
             },
             {
-              "key": "dsc_worker_pool_flavor",
-              "display_name": "Data Source Connector Worker Pool Flavor"
+              "key": "source_dsc_worker_pool_flavor",
+              "display_name": "Source DSC Worker Pool Flavor"
             },
             {
               "key": "dsc_pod_cpu_limits",
@@ -465,10 +465,6 @@
             {
               "key": "dsc_pod_memory_requests",
               "display_name": "Data Source Connector Pod Memory Requests"
-            },
-            {
-              "key": "add_dsc_rules_to_cluster_sg",
-              "display_name": "Add Security Group Rules"
             },
             {
               "key": "add_cluster_tags",
@@ -681,6 +677,13 @@
             {
               "key": "target_create_dsc_worker_pool",
               "display_name": "Create DSC Worker Pool on Target",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
+            },
+            {
+              "key": "target_dsc_worker_pool_flavor",
+              "display_name": "Target DSC Worker Pool Flavor",
               "hidden": {
                 "deployment_mode": "backup_only"
               }

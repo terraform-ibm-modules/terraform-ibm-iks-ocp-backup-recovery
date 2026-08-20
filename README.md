@@ -306,9 +306,7 @@ You need the following permissions to run this module:
 
 ### Modules
 
-| Name | Source | Version |
-|------|--------|---------|
-| <a name="module_dsc_sg_rule"></a> [dsc\_sg\_rule](#module\_dsc\_sg\_rule) | terraform-ibm-modules/security-group/ibm | v2.9.1 |
+No modules.
 
 ### Resources
 
@@ -352,7 +350,6 @@ You need the following permissions to run this module:
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | <a name="input_add_cluster_tags"></a> [add\_cluster\_tags](#input\_add\_cluster\_tags) | Whether to add BRS tags to the cluster. Set to false if you manage cluster tags externally to avoid drift. When false, you should manually add the tags 'brs-region:<region>' and 'brs-guid:<guid>' to your cluster. | `bool` | `true` | no |
-| <a name="input_add_dsc_rules_to_cluster_sg"></a> [add\_dsc\_rules\_to\_cluster\_sg](#input\_add\_dsc\_rules\_to\_cluster\_sg) | Set to `true` to automatically add the security group rules required by the Data Source Connector. This is mandatory when registering the cluster via its public service endpoint. Set to `false` to only register the cluster and create the policy without modifying security groups. | `bool` | `false` | no |
 | <a name="input_auto_protect_policy_name"></a> [auto\_protect\_policy\_name](#input\_auto\_protect\_policy\_name) | Name of an existing protection policy to use for auto-protect. Defaults to 'Basic', which is the out-of-the-box policy shipped with every BRS instance. The policy must already exist in the BRS instance. Only relevant when `enable_auto_protect` is `true` and `deployment_mode` is 'backup\_only' or 'full\_backup\_recovery'. | `string` | `"Basic"` | no |
 | <a name="input_backup_run_poll_interval_seconds"></a> [backup\_run\_poll\_interval\_seconds](#input\_backup\_run\_poll\_interval\_seconds) | Polling interval in seconds when waiting for the first restorable backup run. | `number` | `30` | no |
 | <a name="input_backup_run_poll_timeout_minutes"></a> [backup\_run\_poll\_timeout\_minutes](#input\_backup\_run\_poll\_timeout\_minutes) | Maximum time in minutes to poll for the first restorable backup run when recovery is enabled in a single apply. | `number` | `45` | no |

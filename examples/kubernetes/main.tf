@@ -206,7 +206,6 @@ module "backup_recover_protect_iks" {
   cluster_id                   = local.cluster_id
   cluster_resource_group_id    = module.resource_group.resource_group_id
   cluster_config_endpoint_type = var.cluster_config_endpoint_type
-  add_dsc_rules_to_cluster_sg  = false
   kube_type                    = "kubernetes"
   ibmcloud_api_key             = var.ibmcloud_api_key
   enable_auto_protect          = false
