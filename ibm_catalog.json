@@ -300,7 +300,15 @@
             },
             {
               "key": "brs_resource_group_id",
-              "display_name": "BRS Resource Group ID"
+              "display_name": "BRS Resource Group ID",
+              "custom_config": {
+                "type": "resource_group",
+                "grouping": "deployment",
+                "original_grouping": "deployment",
+                "config_constraints": {
+                  "identifier": "rg_id"
+                }
+              }
             },
             {
               "key": "brs_connection_name",
