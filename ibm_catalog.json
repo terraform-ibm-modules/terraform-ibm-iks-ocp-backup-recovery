@@ -146,7 +146,7 @@
               ]
             },
             {
-              "key": "cluster_id",
+              "key": "source_cluster_id",
               "display_name": "cluster",
               "custom_config": {
                 "type": "cluster_var",
@@ -156,7 +156,7 @@
               "required": true
             },
             {
-              "key": "kube_type",
+              "key": "source_kube_type",
               "required": true,
               "display_name": "Cluster Type",
               "options": [
@@ -171,7 +171,7 @@
               ]
             },
             {
-              "key": "cluster_resource_group_id",
+              "key": "source_cluster_resource_group_id",
               "required": true,
               "display_name": "Cluster Resource Group",
               "custom_config": {
@@ -184,7 +184,7 @@
               }
             },
             {
-              "key": "cluster_config_endpoint_type",
+              "key": "source_cluster_config_endpoint_type",
               "display_name": "Cluster Config Endpoint Type",
               "options": [
                 {
@@ -311,11 +311,11 @@
               }
             },
             {
-              "key": "brs_connection_name",
+              "key": "source_brs_connection_name",
               "display_name": "Backup Recovery Service Connection Name"
             },
             {
-              "key": "brs_create_new_connection",
+              "key": "source_brs_create_new_connection",
               "display_name": "Create New Connection"
             },
             {
@@ -323,11 +323,11 @@
               "display_name": "Create BRS Virtual Private Endpoint Gateway"
             },
             {
-              "key": "vpc_id",
+              "key": "source_vpc_id",
               "display_name": "VPC ID"
             },
             {
-              "key": "vpc_subnets",
+              "key": "source_vpc_subnets",
               "display_name": "VPC Subnets",
               "custom_config": {
                 "type": "code_editor",
@@ -341,7 +341,7 @@
               }
             },
             {
-              "key": "brs_vpe_name",
+              "key": "source_brs_vpe_name",
               "display_name": "BRS VPE Gateway Name"
             },
             {
@@ -364,7 +364,7 @@
               ]
             },
             {
-              "key": "connection_env_type",
+              "key": "source_connection_env_type",
               "display_name": "Connection Environment Type",
               "options": [
                 {

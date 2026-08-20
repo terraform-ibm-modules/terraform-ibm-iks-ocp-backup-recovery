@@ -1,7 +1,7 @@
 locals {
   # --- Environment type detection ---
-  is_vpc     = length(regexall("Vpc$", var.connection_env_type)) > 0
-  is_classic = length(regexall("Classic$", var.connection_env_type)) > 0
+  is_vpc     = length(regexall("Vpc$", var.source_connection_env_type)) > 0
+  is_classic = length(regexall("Classic$", var.source_connection_env_type)) > 0
 
   # --- Recovery mode detection ---
   is_full_recovery = var.deployment_mode == "full_backup_recovery"
@@ -11,8 +11,8 @@ locals {
 data "ibm_container_vpc_cluster" "vpc_cluster" {
   count             = local.is_vpc ? 1 : 0
   provider          = ibm.source_cluster
-  name              = var.cluster_id
-  resource_group_id = var.cluster_resource_group_id
+  name              = var.source_cluster_id
+  resource_group_id = var.source_cluster_resource_group_id
   wait_till         = var.wait_till
   wait_till_timeout = var.wait_till_timeout
 }
@@ -21,17 +21,17 @@ data "ibm_container_vpc_cluster" "vpc_cluster" {
 data "ibm_container_cluster" "classic_cluster" {
   count             = local.is_classic ? 1 : 0
   provider          = ibm.source_cluster
-  name              = var.cluster_id
-  resource_group_id = var.cluster_resource_group_id
+  name              = var.source_cluster_id
+  resource_group_id = var.source_cluster_resource_group_id
   wait_till         = var.wait_till
   wait_till_timeout = var.wait_till_timeout
 }
 data "ibm_container_cluster_config" "cluster_config" {
   provider          = ibm.source_cluster
-  cluster_name_id   = var.cluster_id
-  resource_group_id = var.cluster_resource_group_id
+  cluster_name_id   = var.source_cluster_id
+  resource_group_id = var.source_cluster_resource_group_id
   config_dir        = "${path.module}/kubeconfig"
-  endpoint_type     = var.cluster_config_endpoint_type != "default" ? var.cluster_config_endpoint_type : null
+  endpoint_type     = var.source_cluster_config_endpoint_type != "default" ? var.source_cluster_config_endpoint_type : null
   admin             = true
 
   # Wait for cluster to be ready before fetching config
@@ -67,18 +67,18 @@ module "brs_instance" {
   version                   = "1.12.3"
   providers                 = { ibm = ibm } # always the BRS (target) account
   region                    = local.region
-  resource_group_id         = var.brs_resource_group_id != null ? var.brs_resource_group_id : var.cluster_resource_group_id
+  resource_group_id         = var.brs_resource_group_id != null ? var.brs_resource_group_id : var.source_cluster_resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
   instance_name             = var.brs_instance_name
   service_type              = var.brs_service_type
   existing_brs_instance_crn = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : null
   create_new_instance       = var.create_new_brs_instance
-  connection_name           = var.brs_connection_name
-  create_new_connection     = var.brs_create_new_connection
+  connection_name           = var.source_brs_connection_name
+  create_new_connection     = var.source_brs_create_new_connection
   resource_tags             = var.resource_tags
   access_tags               = var.access_tags
   endpoint_type             = var.brs_endpoint_type
-  connection_env_type       = var.connection_env_type
+  connection_env_type       = var.source_connection_env_type
   policies                  = var.policies
 }
 
@@ -92,14 +92,14 @@ module "source_cluster_prep" {
   }
 
   execution_stage              = "cluster_prep"
-  cluster_id                   = var.cluster_id
-  cluster_resource_group_id    = var.cluster_resource_group_id
-  cluster_config_endpoint_type = var.cluster_config_endpoint_type
+  cluster_id                   = var.source_cluster_id
+  cluster_resource_group_id    = var.source_cluster_resource_group_id
+  cluster_config_endpoint_type = var.source_cluster_config_endpoint_type
   add_dsc_rules_to_cluster_sg  = var.add_dsc_rules_to_cluster_sg
-  kube_type                    = var.kube_type
+  kube_type                    = var.source_kube_type
   wait_till                    = var.wait_till
   wait_till_timeout            = var.wait_till_timeout
-  connection_env_type          = var.connection_env_type
+  connection_env_type          = var.source_connection_env_type
   ibmcloud_api_key             = var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key
 
   # DSC configuration for source cluster
@@ -129,15 +129,16 @@ module "protect_cluster" {
   }
 
   execution_stage              = "brs_management"
-  cluster_id                   = var.cluster_id
+  cluster_id                   = var.source_cluster_id
   cluster_crn                  = local.is_classic ? try(data.ibm_container_cluster.classic_cluster[0].crn, null) : try(data.ibm_container_vpc_cluster.vpc_cluster[0].crn, null)
-  cluster_resource_group_id    = var.cluster_resource_group_id
-  cluster_config_endpoint_type = var.cluster_config_endpoint_type
+  cluster_endpoint             = local.is_classic ? (var.source_cluster_config_endpoint_type == "private" ? try(data.ibm_container_cluster.classic_cluster[0].private_service_endpoint_url, null) : try(data.ibm_container_cluster.classic_cluster[0].public_service_endpoint_url, null)) : (var.source_cluster_config_endpoint_type == "private" ? try(data.ibm_container_vpc_cluster.vpc_cluster[0].private_service_endpoint_url, null) : try(data.ibm_container_vpc_cluster.vpc_cluster[0].public_service_endpoint_url, null))
+  cluster_resource_group_id    = var.source_cluster_resource_group_id
+  cluster_config_endpoint_type = var.source_cluster_config_endpoint_type
   add_cluster_tags             = var.add_cluster_tags
-  kube_type                    = var.kube_type
+  kube_type                    = var.source_kube_type
   wait_till                    = var.wait_till
   wait_till_timeout            = var.wait_till_timeout
-  connection_env_type          = var.connection_env_type
+  connection_env_type          = var.source_connection_env_type
   deployment_mode              = var.deployment_mode
 
   # BRS prerequisite inputs (DA owns the BRS instance via module.brs_instance)
@@ -207,20 +208,20 @@ locals {
 
   brs_vpe_active = var.create_source_cluster_brs_vpe_gateway && local.is_vpc
 
-  brs_vpe_name_resolved = var.brs_vpe_name != null ? var.brs_vpe_name : "${lower(var.brs_connection_name)}-vpe"
+  brs_vpe_name_resolved = var.source_brs_vpe_name != null ? var.source_brs_vpe_name : "${lower(var.source_brs_connection_name)}-vpe"
 
   # Subnet auto-discovery from existing cluster worker pools.
   # When vpc_subnets is supplied explicitly (e.g. new cluster created in the same apply)
   # the lookup is skipped so the count is always plan-time-static.
-  cluster_subnet_ids = local.brs_vpe_active && local.is_vpc && length(var.vpc_subnets) == 0 ? distinct(flatten(
+  cluster_subnet_ids = local.brs_vpe_active && local.is_vpc && length(var.source_vpc_subnets) == 0 ? distinct(flatten(
     data.ibm_container_vpc_cluster.vpc_cluster[*].worker_pools[*].zones[*].subnets[*].id
   )) : []
   cluster_subnet_lookup_count = length(local.cluster_subnet_ids) > 0 ? length(local.cluster_subnet_ids) : 0
 
-  resolved_vpc_id = var.vpc_id != null ? var.vpc_id : (
+  resolved_vpc_id = var.source_vpc_id != null ? var.source_vpc_id : (
     local.cluster_subnet_lookup_count > 0 ? data.ibm_is_subnet.cluster_subnet[0].vpc : null
   )
-  resolved_vpc_subnets = length(var.vpc_subnets) > 0 ? var.vpc_subnets : [
+  resolved_vpc_subnets = length(var.source_vpc_subnets) > 0 ? var.source_vpc_subnets : [
     for s in data.ibm_is_subnet.cluster_subnet : { name = s.name, id = s.id, zone = s.zone }
   ]
   brs_vpe_subnets_map = { for s in local.resolved_vpc_subnets : s.zone => s }
@@ -296,7 +297,7 @@ resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
   provider        = ibm.source_cluster
   name            = local.brs_vpe_name_resolved
   vpc             = local.resolved_vpc_id
-  resource_group  = var.cluster_resource_group_id
+  resource_group  = var.source_cluster_resource_group_id
   security_groups = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
 
   target {
@@ -392,7 +393,7 @@ locals {
   # that here keeps the region precondition from rejecting a config where
   # create_target_cluster_brs_vpe_gateway is true but the target is Classic, in
   # which case no VPE exists and the region relationship is irrelevant.
-  target_is_vpc = length(regexall("Vpc$", coalesce(var.target_connection_env_type, var.connection_env_type))) > 0
+  target_is_vpc = length(regexall("Vpc$", coalesce(var.target_connection_env_type, var.source_connection_env_type))) > 0
 }
 
 data "ibm_container_cluster_config" "target_cluster_config" {
@@ -442,7 +443,7 @@ module "brs_target_connection" {
   }
 
   region                    = local.region
-  resource_group_id         = var.brs_resource_group_id != null ? var.brs_resource_group_id : var.cluster_resource_group_id
+  resource_group_id         = var.brs_resource_group_id != null ? var.brs_resource_group_id : var.source_cluster_resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
   instance_name             = var.brs_instance_name
   existing_brs_instance_crn = module.brs_instance.brs_instance_crn
@@ -452,7 +453,7 @@ module "brs_target_connection" {
   resource_tags             = var.resource_tags
   access_tags               = var.access_tags
   endpoint_type             = var.brs_endpoint_type
-  connection_env_type       = var.target_connection_env_type != null ? var.target_connection_env_type : var.connection_env_type
+  connection_env_type       = var.target_connection_env_type != null ? var.target_connection_env_type : var.source_connection_env_type
   policies                  = []
 }
 
@@ -472,10 +473,10 @@ module "target_cluster_prep" {
   cluster_resource_group_id    = var.target_cluster_resource_group_id
   cluster_config_endpoint_type = var.target_cluster_config_endpoint_type
   add_dsc_rules_to_cluster_sg  = var.add_dsc_rules_to_cluster_sg
-  kube_type                    = var.target_kube_type != null ? var.target_kube_type : var.kube_type
+  kube_type                    = var.target_kube_type != null ? var.target_kube_type : var.source_kube_type
   wait_till                    = var.wait_till
   wait_till_timeout            = var.wait_till_timeout
-  connection_env_type          = var.target_connection_env_type != null ? var.target_connection_env_type : var.connection_env_type
+  connection_env_type          = var.target_connection_env_type != null ? var.target_connection_env_type : var.source_connection_env_type
   ibmcloud_api_key             = var.target_ibmcloud_api_key != null ? var.target_ibmcloud_api_key : (var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key)
 
   # DSC configuration for target
@@ -507,16 +508,17 @@ module "target_cluster_registration" {
   execution_stage              = "brs_management"
   cluster_id                   = var.target_cluster_id
   cluster_crn                  = try(data.ibm_container_vpc_cluster.target_cluster[0].crn, null)
+  cluster_endpoint             = var.target_cluster_config_endpoint_type == "private" ? try(data.ibm_container_vpc_cluster.target_cluster[0].private_service_endpoint_url, null) : try(data.ibm_container_vpc_cluster.target_cluster[0].public_service_endpoint_url, null)
   cluster_resource_group_id    = var.target_cluster_resource_group_id
   cluster_config_endpoint_type = var.target_cluster_config_endpoint_type
-  kube_type                    = var.target_kube_type != null ? var.target_kube_type : var.kube_type
+  kube_type                    = var.target_kube_type != null ? var.target_kube_type : var.source_kube_type
   wait_till                    = var.wait_till
   wait_till_timeout            = var.wait_till_timeout
   ibmcloud_api_key             = var.ibmcloud_api_key
 
   # BRS prerequisite inputs — same instance as source, target's own connection
   brs_endpoint_type        = var.brs_endpoint_type
-  connection_env_type      = var.target_connection_env_type != null ? var.target_connection_env_type : var.connection_env_type
+  connection_env_type      = var.target_connection_env_type != null ? var.target_connection_env_type : var.source_connection_env_type
   brs_tenant_id            = module.brs_target_connection[0].tenant_id
   brs_connection_id        = module.brs_target_connection[0].connection_id
   brs_registration_token   = module.brs_target_connection[0].registration_token
