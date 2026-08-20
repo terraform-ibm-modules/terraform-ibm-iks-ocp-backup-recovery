@@ -1110,13 +1110,10 @@ variable "recovery_storage_class_mapping" {
   type        = map(string)
   nullable    = false
   default = {
-    # Classic block (Delete) → VPC block metro (Delete, WaitForFirstConsumer)
-    "ibmc-block-bronze" = "ibmc-vpc-block-metro-general-purpose"
-    "ibmc-block-silver" = "ibmc-vpc-block-metro-5iops-tier"
-    "ibmc-block-gold"   = "ibmc-vpc-block-metro-10iops-tier"
-    "ibmc-block-custom" = "ibmc-vpc-block-metro-custom"
-
-    # Classic block (Retain) → VPC block metro (Retain, WaitForFirstConsumer)
+    "ibmc-block-bronze"        = "ibmc-vpc-block-metro-general-purpose"
+    "ibmc-block-silver"        = "ibmc-vpc-block-metro-5iops-tier"
+    "ibmc-block-gold"          = "ibmc-vpc-block-metro-10iops-tier"
+    "ibmc-block-custom"        = "ibmc-vpc-block-metro-custom"
     "ibmc-block-retain-bronze" = "ibmc-vpc-block-metro-retain-general-purpose"
     "ibmc-block-retain-silver" = "ibmc-vpc-block-metro-retain-5iops-tier"
     "ibmc-block-retain-gold"   = "ibmc-vpc-block-metro-retain-10iops-tier"
