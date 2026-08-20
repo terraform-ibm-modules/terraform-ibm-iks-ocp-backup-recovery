@@ -574,9 +574,10 @@ data "ibm_is_security_group" "target_kube_vpeg_sg" {
 
 # Source VPE
 resource "ibm_is_subnet_reserved_ip" "source_vpe_ip" {
-  for_each = local.source_vpe_subnets
-  subnet   = each.value.id
-  name     = "${local.source_vpe_name}-${each.key}-ip"
+  for_each    = local.source_vpe_subnets
+  subnet      = each.value.id
+  name        = "${local.source_vpe_name}-${each.key}-ip"
+  auto_delete = true
 }
 
 resource "ibm_is_virtual_endpoint_gateway" "source_vpe" {
@@ -601,9 +602,10 @@ resource "ibm_is_virtual_endpoint_gateway_ip" "source_vpe_ip" {
 
 # Target VPE
 resource "ibm_is_subnet_reserved_ip" "target_vpe_ip" {
-  for_each = local.target_vpe_subnets
-  subnet   = each.value.id
-  name     = "${local.target_vpe_name}-${each.key}-ip"
+  for_each    = local.target_vpe_subnets
+  subnet      = each.value.id
+  name        = "${local.target_vpe_name}-${each.key}-ip"
+  auto_delete = true
 }
 
 resource "ibm_is_virtual_endpoint_gateway" "target_vpe" {

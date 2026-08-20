@@ -281,10 +281,11 @@ module "brs_s2s_auth" {
 
 # Reserved IPs — one per subnet.
 resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
-  for_each = local.brs_vpe_active ? local.brs_vpe_subnets_map : {}
-  provider = ibm.source_cluster
-  subnet   = each.value.id
-  name     = "${local.brs_vpe_name_resolved}-${each.key}-ip"
+  for_each    = local.brs_vpe_active ? local.brs_vpe_subnets_map : {}
+  provider    = ibm.source_cluster
+  subnet      = each.value.id
+  name        = "${local.brs_vpe_name_resolved}-${each.key}-ip"
+  auto_delete = true
 }
 
 # VPE Gateway — routes DSC↔BRS traffic over IBM private backbone.
@@ -586,10 +587,11 @@ data "ibm_is_security_group" "target_kube_vpeg_sg" {
 }
 
 resource "ibm_is_subnet_reserved_ip" "target_brs_vpe_ip" {
-  for_each = local.target_brs_vpe_active ? local.target_brs_vpe_subnets_map : {}
-  provider = ibm.target_cluster
-  subnet   = each.value.id
-  name     = "${local.target_brs_vpe_name_resolved}-${each.key}-ip"
+  for_each    = local.target_brs_vpe_active ? local.target_brs_vpe_subnets_map : {}
+  provider    = ibm.target_cluster
+  subnet      = each.value.id
+  name        = "${local.target_brs_vpe_name_resolved}-${each.key}-ip"
+  auto_delete = true
 }
 
 resource "ibm_is_virtual_endpoint_gateway" "target_brs_vpe" {
