@@ -24,14 +24,14 @@ variable "target_ibmcloud_api_key" {
 
 variable "iaas_classic_username" {
   type        = string
-  description = "IBM Cloud Classic Infrastructure username. Required only when `connection_env_type` is `kIksClassic` or `kRoksClassic`. Find it under Manage > Access (IAM) > Users > your user > VPN password > Username."
+  description = "IBM Cloud Classic Infrastructure username. Required only when `source_connection_env_type` is `kIksClassic` or `kRoksClassic`. Find it under Manage > Access (IAM) > Users > your user > VPN password > Username."
   sensitive   = true
   default     = null
 }
 
 variable "iaas_classic_api_key" {
   type        = string
-  description = "IBM Cloud Classic Infrastructure API key. Required only when `connection_env_type` is `kIksClassic` or `kRoksClassic`. Generate it under Manage > Access (IAM) > Users > your user > API keys > Classic infrastructure API key."
+  description = "IBM Cloud Classic Infrastructure API key. Required only when `source_connection_env_type` is `kIksClassic` or `kRoksClassic`. Generate it under Manage > Access (IAM) > Users > your user > API keys > Classic infrastructure API key."
   sensitive   = true
   default     = null
 }
@@ -50,12 +50,12 @@ variable "provider_visibility" {
 # Cluster variables
 ##############################################################################
 
-variable "cluster_id" {
+variable "source_cluster_id" {
   type        = string
   description = "The ID of the cluster to deploy the agents in."
 }
 
-variable "cluster_resource_group_id" {
+variable "source_cluster_resource_group_id" {
   type        = string
   description = "The resource group ID of the cluster."
 }
@@ -72,14 +72,14 @@ variable "add_cluster_tags" {
   default     = true
 }
 
-variable "cluster_config_endpoint_type" {
+variable "source_cluster_config_endpoint_type" {
   description = "The type of endpoint to use for the cluster config access: `default`, `private`, `vpe`, or `link`. The `default` value uses the default endpoint of the cluster."
   type        = string
   default     = "private"
   nullable    = false # use default if null is passed in
   validation {
     error_message = "Invalid endpoint type. Valid values are `default`, `private`, `vpe`, or `link`."
-    condition     = contains(["default", "private", "vpe", "link"], var.cluster_config_endpoint_type)
+    condition     = contains(["default", "private", "vpe", "link"], var.source_cluster_config_endpoint_type)
   }
 }
 
@@ -406,9 +406,9 @@ variable "dsc_pod_memory_requests" {
   nullable    = false
 }
 
-variable "brs_connection_name" {
+variable "source_brs_connection_name" {
   type        = string
-  description = "Name of the connection from the Backup & Recovery Service instance to be used for protecting the cluster. If `brs_create_new_connection` is set to `true` (default), this will be the name of the new connection created. If set to `false`, this must be the name of an existing connection."
+  description = "Name of the connection from the Backup & Recovery Service instance to be used for protecting the cluster. If `source_brs_create_new_connection` is set to `true` (default), this will be the name of the new connection created. If set to `false`, this must be the name of an existing connection."
   nullable    = false
 }
 
@@ -455,14 +455,14 @@ variable "registration_images" {
   nullable    = false
 }
 
-variable "kube_type" {
+variable "source_kube_type" {
   type        = string
   description = "Type of Kubernetes cluster. Allowed values are 'kubernetes' or 'openshift'."
   default     = "kubernetes"
 
   validation {
-    condition     = contains(["kubernetes", "openshift"], var.kube_type)
-    error_message = "`kube_type` must be 'kubernetes' or 'openshift'."
+    condition     = contains(["kubernetes", "openshift"], var.source_kube_type)
+    error_message = "`source_kube_type` must be 'kubernetes' or 'openshift'."
   }
 }
 
@@ -495,27 +495,27 @@ variable "create_new_brs_instance" {
   default     = null
 }
 
-variable "brs_create_new_connection" {
+variable "source_brs_create_new_connection" {
   type        = bool
-  description = "Flag to create a new connection from the Backup & Recovery Service instance to the cluster. When set to `true` (default), a new connection is created with the name specified in `brs_connection_name`. When `false`, it uses an existing connection matching `brs_connection_name`."
+  description = "Flag to create a new connection from the Backup & Recovery Service instance to the cluster. When set to `true` (default), a new connection is created with the name specified in `source_brs_connection_name`. When `false`, it uses an existing connection matching `source_brs_connection_name`."
   default     = true
   nullable    = false
 }
 
 variable "create_source_cluster_brs_vpe_gateway" {
-  description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) that routes traffic from the cluster VPC to the BRS instance over the IBM private backbone. For existing clusters, vpc_id and vpc_subnets are auto-discovered from the cluster's worker pools. When creating a new cluster in the same apply, supply vpc_id and vpc_subnets explicitly. Set to false only if you are managing the VPEG externally or do not require private connectivity."
+  description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) that routes traffic from the cluster VPC to the BRS instance over the IBM private backbone. For existing clusters, source_vpc_id and source_vpc_subnets are auto-discovered from the cluster's worker pools. When creating a new cluster in the same apply, supply source_vpc_id and source_vpc_subnets explicitly. Set to false only if you are managing the VPEG externally or do not require private connectivity."
   type        = bool
   default     = true
   nullable    = false
 }
 
-variable "vpc_id" {
+variable "source_vpc_id" {
   description = "ID of the VPC where the BRS Virtual Private Endpoint Gateway will be created. Optional when create_source_cluster_brs_vpe_gateway is true — when omitted the VPC ID is auto-discovered from the cluster's worker-pool subnets. Supply this explicitly only when the auto-discovery would pick the wrong VPC."
   type        = string
   default     = null
 }
 
-variable "vpc_subnets" {
+variable "source_vpc_subnets" {
   description = "List of subnets in which to bind reserved IPs for the BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when create_source_cluster_brs_vpe_gateway is true — when omitted all subnets in the cluster VPC are discovered automatically."
   type = list(object({
     name = string
@@ -526,8 +526,8 @@ variable "vpc_subnets" {
   nullable = false
 }
 
-variable "brs_vpe_name" {
-  description = "Override the name of the BRS Virtual Private Endpoint Gateway. If null, the name is auto-generated as '<brs_connection_name>-vpe'."
+variable "source_brs_vpe_name" {
+  description = "Override the name of the BRS Virtual Private Endpoint Gateway. If null, the name is auto-generated as '<source_brs_connection_name>-vpe'."
   type        = string
   default     = null
 }
@@ -578,13 +578,13 @@ variable "access_tags" {
   default     = []
 }
 
-variable "connection_env_type" {
+variable "source_connection_env_type" {
   type        = string
-  description = "Type of environment for the connection. Must be consistent with `kube_type` (use `kIks*` for `kubernetes`, `kRoks*` for `openshift`). Allowed values are 'kIksVpc', 'kIksClassic', 'kRoksVpc', 'kRoksClassic'."
+  description = "Type of environment for the connection. Must be consistent with `source_kube_type` (use `kIks*` for `kubernetes`, `kRoks*` for `openshift`). Allowed values are 'kIksVpc', 'kIksClassic', 'kRoksVpc', 'kRoksClassic'."
 
   validation {
-    condition     = contains(["kIksVpc", "kIksClassic", "kRoksVpc", "kRoksClassic"], var.connection_env_type)
-    error_message = "`connection_env_type` must be 'kIksVpc', 'kIksClassic', 'kRoksVpc', or 'kRoksClassic'."
+    condition     = contains(["kIksVpc", "kIksClassic", "kRoksVpc", "kRoksClassic"], var.source_connection_env_type)
+    error_message = "`source_connection_env_type` must be 'kIksVpc', 'kIksClassic', 'kRoksVpc', or 'kRoksClassic'."
   }
 }
 
@@ -1033,13 +1033,13 @@ variable "target_cluster_config_endpoint_type" {
 
 variable "target_connection_env_type" {
   type        = string
-  description = "Connection environment type for the target cluster. Must be consistent with the target cluster's infrastructure type. Allowed values are 'kIksVpc', 'kIksClassic', 'kRoksVpc', 'kRoksClassic'. When null (default), falls back to `connection_env_type`. Set this explicitly for Classic→VPC cross-cluster recovery where the source is Classic and the target is VPC."
+  description = "Connection environment type for the target cluster. Must be consistent with the target cluster's infrastructure type. Allowed values are 'kIksVpc', 'kIksClassic', 'kRoksVpc', 'kRoksClassic'. When null (default), falls back to `source_connection_env_type`. Set this explicitly for Classic→VPC cross-cluster recovery where the source is Classic and the target is VPC."
   default     = null
 }
 
 variable "target_kube_type" {
   type        = string
-  description = "Type of the target Kubernetes cluster. Allowed values are 'kubernetes' (IKS) or 'openshift' (ROKS). When null (default), falls back to `kube_type`. Set this explicitly when the source and target clusters are of different types — for example, when backing up from an IKS cluster and recovering to a ROKS cluster, or vice-versa."
+  description = "Type of the target Kubernetes cluster. Allowed values are 'kubernetes' (IKS) or 'openshift' (ROKS). When null (default), falls back to `source_kube_type`. Set this explicitly when the source and target clusters are of different types — for example, when backing up from an IKS cluster and recovering to a ROKS cluster, or vice-versa."
   default     = null
 
   validation {
@@ -1049,7 +1049,7 @@ variable "target_kube_type" {
 }
 
 variable "target_brs_connection_name" {
-  description = "Name for the BRS connection to the target cluster in cross-cluster recovery or connected component setup. If null, defaults to '{cluster_id}-target-connection'."
+  description = "Name for the BRS connection to the target cluster in cross-cluster recovery or connected component setup. If null, defaults to '{source_cluster_id}-target-connection'."
   type        = string
   default     = null
 }
