@@ -366,13 +366,13 @@ variable "dsc_storage_class" {
 }
 
 variable "create_dsc_worker_pool" {
-  description = "Set to `true` to create a dedicated worker pool for the Data Source Connector in VPC clusters. If set to `false`, the connector will be deployed on existing worker nodes."
+  description = "Set to `true` to create a dedicated worker pool for the Data Source Connector. For VPC clusters, one pool per zone is created, distributing `dsc_replicas` nodes across zones. For Classic clusters, a single pool is created with one node per zone; zones are attached using the VLANs of the default pool, up to `dsc_worker_pool_zones` zones. If set to `false`, the connector is deployed on existing worker nodes."
   type        = bool
   default     = true
 }
 
 variable "dsc_worker_pool_flavor" {
-  description = "The machine flavor for the Data Source Connector worker pool. `bxf.4x16` (4 vCPU, 16 GB RAM) is available in every IBM Cloud VPC zone. Override for a larger flavor (e.g. `bxf.8x32`)."
+  description = "The machine flavor for the Data Source Connector worker pool. Defaults to `bxf.4x16` for VPC clusters and `b3c.4x16` for classic clusters when left at the default. Override with any compatible flavor for the cluster type (e.g. `bxf.8x32` for VPC, `b3c.8x32` for classic)."
   type        = string
   default     = "bxf.4x16"
   nullable    = false
