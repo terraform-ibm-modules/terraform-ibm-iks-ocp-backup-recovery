@@ -807,6 +807,15 @@ resource "terraform_data" "wait_for_recovery_completion" {
   }
 
   provisioner "local-exec" {
+    # on_failure = continue: recovery runs asynchronously in BRS — if the
+    # Schematics job wall-clock timeout kills this poller before recovery
+    # finishes, the apply still succeeds. The recovery_id is stored in state
+    # and the BRS UI shows live status. The post_recovery_refresh resource
+    # depends on this provisioner completing successfully, so it will simply
+    # be skipped on this apply and re-run on the next apply once the waiter
+    # exits 0.
+    on_failure = continue
+
     command = <<-EOT
       ${path.module}/../../scripts/wait_for_recovery_completion.sh \
         '${self.input.url}' \
