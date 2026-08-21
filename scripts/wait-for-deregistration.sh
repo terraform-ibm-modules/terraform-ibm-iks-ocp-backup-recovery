@@ -1,5 +1,9 @@
 #!/bin/bash
 # wait-for-deregistration.sh
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/common_utils.sh
+source "${SCRIPT_DIR}/common_utils.sh"
 #
 # Poll the BRS registrations list until this cluster's source registration is
 # gone, confirming BRS has completed the async deregistration cleanup. Runs as a

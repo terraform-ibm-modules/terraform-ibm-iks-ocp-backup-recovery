@@ -33,13 +33,17 @@ output "brs_private_hostname" {
 }
 
 output "source_vpe_ips" {
-  description = "Map of VPEG name → list of reserved IP objects bound to each subnet in the source VPC."
-  value       = module.source_backup_recovery.brs_vpe_ips
+  description = "Map of VPEG name → list of reserved IP addresses bound to each subnet in the source VPC."
+  value = {
+    (local.source_vpe_name) = values(ibm_is_subnet_reserved_ip.source_vpe_ip)[*].address
+  }
 }
 
 output "target_vpe_ips" {
-  description = "Map of VPEG name → list of reserved IP objects bound to each subnet in the target VPC."
-  value       = module.target_backup_recovery.brs_vpe_ips
+  description = "Map of VPEG name → list of reserved IP addresses bound to each subnet in the target VPC."
+  value = {
+    (local.target_vpe_name) = values(ibm_is_subnet_reserved_ip.target_vpe_ip)[*].address
+  }
 }
 
 output "source_connection_id" {
@@ -57,16 +61,19 @@ output "target_connection_id" {
 output "source_registration_id" {
   description = "Source registration ID for the source cluster."
   value       = module.source_backup_recovery.source_registration_id
+  sensitive   = true
 }
 
 output "target_registration_id" {
   description = "Source registration ID for the target cluster."
   value       = module.target_backup_recovery.source_registration_id
+  sensitive   = true
 }
 
 output "source_protection_group_ids" {
   description = "Map of protection group names to their IDs on the source cluster."
   value       = module.source_backup_recovery.protection_group_ids
+  sensitive   = true
 }
 
 output "source_workload_namespace" {
@@ -110,5 +117,5 @@ output "recovery_command_example" {
     split("::", module.source_backup_recovery.protection_group_ids["${var.prefix}-source-pg"])[1],
     split("::", module.target_backup_recovery.source_registration_id)[1]
   ) : "Recovery disabled"
-  sensitive = false
+  sensitive = true
 }

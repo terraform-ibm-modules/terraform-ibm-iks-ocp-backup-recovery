@@ -93,6 +93,10 @@ locals {
       zone = ibm_is_subnet.subnet_zone_1[0].zone
     }
   ] : []
+
+  brs_vpe_name    = var.brs_vpe_name != null ? var.brs_vpe_name : "${var.prefix}-brs-vpe"
+  brs_vpe_active  = var.create_source_cluster_brs_vpe_gateway && !var.classic_cluster
+  brs_vpe_subnets = { for s in local.vpc_subnets : s.zone => s }
 }
 
 module "ocp_base" {
@@ -184,57 +188,29 @@ resource "time_sleep" "wait_operators" {
 ########################################################################################################################
 
 
-module "backup_recover_protect_ocp" {
-  source = "../.."
+########################################################################################################################
+# BRS Instance (owned by this example)
+########################################################################################################################
+
+module "brs_instance" {
+  source  = "terraform-ibm-modules/backup-recovery/ibm"
+  version = "1.12.3"
   providers = {
-    ibm         = ibm
-    ibm.cluster = ibm
+    ibm = ibm
   }
 
-  # ---- Cluster ----
-  cluster_id                   = local.cluster_id
-  cluster_resource_group_id    = module.resource_group.resource_group_id
-  cluster_config_endpoint_type = var.cluster_config_endpoint_type
-  add_dsc_rules_to_cluster_sg  = false
-  kube_type                    = "openshift"
-  ibmcloud_api_key             = var.ibmcloud_api_key
-  # enable_auto_protect is set to false to avoid issues when running terraform pipelines; in production set to true.
-  enable_auto_protect = false
-  # Disable automatic tag addition to prevent drift with the ocp_base module
-  add_cluster_tags = false
-
-  # ---- BRS instance ----
-  existing_brs_instance_crn = var.existing_brs_instance_crn
-  brs_instance_name         = "${var.prefix}-brs-instance"
-  brs_connection_name       = "${var.prefix}-brs-connection-${var.classic_cluster ? "RoksClassic" : "RoksVpc"}"
-  brs_create_new_connection = true
   region                    = var.region
+  resource_group_id         = module.resource_group.resource_group_id
+  ibmcloud_api_key          = var.ibmcloud_api_key
+  instance_name             = "${var.prefix}-brs-instance"
+  existing_brs_instance_crn = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : null
+  create_new_instance       = var.existing_brs_instance_crn == null
+  connection_name           = "${var.prefix}-brs-connection-${var.classic_cluster ? "RoksClassic" : "RoksVpc"}"
+  create_new_connection     = true
+  resource_tags             = var.resource_tags
+  access_tags               = var.access_tags
+  endpoint_type             = var.brs_endpoint_type
   connection_env_type       = var.classic_cluster ? "kRoksClassic" : "kRoksVpc"
-  dsc_storage_class         = var.dsc_storage_class == null ? (var.classic_cluster ? "ibmc-block-silver" : "ibmc-vpc-block-metro-5iops-tier") : var.dsc_storage_class
-  dsc_worker_pool_zones     = 1
-
-  # Use public endpoint so Terraform (CI/workstation) can reach the BRS API.
-  # DSC traffic routes privately via the VPE Gateway when create_brs_vpe = true.
-  brs_endpoint_type = var.brs_endpoint_type
-
-  # ---- VPE Gateway (VPC clusters only) ----
-  # create_brs_vpe = true creates a VPEG in the cluster VPC so DSC→BRS traffic
-  # stays on the IBM private backbone. Classic clusters do not support VPE.
-  # vpc_id / vpc_subnets are supplied explicitly because the cluster is created
-  # in the same apply — auto-discovery from worker pools is unknown at plan time.
-  #
-  # brs_vpe_name is always set explicitly here because the auto-generated name
-  # derives from brs_connection_name which contains uppercase ("RoksVpc") and
-  # IBM VPC resource names must be lowercase-only: ^[a-z][-a-z0-9]*[a-z0-9]$
-  create_brs_vpe = var.create_brs_vpe && !var.classic_cluster
-  brs_vpe_name   = var.brs_vpe_name != null ? var.brs_vpe_name : (var.classic_cluster ? null : "${var.prefix}-brs-vpe")
-  vpc_id         = var.create_brs_vpe && !var.classic_cluster ? local.vpc_id : null
-  vpc_subnets    = var.create_brs_vpe && !var.classic_cluster ? local.vpc_subnets : []
-
-  # ---- Backup Policy ----
-  auto_protect_policy_name = "${var.prefix}-retention"
-  access_tags              = var.access_tags
-  resource_tags            = var.resource_tags
   policies = [
     {
       name              = "${var.prefix}-retention"
@@ -251,5 +227,93 @@ module "backup_recover_protect_ocp" {
       }
     }
   ]
+}
+
+module "backup_recover_protect_ocp" {
+  source = "../.."
+  providers = {
+    ibm = ibm
+  }
+
+  # ---- Cluster ----
+  cluster_id                   = local.cluster_id
+  cluster_resource_group_id    = module.resource_group.resource_group_id
+  cluster_config_endpoint_type = var.cluster_config_endpoint_type
+  kube_type                    = "openshift"
+  ibmcloud_api_key             = var.ibmcloud_api_key
+  # enable_auto_protect is set to false to avoid issues when running terraform pipelines; in production set to true.
+  enable_auto_protect = false
+  # Disable automatic tag addition to prevent drift with the ocp_base module
+  add_cluster_tags = false
+
+  # ---- BRS prerequisite inputs (from module.brs_instance) ----
+  connection_env_type      = var.classic_cluster ? "kRoksClassic" : "kRoksVpc"
+  brs_endpoint_type        = var.brs_endpoint_type
+  brs_tenant_id            = module.brs_instance.tenant_id
+  brs_connection_id        = module.brs_instance.connection_id
+  brs_registration_token   = module.brs_instance.registration_token
+  brs_instance_guid        = module.brs_instance.brs_instance_guid
+  brs_instance_crn         = module.brs_instance.brs_instance_crn
+  brs_instance_public_url  = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.public"])
+  brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
+  resolved_policy_ids      = module.brs_instance.resolved_policy_ids
+
+  dsc_storage_class     = var.dsc_storage_class
+  dsc_worker_pool_zones = 1
+
+  # ---- Backup Policy ----
+  auto_protect_policy_name = "${var.prefix}-retention"
+
   protection_groups = []
+}
+
+##############################################################################
+# VPE Gateway — routes DSC↔BRS over IBM private backbone (VPC clusters only)
+##############################################################################
+
+data "ibm_is_security_group" "kube_vpeg_sg" {
+  count = local.brs_vpe_active ? 1 : 0
+  name  = "kube-vpegw-${local.vpc_id}"
+
+  depends_on = [
+    module.ocp_base,
+    data.ibm_container_vpc_cluster.vpc_cluster_data,
+  ]
+}
+
+resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
+  for_each    = local.brs_vpe_active ? local.brs_vpe_subnets : {}
+  subnet      = each.value.id
+  name        = "${local.brs_vpe_name}-${each.key}-ip"
+  auto_delete = false
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
+  count           = local.brs_vpe_active ? 1 : 0
+  name            = local.brs_vpe_name
+  vpc             = local.vpc_id
+  resource_group  = module.resource_group.resource_group_id
+  security_groups = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
+
+  target {
+    crn           = module.backup_recover_protect_ocp.brs_instance_crn
+    resource_type = "provider_cloud_service"
+  }
+
+  depends_on = [module.backup_recover_protect_ocp]
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
+  for_each    = local.brs_vpe_active ? local.brs_vpe_subnets : {}
+  gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe[0].id
+  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
+  lifecycle {
+    prevent_destroy = true
+  }
 }

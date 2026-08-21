@@ -90,7 +90,7 @@ variable "cluster_config_endpoint_type" {
 # VPE Gateway configuration (VPC clusters only)
 ##############################################################################
 
-variable "create_brs_vpe" {
+variable "create_source_cluster_brs_vpe_gateway" {
   description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) in the cluster VPC, routing DSC→BRS traffic over the IBM private backbone. Only effective for VPC clusters — ignored when classic_cluster is true."
   type        = bool
   default     = true

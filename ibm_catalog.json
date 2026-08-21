@@ -60,7 +60,7 @@
                 "crn:v1:bluemix:public:iam::::role:Editor"
               ],
               "service_name": "is.vpc",
-              "notes": "Required for creating Security Group rules, Virtual Private Endpoint Gateways (VPEGs), and reserved IPs in Virtual Private Cloud (VPC). When create_brs_vpe is true, the deploying identity must hold this role in the source (cluster) account."
+              "notes": "Required for creating Security Group rules, Virtual Private Endpoint Gateways (VPEGs), and reserved IPs in Virtual Private Cloud (VPC). When create_source_cluster_brs_vpe_gateway is true, the deploying identity must hold this role in the source (cluster) account."
             },
             {
               "role_crns": [
@@ -105,6 +105,13 @@
               "display_name": "Source Account API Key"
             },
             {
+              "key": "target_ibmcloud_api_key",
+              "display_name": "Target Account API Key",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
+            },
+            {
               "key": "iaas_classic_username",
               "display_name": "Classic Infrastructure Username"
             },
@@ -117,8 +124,8 @@
               "display_name": "Region - Backup & Recovery Instance"
             },
             {
-              "key": "cluster_region",
-              "display_name": "Region - VPC Cluster (only if it differs from the instance region)"
+              "key": "source_cluster_region",
+              "display_name": "Source Cluster Region"
             },
             {
               "key": "provider_visibility",
@@ -139,7 +146,7 @@
               ]
             },
             {
-              "key": "cluster_id",
+              "key": "source_cluster_id",
               "display_name": "cluster",
               "custom_config": {
                 "type": "cluster_var",
@@ -149,7 +156,7 @@
               "required": true
             },
             {
-              "key": "kube_type",
+              "key": "source_kube_type",
               "required": true,
               "display_name": "Cluster Type",
               "options": [
@@ -164,7 +171,7 @@
               ]
             },
             {
-              "key": "cluster_resource_group_id",
+              "key": "source_cluster_resource_group_id",
               "required": true,
               "display_name": "Cluster Resource Group",
               "custom_config": {
@@ -177,7 +184,7 @@
               }
             },
             {
-              "key": "cluster_config_endpoint_type",
+              "key": "source_cluster_config_endpoint_type",
               "display_name": "Cluster Config Endpoint Type",
               "options": [
                 {
@@ -274,6 +281,10 @@
               ]
             },
             {
+              "key": "create_new_brs_instance",
+              "display_name": "Create New BRS Instance"
+            },
+            {
               "key": "brs_endpoint_type",
               "display_name": "Backup Recovery Service Endpoint Type",
               "options": [
@@ -288,12 +299,50 @@
               ]
             },
             {
-              "key": "brs_connection_name",
+              "key": "brs_resource_group_id",
+              "display_name": "BRS Resource Group ID",
+              "custom_config": {
+                "type": "resource_group",
+                "grouping": "deployment",
+                "original_grouping": "deployment",
+                "config_constraints": {
+                  "identifier": "rg_id"
+                }
+              }
+            },
+            {
+              "key": "source_brs_connection_name",
               "display_name": "Backup Recovery Service Connection Name"
             },
             {
-              "key": "brs_create_new_connection",
+              "key": "source_brs_create_new_connection",
               "display_name": "Create New Connection"
+            },
+            {
+              "key": "create_source_cluster_brs_vpe_gateway",
+              "display_name": "Create BRS Virtual Private Endpoint Gateway"
+            },
+            {
+              "key": "source_vpc_id",
+              "display_name": "VPC ID"
+            },
+            {
+              "key": "source_vpc_subnets",
+              "display_name": "VPC Subnets",
+              "custom_config": {
+                "type": "code_editor",
+                "grouping": "deployment",
+                "original_grouping": "deployment",
+                "config_constraints": {
+                  "supportedLanguages": [
+                    "hcl"
+                  ]
+                }
+              }
+            },
+            {
+              "key": "source_brs_vpe_name",
+              "display_name": "BRS VPE Gateway Name"
             },
             {
               "key": "deployment_mode",
@@ -315,7 +364,7 @@
               ]
             },
             {
-              "key": "connection_env_type",
+              "key": "source_connection_env_type",
               "display_name": "Connection Environment Type",
               "options": [
                 {
@@ -386,16 +435,20 @@
               "display_name": "Helm Timeout (Seconds)"
             },
             {
-              "key": "dsc_storage_class",
-              "display_name": "Data Source Connector Storage Class"
+              "key": "source_dsc_storage_class",
+              "display_name": "Source DSC Storage Class"
             },
             {
-              "key": "create_dsc_worker_pool",
-              "display_name": "Create Data Source Connector Worker Pool"
+              "key": "source_create_dsc_worker_pool",
+              "display_name": "Create DSC Worker Pool on Source"
             },
             {
-              "key": "dsc_worker_pool_flavor",
-              "display_name": "Data Source Connector Worker Pool Flavor"
+              "key": "dsc_worker_pool_zones",
+              "display_name": "DSC Worker Pool Zones"
+            },
+            {
+              "key": "source_dsc_worker_pool_flavor",
+              "display_name": "Source DSC Worker Pool Flavor"
             },
             {
               "key": "dsc_pod_cpu_limits",
@@ -414,8 +467,8 @@
               "display_name": "Data Source Connector Pod Memory Requests"
             },
             {
-              "key": "add_dsc_rules_to_cluster_sg",
-              "display_name": "Add Security Group Rules"
+              "key": "add_cluster_tags",
+              "display_name": "Add Cluster Tags"
             },
             {
               "key": "registration_images",
@@ -500,6 +553,13 @@
               }
             },
             {
+              "key": "target_cluster_region",
+              "display_name": "Target Cluster Region",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
+            },
+            {
               "key": "target_cluster_id",
               "display_name": "Target Cluster",
               "custom_config": {
@@ -545,6 +605,23 @@
                 {
                   "displayname": "Link",
                   "value": "link"
+                }
+              ],
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
+            },
+            {
+              "key": "target_kube_type",
+              "display_name": "Target Cluster Type",
+              "options": [
+                {
+                  "displayname": "Kubernetes (IKS)",
+                  "value": "kubernetes"
+                },
+                {
+                  "displayname": "OpenShift (ROKS)",
+                  "value": "openshift"
                 }
               ],
               "hidden": {
@@ -605,62 +682,32 @@
               }
             },
             {
-              "key": "brs_resource_group_id",
-              "display_name": "BRS Instance Resource Group",
-              "custom_config": {
-                "type": "resource_group",
-                "grouping": "deployment",
-                "original_grouping": "deployment",
-                "config_constraints": {
-                  "identifier": "rg_id"
-                }
+              "key": "target_dsc_worker_pool_flavor",
+              "display_name": "Target DSC Worker Pool Flavor",
+              "hidden": {
+                "deployment_mode": "backup_only"
               }
             },
             {
-              "key": "add_cluster_tags",
-              "display_name": "Add BRS Tags to Cluster"
-            },
-            {
-              "key": "create_brs_vpe",
-              "display_name": "Create BRS VPE Gateway"
-            },
-            {
-              "key": "vpc_id",
-              "display_name": "VPC ID (for VPE)"
-            },
-            {
-              "key": "vpc_subnets",
-              "display_name": "VPC Subnets (for VPE)",
-              "custom_config": {
-                "type": "code_editor",
-                "grouping": "deployment",
-                "original_grouping": "deployment",
-                "config_constraints": {
-                  "supportedLanguages": [
-                    "hcl"
-                  ]
-                }
+              "key": "create_target_cluster_brs_vpe_gateway",
+              "display_name": "Create BRS VPE for Target Cluster",
+              "hidden": {
+                "deployment_mode": "backup_only"
               }
-            },
-            {
-              "key": "brs_vpe_name",
-              "display_name": "BRS VPE Gateway Name"
-            },
-            {
-              "key": "dsc_worker_pool_zones",
-              "display_name": "DSC Worker Pool Zones"
-            },
-            {
-              "key": "target_create_brs_vpe",
-              "display_name": "Create BRS VPE Gateway (Target Cluster)"
             },
             {
               "key": "target_vpc_id",
-              "display_name": "VPC ID - Target Cluster (for VPE)"
+              "display_name": "Target VPC ID",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
             },
             {
               "key": "target_vpc_subnets",
-              "display_name": "VPC Subnets - Target Cluster (for VPE)",
+              "display_name": "Target VPC Subnets",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              },
               "custom_config": {
                 "type": "code_editor",
                 "grouping": "deployment",
@@ -673,8 +720,8 @@
               }
             },
             {
-              "key": "recovery_storage_class_aliases",
-              "display_name": "Recovery Storage Class Aliases (Target Cluster)",
+              "key": "recovery_storage_class_mapping",
+              "display_name": "Recovery Storage Class Mapping",
               "custom_config": {
                 "type": "code_editor",
                 "grouping": "deployment",
@@ -694,7 +741,10 @@
             },
             {
               "key": "target_brs_vpe_name",
-              "display_name": "BRS VPE Gateway Name (Target Cluster)"
+              "display_name": "Target BRS VPE Gateway Name",
+              "hidden": {
+                "deployment_mode": "backup_only"
+              }
             }
           ],
           "dependencies": [],

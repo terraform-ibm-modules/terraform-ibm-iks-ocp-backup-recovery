@@ -180,10 +180,6 @@ func getSchematicTerraformVars(t *testing.T, prefix string, options *testschemat
 
 func TestRunFullyConfigurableInSchematics(t *testing.T) {
 	t.Parallel()
-	// TODO: re-enable once IBM Schematics eu-de storage stabilises.
-	// Skipped due to intermittent "Error while uploading template to storage" failures
-	// on the eu-de Schematics TAR upload endpoint (transient IBM Cloud service issue).
-	t.Skip("Skipping TestRunFullyConfigurableInSchematics: Schematics eu-de storage instability")
 
 	tarIncludePatterns, recurseErr := getTarIncludePatternsRecursively("..", excludeDirs, includeFiletypes)
 	// if error producing tar patterns (very unexpected) fail test immediately

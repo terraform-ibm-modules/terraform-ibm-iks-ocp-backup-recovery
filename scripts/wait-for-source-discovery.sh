@@ -1,5 +1,9 @@
 #!/bin/bash
 # wait-for-source-discovery.sh
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/common_utils.sh
+source "${SCRIPT_DIR}/common_utils.sh"
 #
 # Poll the BRS registration-get API until the initial source refresh has
 # completed — i.e., until lastRefreshedTimeMsecs is substantially greater
@@ -44,6 +48,10 @@ REGISTRATION_ID=$3
 BRS_ENDPOINT=$4
 TIMEOUT_S="${5:-1800}"
 POLL_S="${6:-30}"
+
+# Set VERBOSE=0 once the script is known-good to reduce Terraform output noise.
+# vlog is provided by common_utils.sh (sourced above).
+VERBOSE="${VERBOSE:-1}"
 
 # Minimum refresh lag (ms) to consider initial discovery complete.
 # The registration sets lastRefreshedTimeMsecs only a few seconds after
@@ -93,6 +101,7 @@ while (( elapsed < TIMEOUT_S )); do
       (( elapsed += POLL_S )) || true
       continue
     }
+  vlog "registration-get id=${REGISTRATION_ID}" "${raw}"
 
   # The CLI returns timestamps as floating-point (e.g. 1.786125694124e+12).
   # Use jq to convert both to integers before comparing so bash arithmetic
@@ -149,6 +158,7 @@ while (( elapsed2 < CHILDREN_TIMEOUT_S )); do
       (( elapsed2 += CHILDREN_POLL_S )) || true
       continue
     }
+  vlog "protection-source list id=${REGISTRATION_ID}" "${src_raw}"
 
   # When --id is used the API returns the source's indexed child nodes at
   # .protectionSources[].nodes[]. Count any child node because current payloads
