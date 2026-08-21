@@ -30,6 +30,12 @@ provider "kubernetes" {
 provider "helm" {
   alias = "source"
 
+  # burst_limit = 0 disables the client-side Kubernetes API rate limiter.
+  # Without this, helm ≥ 3.x performs an OpenAPI schema download on every
+  # install; on freshly-created clusters the API server can time out under
+  # the concurrent load from two parallel providers.
+  burst_limit = 0
+
   kubernetes = {
     host                   = data.ibm_container_cluster_config.source_cluster_config.host
     client_certificate     = data.ibm_container_cluster_config.source_cluster_config.admin_certificate
@@ -52,6 +58,8 @@ provider "kubernetes" {
 
 provider "helm" {
   alias = "target"
+
+  burst_limit = 0
 
   kubernetes = {
     host                   = data.ibm_container_cluster_config.target_cluster_config.host

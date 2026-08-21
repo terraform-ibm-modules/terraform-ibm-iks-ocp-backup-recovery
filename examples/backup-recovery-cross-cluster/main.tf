@@ -476,6 +476,11 @@ module "source_backup_recovery" {
     priority    = "kHigh"
 
     enable_indexing       = true
+    # CSI snapshot mode requires a VolumeSnapshotClass with driver=vpc.block.csi.ibm.io
+    # to be present in the cluster before the backup runs.  If the VolumeSnapshotClass
+    # is absent the snapshot stays Pending and BRS times out with kTimeout.
+    # The resource "kubernetes_manifest" "source_vpc_block_snapshot_class" below creates
+    # that class; both levers must be set to true together for CSI snapshots to work.
     leverage_csi_snapshot = true
     non_snapshot_backup   = false
     volume_backup_failure = false
@@ -507,6 +512,12 @@ module "target_backup_recovery" {
     helm       = helm.target
     kubernetes = kubernetes.target
   }
+
+  # Serialise the two DSC Helm deployments so they do not race to download
+  # the OpenAPI schema from their respective (freshly created) cluster API
+  # servers at the same time.  The source module must fully complete before
+  # the target provider attempts its own schema fetch.
+  depends_on = [module.source_backup_recovery]
 
   # ---- Cluster ----
   cluster_id                   = local.target_cluster_id
