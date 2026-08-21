@@ -280,11 +280,18 @@ module "brs_s2s_auth" {
 
 # Reserved IPs — one per subnet.
 resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
-  for_each    = local.brs_vpe_active ? local.brs_vpe_subnets_map : {}
-  provider    = ibm.source_cluster
-  subnet      = each.value.id
-  name        = "${local.brs_vpe_name_resolved}-${each.key}-ip"
-  auto_delete = true
+  for_each = local.brs_vpe_active ? local.brs_vpe_subnets_map : {}
+  provider = ibm.source_cluster
+  subnet   = each.value.id
+  name     = "${local.brs_vpe_name_resolved}-${each.key}-ip"
+  # auto_delete=true is invalid for an unbound reserved IP (VPC API rejects it).
+  # prevent_destroy keeps these IPs alive across terraform destroy — the VPE is
+  # shared infrastructure and must not be torn down with the workspace.
+  auto_delete = false
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # VPE Gateway — routes DSC↔BRS traffic over IBM private backbone.
@@ -586,11 +593,18 @@ data "ibm_is_security_group" "target_kube_vpeg_sg" {
 }
 
 resource "ibm_is_subnet_reserved_ip" "target_brs_vpe_ip" {
-  for_each    = local.target_brs_vpe_active ? local.target_brs_vpe_subnets_map : {}
-  provider    = ibm.target_cluster
-  subnet      = each.value.id
-  name        = "${local.target_brs_vpe_name_resolved}-${each.key}-ip"
-  auto_delete = true
+  for_each = local.target_brs_vpe_active ? local.target_brs_vpe_subnets_map : {}
+  provider = ibm.target_cluster
+  subnet   = each.value.id
+  name     = "${local.target_brs_vpe_name_resolved}-${each.key}-ip"
+  # auto_delete=true is invalid for an unbound reserved IP (VPC API rejects it).
+  # prevent_destroy keeps these IPs alive across terraform destroy — the VPE is
+  # shared infrastructure and must not be torn down with the workspace.
+  auto_delete = false
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "ibm_is_virtual_endpoint_gateway" "target_brs_vpe" {
@@ -606,6 +620,10 @@ resource "ibm_is_virtual_endpoint_gateway" "target_brs_vpe" {
     resource_type = "provider_cloud_service"
   }
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   depends_on = [module.target_cluster_registration]
 }
 
@@ -614,6 +632,10 @@ resource "ibm_is_virtual_endpoint_gateway_ip" "target_brs_vpe_ip" {
   provider    = ibm.target_cluster
   gateway     = ibm_is_virtual_endpoint_gateway.target_brs_vpe[0].id
   reserved_ip = ibm_is_subnet_reserved_ip.target_brs_vpe_ip[each.key].reserved_ip
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # Wait for target registration to propagate

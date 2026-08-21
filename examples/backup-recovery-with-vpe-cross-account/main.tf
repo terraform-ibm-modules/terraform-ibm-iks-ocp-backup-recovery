@@ -377,7 +377,10 @@ resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
   provider    = ibm.source
   subnet      = each.value.id
   name        = "${local.brs_vpe_name}-${each.key}-ip"
-  auto_delete = true
+  auto_delete = false
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
@@ -393,6 +396,9 @@ resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
   }
 
   depends_on = [module.brs_s2s_auth]
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
@@ -400,4 +406,7 @@ resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
   provider    = ibm.source
   gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe.id
   reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
+  lifecycle {
+    prevent_destroy = true
+  }
 }
