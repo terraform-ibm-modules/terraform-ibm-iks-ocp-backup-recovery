@@ -659,7 +659,11 @@ resource "terraform_data" "wait_for_backup" {
   }
 
   provisioner "local-exec" {
-    command     = "${path.module}/../../scripts/wait_for_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' $BRS_PG_ID '${self.input.timeout_minutes}' '${self.input.poll_interval_seconds}' '${self.input.binaries_path}' | tee /tmp/backup_snapshot_${self.input.instance_id}.json | jq -r '.snapshot_id' > /tmp/snapshot_id_${self.input.instance_id}.txt"
+    # Write snapshot JSON and also write snapshot_id to a file named by
+    # self.id (the terraform_data UUID, stable in state after creation) so
+    # downstream resources can reference it by a path that is unknown at plan
+    # time (self.id is only known after apply), deferring any file() reads.
+    command     = "${path.module}/../../scripts/wait_for_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' $BRS_PG_ID '${self.input.timeout_minutes}' '${self.input.poll_interval_seconds}' '${self.input.binaries_path}' | tee /tmp/backup_snapshot_${self.input.instance_id}.json | jq -r '.snapshot_id' | tee /tmp/snapshot_id_${self.input.instance_id}.txt /tmp/snapshot_id_${self.id}.txt > /dev/null"
     interpreter = ["/bin/bash", "-c"]
     environment = {
       IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
@@ -669,25 +673,39 @@ resource "terraform_data" "wait_for_backup" {
 }
 
 ##############################################################################
-# Snapshot info — read after wait_for_backup writes /tmp/backup_snapshot_*.json
+# Snapshot info — read after wait_for_backup writes /tmp/snapshot_id_<id>.txt
 ##############################################################################
 
-# Stores the snapshot JSON in Terraform state so subsequent refreshes always
-# have a known value. data.local_file is a data source that Terraform re-reads
-# on every refresh — when the /tmp file is absent (different Schematics worker,
-# cold environment) the read fails and the resulting unknown value cascades into
-# kubernetes_params.snapshot_id, triggering the provider's CustomizeDiff
-# immutability check. By using terraform_data instead, the snapshot content is
-# persisted in state and never re-read from disk on refresh.
-resource "terraform_data" "snapshot_info" {
+# Stores the snapshot_id in Terraform state via local_file.content.
+#
+# WHY NOT file("/tmp/snapshot_id_<instance_id>.txt") OR data.local_file:
+#   instance_id is known at plan time → file() evaluates immediately → fails on
+#   fresh Schematics workers where /tmp is absent.
+#   data.local_file re-reads on every refresh with the same failure mode.
+#
+# THE PATTERN — unknown path defers file() to apply time:
+#   wait_for_backup's provisioner writes the snapshot_id to BOTH:
+#     /tmp/snapshot_id_<instance_id>.txt  (human-readable, existing behaviour)
+#     /tmp/snapshot_id_<self.id>.txt      (keyed by wait_for_backup's UUID)
+#   wait_for_backup[0].id is UNKNOWN at plan time on first create, and known
+#   (stable) on subsequent plans. On the first apply the path is unknown →
+#   file() is deferred → evaluated only after the provisioner runs (file exists).
+#   On subsequent plans wait_for_backup[0].id IS known → file() would fire at
+#   plan time, but ignore_changes = all on local_file.snapshot_id suppresses
+#   the re-evaluation entirely (the resource is not re-created, so its content
+#   expression is never re-evaluated against the live state).
+#   replace_triggered_by = [wait_for_backup] causes full replacement (not
+#   update) on new backup runs, which also re-evaluates content at apply time
+#   when the new /tmp file exists.
+resource "local_file" "snapshot_id" {
   count = local.is_full_recovery ? 1 : 0
 
-  input = jsondecode(file("/tmp/backup_snapshot_${module.protect_cluster.brs_instance_guid}.json"))
+  # Path uses wait_for_backup[0].id — unknown on first plan, known on subsequent
+  # plans but suppressed by ignore_changes = all.
+  content  = trimspace(file("/tmp/snapshot_id_${terraform_data.wait_for_backup[0].id}.txt"))
+  filename = "${path.module}/snapshot_id.txt"
 
   lifecycle {
-    # Re-read the file only when the backup run that wrote it is replaced.
-    # This mirrors the old data.local_file depends_on behaviour while keeping
-    # the value stable across refreshes.
     replace_triggered_by = [terraform_data.wait_for_backup]
     ignore_changes       = all
   }
@@ -696,10 +714,15 @@ resource "terraform_data" "snapshot_info" {
 }
 
 locals {
-  # Snapshot fields extracted from the JSON. At plan time snapshot_data is null
-  # (the file hasn't been written yet); all consumers are apply-time resources
-  # so the unknown value is safe.
-  snapshot_data = local.is_full_recovery ? terraform_data.snapshot_info[0].output : null
+  # snapshot_id is read from Terraform state (local_file.content), never from
+  # /tmp. Always known after first apply. Unknown at first plan → snapshot_data
+  # is null → ibm_backup_recovery is correctly deferred to apply.
+  snapshot_data = (
+    local.is_full_recovery &&
+    local_file.snapshot_id[0].content != null
+    ) ? {
+    snapshot_id = trimspace(local_file.snapshot_id[0].content)
+  } : null
 }
 
 ##############################################################################
@@ -719,7 +742,7 @@ locals {
 #     terraform refresh when upstream values (snapshot_id, protection_group_id)
 #     are unknown. `ignore_changes = all` suppresses plan-time diffs but does
 #     NOT suppress CustomizeDiff during refresh. The fix: snapshot data is
-#     stored in terraform_data.snapshot_info (a managed resource whose output
+#     stored in local_file.snapshot_id (a managed resource whose content
 #     persists in state), so the value is always known during refresh and no
 #     diff reaches CustomizeDiff.
 #   * The BRS API does not implement DELETE for recovery records (they are
@@ -801,7 +824,7 @@ resource "ibm_backup_recovery" "recovery" {
 
   depends_on = [
     terraform_data.wait_for_backup,
-    terraform_data.snapshot_info,
+    local_file.snapshot_id,
     module.target_cluster_registration,
     time_sleep.wait_for_target_registration,
   ]
