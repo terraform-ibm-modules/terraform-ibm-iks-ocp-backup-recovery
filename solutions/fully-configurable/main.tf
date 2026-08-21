@@ -676,52 +676,71 @@ resource "terraform_data" "wait_for_backup" {
 # Snapshot info — read after wait_for_backup writes /tmp/snapshot_id_<id>.txt
 ##############################################################################
 
-# Stores the snapshot_id in Terraform state via local_file.content.
+# Stores the snapshot_id in Terraform state without any file() call at plan time.
 #
-# WHY NOT file("/tmp/snapshot_id_<instance_id>.txt") OR data.local_file:
-#   instance_id is known at plan time → file() evaluates immediately → fails on
-#   fresh Schematics workers where /tmp is absent.
-#   data.local_file re-reads on every refresh with the same failure mode.
+# PROBLEM with file() in a resource attribute:
+#   Terraform evaluates ALL resource attribute expressions during plan — even
+#   attributes protected by ignore_changes — to compute the diff. If the path
+#   is known at plan time (e.g. keyed by instance_guid which is always in state)
+#   file() fires immediately and fails on fresh Schematics workers where /tmp
+#   files don't exist yet.
 #
-# THE PATTERN — unknown path defers file() to apply time:
-#   wait_for_backup's provisioner writes the snapshot_id to BOTH:
-#     /tmp/snapshot_id_<instance_id>.txt  (human-readable, existing behaviour)
-#     /tmp/snapshot_id_<self.id>.txt      (keyed by wait_for_backup's UUID)
-#   wait_for_backup[0].id is UNKNOWN at plan time on first create, and known
-#   (stable) on subsequent plans. On the first apply the path is unknown →
-#   file() is deferred → evaluated only after the provisioner runs (file exists).
-#   On subsequent plans wait_for_backup[0].id IS known → file() would fire at
-#   plan time, but ignore_changes = all on local_file.snapshot_id suppresses
-#   the re-evaluation entirely (the resource is not re-created, so its content
-#   expression is never re-evaluated against the live state).
-#   replace_triggered_by = [wait_for_backup] causes full replacement (not
-#   update) on new backup runs, which also re-evaluates content at apply time
-#   when the new /tmp file exists.
-resource "local_file" "snapshot_id" {
+# SOLUTION — provisioner writes snapshot_id; terraform_data.output carries it:
+#   Step 1 (snapshot_id_writer): a terraform_data whose triggers_replace depends
+#     on wait_for_backup[0].id (unknown on first plan, known after). Its
+#     provisioner reads /tmp/snapshot_id_<wait_for_backup_id>.txt and writes the
+#     content to its own output file keyed by its OWN .id (also unknown on first
+#     plan). No file() call in any attribute expression.
+#   Step 2 (snapshot_id): a terraform_data whose input uses file() keyed by
+#     snapshot_id_writer[0].id — unknown at plan time (first run), so file() is
+#     deferred to apply. After first apply both IDs are in state; subsequent plans
+#     see known IDs but the resource is NOT replaced (triggers_replace only fires
+#     when wait_for_backup is replaced), so the expressions are never re-evaluated
+#     against live state — Terraform just compares against the state value.
+#
+# On new backup runs: wait_for_backup is replaced → snapshot_id_writer is
+#   replaced (triggers_replace) → snapshot_id is replaced (triggers_replace) →
+#   file() runs at apply time when the new /tmp files exist.
+
+# Step 1: write snapshot_id to a file keyed by this resource's own .id (unknown
+# at plan time), so the Step 2 file() path is also unknown at plan time.
+resource "terraform_data" "snapshot_id_writer" {
   count = local.is_full_recovery ? 1 : 0
 
-  # Path uses wait_for_backup[0].id — unknown on first plan, known on subsequent
-  # plans but suppressed by ignore_changes = all.
-  content  = trimspace(file("/tmp/snapshot_id_${terraform_data.wait_for_backup[0].id}.txt"))
-  filename = "${path.module}/snapshot_id.txt"
+  triggers_replace = [terraform_data.wait_for_backup[0].id]
 
-  lifecycle {
-    replace_triggered_by = [terraform_data.wait_for_backup]
-    ignore_changes       = all
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = "cp /tmp/snapshot_id_${terraform_data.wait_for_backup[0].id}.txt /tmp/snapshot_id_out_${self.id}.txt"
   }
 
   depends_on = [terraform_data.wait_for_backup]
 }
 
+# Step 2: read the file written by Step 1. Path keyed by snapshot_id_writer[0].id
+# — unknown at first plan → file() deferred to apply. After first apply the value
+# is stored in .input and never re-read from disk (triggers_replace = writer means
+# this only re-runs when writer re-runs, i.e. when wait_for_backup is replaced).
+resource "terraform_data" "snapshot_id" {
+  count = local.is_full_recovery ? 1 : 0
+
+  triggers_replace = [terraform_data.snapshot_id_writer[0].id]
+
+  input = trimspace(file("/tmp/snapshot_id_out_${terraform_data.snapshot_id_writer[0].id}.txt"))
+
+  depends_on = [terraform_data.snapshot_id_writer]
+}
+
 locals {
-  # snapshot_id is read from Terraform state (local_file.content), never from
-  # /tmp. Always known after first apply. Unknown at first plan → snapshot_data
+  # snapshot_id is read from Terraform state (.input), never from /tmp.
+  # Always known after first apply. Unknown at first plan → snapshot_data
   # is null → ibm_backup_recovery is correctly deferred to apply.
   snapshot_data = (
     local.is_full_recovery &&
-    local_file.snapshot_id[0].content != null
+    length(terraform_data.snapshot_id) > 0 &&
+    terraform_data.snapshot_id[0].output != null
     ) ? {
-    snapshot_id = trimspace(local_file.snapshot_id[0].content)
+    snapshot_id = tostring(terraform_data.snapshot_id[0].output)
   } : null
 }
 
@@ -742,9 +761,9 @@ locals {
 #     terraform refresh when upstream values (snapshot_id, protection_group_id)
 #     are unknown. `ignore_changes = all` suppresses plan-time diffs but does
 #     NOT suppress CustomizeDiff during refresh. The fix: snapshot data is
-#     stored in local_file.snapshot_id (a managed resource whose content
-#     persists in state), so the value is always known during refresh and no
-#     diff reaches CustomizeDiff.
+#     stored in terraform_data.snapshot_id.output (persisted in state), so
+#     the value is always known during refresh and no diff reaches
+#     CustomizeDiff.
 #   * The BRS API does not implement DELETE for recovery records (they are
 #     immutable audit history). On `terraform destroy` the provider will
 #     attempt DELETE, receive an error, and surface it. If destroy fails
@@ -824,7 +843,7 @@ resource "ibm_backup_recovery" "recovery" {
 
   depends_on = [
     terraform_data.wait_for_backup,
-    local_file.snapshot_id,
+    terraform_data.snapshot_id,
     module.target_cluster_registration,
     time_sleep.wait_for_target_registration,
   ]
