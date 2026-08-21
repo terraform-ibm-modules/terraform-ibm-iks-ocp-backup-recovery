@@ -236,7 +236,10 @@ resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
   for_each    = var.create_source_cluster_brs_vpe_gateway ? local.brs_vpe_subnets : {}
   subnet      = each.value.id
   name        = "${local.brs_vpe_name}-${each.key}-ip"
-  auto_delete = true
+  auto_delete = false
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
@@ -252,10 +255,16 @@ resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
   }
 
   depends_on = [module.backup_recovery]
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
   for_each    = var.create_source_cluster_brs_vpe_gateway ? local.brs_vpe_subnets : {}
   gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe[0].id
   reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
+  lifecycle {
+    prevent_destroy = true
+  }
 }
