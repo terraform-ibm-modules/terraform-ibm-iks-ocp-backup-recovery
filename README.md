@@ -312,10 +312,10 @@ You need the following permissions to run this module:
 | Name | Source | Version |
 |------|--------|---------|
 | <a name="module_backup_recovery_instance"></a> [backup\_recovery\_instance](#module\_backup\_recovery\_instance) | terraform-ibm-modules/backup-recovery/ibm | 1.12.3 |
-| <a name="module_brs_s2s_auth"></a> [brs\_s2s\_auth](#module\_brs\_s2s\_auth) | terraform-ibm-modules/s2s-auth/ibm | 2.3.1 |
-| <a name="module_brs_vpe"></a> [brs\_vpe](#module\_brs\_vpe) | terraform-ibm-modules/vpe-gateway/ibm | 5.3.5 |
-| <a name="module_crn_parser"></a> [crn\_parser](#module\_crn\_parser) | terraform-ibm-modules/common-utilities/ibm//modules/crn-parser | 1.5.0 |
-| <a name="module_dsc_sg_rule"></a> [dsc\_sg\_rule](#module\_dsc\_sg\_rule) | terraform-ibm-modules/security-group/ibm | v2.9.1 |
+| <a name="module_brs_s2s_auth"></a> [brs\_s2s\_auth](#module\_brs\_s2s\_auth) | terraform-ibm-modules/s2s-auth/ibm | 2.3.3 |
+| <a name="module_brs_vpe"></a> [brs\_vpe](#module\_brs\_vpe) | terraform-ibm-modules/vpe-gateway/ibm | 5.3.7 |
+| <a name="module_crn_parser"></a> [crn\_parser](#module\_crn\_parser) | terraform-ibm-modules/common-utilities/ibm//modules/crn-parser | 1.9.0 |
+| <a name="module_dsc_sg_rule"></a> [dsc\_sg\_rule](#module\_dsc\_sg\_rule) | terraform-ibm-modules/security-group/ibm | v2.11.0 |
 
 ### Resources
 
