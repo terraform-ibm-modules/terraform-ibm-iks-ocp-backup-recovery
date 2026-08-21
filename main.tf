@@ -51,7 +51,25 @@ locals {
 
   # Resolved storage class for the DSC PVC — used in both the Helm values and
   # the diagnostics script so the expression is not repeated.
-  dsc_storage_class = var.dsc_storage_class != null ? var.dsc_storage_class : (local.is_vpc ? "ibmc-vpc-block-metro-5iops-tier" : "ibmc-block-silver")
+  #
+  # On Classic clusters with a managed DSC worker pool, we auto-create one
+  # zone-pinned StorageClass per DSC zone (ibmc-block-silver-<zone>).  All
+  # Classic ibmc-block-* classes use Immediate volumeBindingMode — the PV is
+  # provisioned before the pod schedules, so without zone-pinning the IBM block
+  # provisioner picks any cluster zone at random and the pod can end up stuck
+  # Pending on a node in a different zone with no DSC node there.
+  # The StatefulSet creates PVCs sequentially (pod-0 first); with dsc_replicas=N
+  # pods spread across zones, pod-i uses the SC for zone-i.  With dsc_replicas=1
+  # only SC for zone-0 is used, matching the single DSC node in that zone.
+  # Users can override by setting var.dsc_storage_class explicitly.
+  dsc_storage_class = (
+    var.dsc_storage_class != null ? var.dsc_storage_class : (
+      local.is_vpc ? "ibmc-vpc-block-metro-5iops-tier" :
+      (local.is_classic && var.create_dsc_worker_pool && length(local.classic_zones_list) > 0
+        ? "ibmc-block-silver-${local.classic_zones_list[0].zone}"
+      : "ibmc-block-silver")
+    )
+  )
 
   # Resolved worker pool flavor — bxf.4x16 is a VPC-only flavor; classic clusters
   # require classic flavors (b3c.* prefix). When the user has explicitly set
@@ -248,6 +266,60 @@ resource "ibm_container_worker_pool_zone_attachment" "data_source_connector" {
 }
 
 ##############################################################################
+# Zone-pinned StorageClasses for Classic DSC PVCs
+##############################################################################
+
+# Classic ibmc-block-* storage classes use Immediate volumeBindingMode — the
+# PV is provisioned at PVC-creation time, before the pod is scheduled.  The
+# IBM block provisioner picks a zone from the cluster's own zone list without
+# regard to where the DSC node actually lives, so the pod can land Pending
+# forever with a PVC in zone-A and the only DSC node in zone-B.
+#
+# Fix: create one StorageClass per DSC zone (one per pool) that adds the
+# `zone` parameter recognised by the ibm.io/ibmc-block provisioner.  With
+# zone explicitly set, the provisioner always creates the PV in that zone.
+# The Helm chart's volumeClaimTemplate.storageClass is set to zone-0's SC
+# (ibmc-block-silver-<zone>).  When dsc_replicas > 1 the StatefulSet creates
+# additional PVCs (pod-1, pod-2 …) using the same SC — they all land in zone-0
+# and the pods schedule onto the zone-0 DSC node.  For multi-zone spread with
+# one pod per zone the user should set var.dsc_storage_class explicitly to a
+# custom SC or use WaitForFirstConsumer classes (not available on Classic).
+
+resource "kubernetes_manifest" "dsc_block_sc" {
+  for_each = local.is_classic && var.create_dsc_worker_pool && local.stage_cluster_infra_prep ? {
+    for z in local.classic_zones_list : z.zone => z
+  } : {}
+
+  manifest = {
+    apiVersion = "storage.k8s.io/v1"
+    kind       = "StorageClass"
+    metadata = {
+      name = "ibmc-block-silver-${each.key}"
+      labels = {
+        "app"                           = "ibmcloud-block-storage-plugin"
+        "kubernetes.io/cluster-service" = "true"
+        "managed-by"                    = "terraform-ibm-iks-ocp-backup-recovery"
+      }
+    }
+    provisioner          = "ibm.io/ibmc-block"
+    reclaimPolicy        = "Delete"
+    volumeBindingMode    = "Immediate"
+    allowVolumeExpansion = true
+    parameters = {
+      type         = "Endurance"
+      iopsPerGB    = "4"
+      sizeRange    = "[20-12000]Gi"
+      fsType       = "ext4"
+      billingType  = "hourly"
+      classVersion = "2"
+      zone         = each.key
+    }
+  }
+
+  depends_on = [ibm_container_worker_pool_zone_attachment.data_source_connector]
+}
+
+##############################################################################
 # Wait for DSC Worker Pool Node(s) to be Ready
 ##############################################################################
 
@@ -371,7 +443,10 @@ resource "terraform_data" "dsc_immutable_values" {
     command = "${path.module}/scripts/purge-stale-dsc-pvc.sh '${self.input.namespace}' '${self.input.dsc_name}' destroy"
   }
 
-  depends_on = [kubernetes_namespace_v1.dsc_namespace]
+  depends_on = [
+    kubernetes_namespace_v1.dsc_namespace,
+    kubernetes_manifest.dsc_block_sc,
+  ]
 }
 ##############################################################################
 # Check for existing BRS agent namespaces (conflict detection)
