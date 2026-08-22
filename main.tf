@@ -1476,7 +1476,7 @@ resource "ibm_resource_tag" "cluster_brs_tag" {
 
   resource_id = local.cluster_crn
   tag_type    = "user"
-  tags        = ["brs-region:${local.brs_instance_region}", "brs-guid:${local.brs_instance_guid}"]
+  tags        = ["brs-region:${local.brs_instance_region}", "brs-guid:${local.brs_instance_guid}", "brs-source-id:${split("::", ibm_backup_recovery_source_registration.source_registration.id)[1]}"]
 }
 
 ##############################################################################
