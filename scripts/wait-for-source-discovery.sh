@@ -25,7 +25,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/common_utils.sh
 source "${SCRIPT_DIR}/common_utils.sh"
 
 if [ "$#" -lt 4 ]; then
