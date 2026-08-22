@@ -2,8 +2,6 @@ module github.com/terraform-ibm-modules/terraform-ibm-iks-ocp-backup-recovery
 
 go 1.26.1
 
-toolchain go1.26.7
-
 require (
 	github.com/gruntwork-io/terratest v1.0.1
 	github.com/stretchr/testify v1.11.1
