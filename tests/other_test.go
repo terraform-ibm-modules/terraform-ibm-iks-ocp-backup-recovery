@@ -21,6 +21,7 @@ func TestRunIKSClassicExample(t *testing.T) {
 		"ibm_container_vpc_cluster.cluster[0]",
 		"ibm_container_cluster.cluster[0]",
 	})
+	// Terraform Vars
 	options.TerraformVars = map[string]interface{}{
 		"classic_cluster":           true,
 		"prefix":                    "brs-iks-classic",
