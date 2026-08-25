@@ -128,10 +128,6 @@ locals {
     }] : []
   )
 
-  # vpc_name is used only in the VPE name template; the actual vpc_id is passed separately.
-  # Using a fixed string keeps the final VPE gateway name within the 63-character limit.
-  brs_vpe_vpc_name = "vpc"
-
   # --- DSC worker pool zone math ---
   # Calculate workers per zone based on total replicas.
   num_zones     = local.is_vpc && var.create_dsc_worker_pool ? var.dsc_worker_pool_zones : 0
@@ -514,53 +510,69 @@ module "brs_s2s_auth" {
 # Virtual Private Endpoint Gateway for BRS
 ##############################################################################
 
-# VPE Gateway naming: use a short, fixed vpc_name to avoid exceeding IBM's
-# 63-character resource name limit. The vpc_name is only used in the VPE name
-# template (e.g., "<prefix>-<vpc_name>-vpe-gateway"); the actual vpc_id is
-# specified separately and is what matters for API operations.
+# The upstream vpe-gateway module has a destroy-ordering bug: it destroys
+# ibm_is_virtual_endpoint_gateway before ibm_is_subnet_reserved_ip, causing
+# IBM Cloud to cascade-delete the reserved IPs with the gateway and leaving
+# Terraform with 404 errors / orphaned state entries.
+# Fix: inline the three resources and set auto_delete = false on the reserved
+# IPs — IBM Cloud will not cascade-delete them when the gateway is destroyed,
+# so Terraform cleans them up cleanly in the correct order on its own.
 
-# The VPE Gateway must be created after the S2S IAM authorization policy
-# exists in the target account.  The `depends_on = [module.brs_s2s_auth]`
-# below enforces that ordering.  The VPC service-resolution layer resolves
-# the cross-account BRS CRN instantly once the S2S policy is in place —
-# no additional sleep is required.
-module "brs_vpe" {
-  count   = var.create_brs_vpe && local.is_vpc ? 1 : 0
-  source  = "terraform-ibm-modules/vpe-gateway/ibm"
-  version = "5.3.5"
-  providers = {
-    ibm = ibm.cluster
+locals {
+  brs_vpe_name = var.brs_vpe_name != null ? var.brs_vpe_name : "${lower(var.brs_connection_name)}-vpe"
+
+  # One reserved-IP entry per subnet, keyed by subnet ID.
+  brs_vpe_ip_map = var.create_brs_vpe && local.is_vpc ? {
+    for subnet in local.resolved_vpc_subnets :
+    subnet.id => {
+      name   = "${local.brs_vpe_name}-${replace(subnet.zone, "${var.region}-", "")}"
+      subnet = subnet.id
+    }
+  } : {}
+}
+
+# 1. Reserved IPs — one per subnet.
+#    auto_delete = false prevents IBM Cloud from cascade-deleting them when the
+#    gateway is destroyed, so Terraform can delete them cleanly afterwards.
+resource "ibm_is_subnet_reserved_ip" "brs_vpe" {
+  for_each = local.brs_vpe_ip_map
+  provider = ibm.cluster
+
+  subnet      = each.value.subnet
+  name        = each.value.name
+  auto_delete = false
+}
+
+# 2. VPE Gateway — target is the BRS instance CRN (provider_cloud_service).
+#    crn and name are mutually exclusive per IBM provider docs; name is null.
+#    depends_on = [ibm_is_subnet_reserved_ip.brs_vpe] ensures on destroy
+#    Terraform tears down the gateway first, then the reserved IPs.
+resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
+  count           = var.create_brs_vpe && local.is_vpc ? 1 : 0
+  provider        = ibm.cluster
+  name            = local.brs_vpe_name
+  vpc             = local.resolved_vpc_id
+  resource_group  = var.cluster_resource_group_id
+  security_groups = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
+
+  target {
+    crn           = module.backup_recovery_instance.brs_instance_crn
+    resource_type = "provider_cloud_service"
   }
 
-  # Use var.region (the cluster's region, always known at plan time) rather than
-  # local.brs_instance_region (derived from the BRS CRN, unknown until apply).
-  # The VPE is always co-located with the cluster; the BRS instance region only
-  # diverges when using cross-region replication (not supported here).
-  region            = var.region
-  prefix            = var.brs_vpe_name != null ? var.brs_vpe_name : "brs"
-  vpc_name          = local.brs_vpe_vpc_name
-  vpc_id            = local.resolved_vpc_id
-  subnet_zone_list  = local.resolved_vpc_subnets
-  resource_group_id = var.cluster_resource_group_id
-
-  # Attach to the Kubernetes VPEG security group (kube-vpegw-<vpc-id>).
-  # IKS/ROKS automatically creates this SG on every VPC cluster and it is
-  # pre-configured to allow the cluster worker nodes to reach VPE targets.
-  security_group_ids = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
-
-  # vpe_name is set explicitly so the for_each key in the child module is a
-  # static string known at plan time (not derived from vpc_id or CRN).
-  # Without this, the key would be "${prefix}-${vpc_name}-backup-recovery"
-  # where vpc_name comes from the worker-pool data source — unknown at plan.
-  cloud_service_by_crn = [
-    {
-      crn          = module.backup_recovery_instance.brs_instance_crn
-      service_name = "backup-recovery"
-      vpe_name     = var.brs_vpe_name != null ? var.brs_vpe_name : "${lower(var.brs_connection_name)}-vpe"
-    }
+  depends_on = [
+    module.brs_s2s_auth,
+    ibm_is_subnet_reserved_ip.brs_vpe,
   ]
+}
 
-  depends_on = [module.brs_s2s_auth]
+# 3. Bind each reserved IP to the gateway.
+resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe" {
+  for_each = local.brs_vpe_ip_map
+  provider = ibm.cluster
+
+  gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe[0].id
+  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe[each.key].reserved_ip
 }
 
 # Fetch the kube-vpegw-<vpc-id> security group that IKS/ROKS creates on every
@@ -842,12 +854,10 @@ resource "helm_release" "data_source_connector" {
     terraform_data.purge_stale_dsc_pvc,
     ibm_container_vpc_worker_pool.data_source_connector,
     kubernetes_namespace_v1.dsc_namespace,
-    # Ensure the VPE Gateway is live before the DSC pod starts.
-    # When create_brs_vpe = true, the VPEG is module.brs_vpe[0]; DSC traffic
-    # routes to BRS via the VPEG private endpoint immediately on pod startup.
-    # When create_brs_vpe = false (cross-account, VPEG managed externally),
-    # module.brs_vpe has count = 0 so this dep is a no-op — safe in all configs.
-    module.brs_vpe,
+    # Ensure the VPE Gateway and its IP bindings are live before the DSC pod starts.
+    # When create_brs_vpe = false these have count/for_each = 0/{} — no-op.
+    ibm_is_virtual_endpoint_gateway.brs_vpe,
+    ibm_is_virtual_endpoint_gateway_ip.brs_vpe,
     terraform_data.check_existing_registration,
   ]
 
