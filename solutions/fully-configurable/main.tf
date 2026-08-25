@@ -279,10 +279,11 @@ module "brs_s2s_auth" {
 }
 
 # VPE Gateway for source cluster — routes DSC↔BRS traffic over IBM private backbone.
-# Uses terraform-ibm-vpe-gateway so that the VPE is treated as shared
-# infrastructure and is never destroyed when the workspace is torn down.
-# The removed blocks below detach any previously inline-managed resources
-# from state without destroying the actual cloud objects.
+# The VPE is shared infrastructure (one per VPC/service pair) and must never be
+# destroyed when the workspace is torn down.
+# `removed { lifecycle { destroy = false } }` below detaches the module from state
+# on `terraform destroy` without deleting the cloud resources — the VPE outlives
+# any individual workspace apply/destroy cycle.
 module "brs_vpe" {
   count   = local.brs_vpe_active ? 1 : 0
   source  = "terraform-ibm-modules/vpe-gateway/ibm"
@@ -310,31 +311,21 @@ module "brs_vpe" {
   depends_on = [module.brs_s2s_auth]
 }
 
-# Detach previously inline-managed source VPE resources from state.
-# The cloud objects are NOT destroyed — only removed from Terraform management.
-# This is safe because the VPE is shared infrastructure (one per VPC/service pair).
+# Detach previously inline-managed source VPE resources from state without
+# destroying the cloud objects — the VPE is shared infrastructure.
 removed {
   from = ibm_is_subnet_reserved_ip.brs_vpe_ip
-
-  lifecycle {
-    destroy = false
-  }
+  lifecycle { destroy = false }
 }
 
 removed {
   from = ibm_is_virtual_endpoint_gateway.brs_vpe
-
-  lifecycle {
-    destroy = false
-  }
+  lifecycle { destroy = false }
 }
 
 removed {
   from = ibm_is_virtual_endpoint_gateway_ip.brs_vpe_ip
-
-  lifecycle {
-    destroy = false
-  }
+  lifecycle { destroy = false }
 }
 
 ##############################################################################
@@ -562,8 +553,7 @@ data "ibm_is_security_group" "target_kube_vpeg_sg" {
   name     = "kube-vpegw-${local.target_resolved_vpc_id}"
 }
 
-# VPE Gateway for target cluster — routes DSC↔BRS traffic over IBM private backbone.
-# Same create-and-forget pattern as the source VPE above.
+# VPE Gateway for target cluster — same create-and-detach pattern as source VPE.
 module "target_brs_vpe" {
   count   = local.target_brs_vpe_active ? 1 : 0
   source  = "terraform-ibm-modules/vpe-gateway/ibm"
@@ -591,30 +581,21 @@ module "target_brs_vpe" {
   depends_on = [module.target_cluster_registration]
 }
 
-# Detach previously inline-managed target VPE resources from state.
-# The cloud objects are NOT destroyed — only removed from Terraform management.
+# Detach previously inline-managed target VPE resources from state without
+# destroying the cloud objects.
 removed {
   from = ibm_is_subnet_reserved_ip.target_brs_vpe_ip
-
-  lifecycle {
-    destroy = false
-  }
+  lifecycle { destroy = false }
 }
 
 removed {
   from = ibm_is_virtual_endpoint_gateway.target_brs_vpe
-
-  lifecycle {
-    destroy = false
-  }
+  lifecycle { destroy = false }
 }
 
 removed {
   from = ibm_is_virtual_endpoint_gateway_ip.target_brs_vpe_ip
-
-  lifecycle {
-    destroy = false
-  }
+  lifecycle { destroy = false }
 }
 
 # Wait for target registration to propagate
@@ -681,16 +662,12 @@ resource "terraform_data" "wait_for_backup" {
 # Snapshot info — read after wait_for_backup writes /tmp/snapshot_id_<id>.txt
 ##############################################################################
 
-# Tombstone: local_file.snapshot_id existed in older state. The empty lifecycle
-# block allows terraform refresh/destroy to reconcile it from state without
-# calling file(). Will be absent from state after the next destroy.
-resource "local_file" "snapshot_id" {
-  count    = 0
-  content  = ""
-  filename = "${path.module}/snapshot_id.txt"
-  lifecycle {
-    ignore_changes = all
-  }
+# local_file.snapshot_id existed in older state. Silently detach from state
+# without any provider operations (the local provider has no delete API for
+# files that no longer exist on Schematics workers).
+removed {
+  from = local_file.snapshot_id
+  lifecycle { destroy = false }
 }
 
 # Stores the snapshot_id in Terraform state without any file() call at plan time.
@@ -866,43 +843,15 @@ resource "terraform_data" "recovery_id" {
   depends_on = [terraform_data.recovery_trigger]
 }
 
-# Tombstone: ibm_backup_recovery.recovery existed in older state. count = 0 so
-# it is not managed going forward. BRS rejects DELETE on recovery records
-# (immutable audit history) so any existing state entry is left as-is.
-# Remove orphaned entries manually if needed:
-#   terraform state rm 'ibm_backup_recovery.recovery[0]'
-resource "ibm_backup_recovery" "recovery" {
-  count = 0
-
-  x_ibm_tenant_id      = ""
-  name                 = ""
-  snapshot_environment = "kKubernetes"
-  endpoint_type        = "public"
-  instance_id          = ""
-  region               = ""
-
-  kubernetes_params {
-    recovery_action = "RecoverNamespaces"
-    recover_namespace_params {
-      target_environment = "kKubernetes"
-      kubernetes_target_params {
-        objects {
-          snapshot_id         = ""
-          protection_group_id = ""
-        }
-        recovery_target_config {
-          recover_to_new_source = false
-        }
-        rename_recovered_namespaces_params {
-          prefix = ""
-        }
-      }
-    }
-  }
-
-  lifecycle {
-    ignore_changes = all
-  }
+# ibm_backup_recovery.recovery existed in older state but cannot be managed
+# going forward — the provider's CustomizeDiff marks kubernetes_params
+# immutable and fires even on a plan with count=0 when the state record
+# still exists.  Using `removed` with destroy=false causes Terraform to
+# silently drop the state entry without calling the provider at all.
+# BRS rejects DELETE on recovery records anyway (immutable audit history).
+removed {
+  from = ibm_backup_recovery.recovery
+  lifecycle { destroy = false }
 }
 
 ##############################################################################
