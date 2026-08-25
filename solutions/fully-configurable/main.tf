@@ -522,6 +522,8 @@ module "target_cluster_registration" {
 ##############################################################################
 
 locals {
+  # A VPE is only ever built for a VPC target cluster.
+  target_is_vpc         = length(regexall("Vpc$", coalesce(var.target_connection_env_type, var.source_connection_env_type))) > 0
   target_brs_vpe_active = var.create_target_cluster_brs_vpe_gateway && local.target_is_vpc && local.deploy_target_cluster
 
   target_brs_vpe_name_resolved = var.target_brs_vpe_name != null ? var.target_brs_vpe_name : "${lower(var.target_brs_connection_name != null ? var.target_brs_connection_name : "${var.target_cluster_id}-target-connection")}-vpe"
