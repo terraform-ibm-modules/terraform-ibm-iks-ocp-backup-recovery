@@ -315,6 +315,66 @@ resource "kubernetes_storage_class_v1" "recovery_alias" {
   }
 
   depends_on = [data.ibm_container_cluster_config.target_cluster_config]
+data "ibm_is_security_group" "target_kube_vpeg_sg" {
+  count    = local.target_brs_vpe_active ? 1 : 0
+  provider = ibm.target_cluster
+  name     = "kube-vpegw-${local.target_resolved_vpc_id}"
+}
+
+# VPE Gateway for target cluster — routes DSC↔BRS traffic over IBM private backbone.
+# Same create-and-forget pattern as the source VPE above.
+module "target_brs_vpe" {
+  count   = local.target_brs_vpe_active ? 1 : 0
+  source  = "terraform-ibm-modules/vpe-gateway/ibm"
+  version = "5.4.0"
+  providers = {
+    ibm = ibm.target_cluster
+  }
+
+  region             = var.target_cluster_region
+  vpc_id             = local.target_resolved_vpc_id
+  vpc_name           = local.target_brs_vpe_name_resolved
+  resource_group_id  = var.target_cluster_resource_group_id
+  security_group_ids = [data.ibm_is_security_group.target_kube_vpeg_sg[0].id]
+  subnet_zone_list   = [for s in local.target_resolved_vpc_subnets : { name = s.name, id = s.id, zone = s.zone }]
+  service_endpoints  = var.brs_endpoint_type
+
+  cloud_service_by_crn = [{
+    crn      = module.protect_cluster.brs_instance_crn
+    vpe_name = local.target_brs_vpe_name_resolved
+  }]
+
+  resource_tags = var.resource_tags
+  access_tags   = var.access_tags
+
+  depends_on = [module.target_cluster_registration]
+}
+
+# Detach previously inline-managed target VPE resources from state.
+# The cloud objects are NOT destroyed — only removed from Terraform management.
+removed {
+  from = ibm_is_subnet_reserved_ip.target_brs_vpe_ip
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = ibm_is_virtual_endpoint_gateway.target_brs_vpe
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = ibm_is_virtual_endpoint_gateway_ip.target_brs_vpe_ip
+
+  lifecycle {
+    destroy = false
+  }
+
 }
 
 # Wait for target registration to propagate
