@@ -659,6 +659,10 @@ resource "time_sleep" "wait_for_target_registration" {
 resource "terraform_data" "wait_for_backup" {
   count = local.is_full_recovery ? 1 : 0
 
+  triggers_replace = {
+    protection_group_id = local.recovery_pg_id
+  }
+
   depends_on = [
     module.protect_cluster,
     time_sleep.wait_for_target_registration
@@ -810,6 +814,15 @@ locals {
 #     then re-run destroy.
 ##############################################################################
 
+resource "terraform_data" "recovery_trigger" {
+  count = local.is_full_recovery ? 1 : 0
+
+  triggers_replace = {
+    wait_for_backup     = terraform_data.wait_for_backup[0].id
+    target_registration = var.recovery_type == "cross-cluster" ? module.target_cluster_registration[0].source_registration_id : ""
+  }
+}
+
 resource "ibm_backup_recovery" "recovery" {
   count = local.is_full_recovery ? 1 : 0
 
@@ -867,7 +880,7 @@ resource "ibm_backup_recovery" "recovery" {
   }
 
   lifecycle {
-    replace_triggered_by = [terraform_data.wait_for_backup]
+    replace_triggered_by = [terraform_data.recovery_trigger]
     # The provider's CustomizeDiff marks ALL fields immutable — any diff on any
     # attribute (name, kubernetes_params, snapshot_id, etc.) causes:
     #   "Resource ibm_backup_recovery_recovery cannot be updated. Field: <x>"
