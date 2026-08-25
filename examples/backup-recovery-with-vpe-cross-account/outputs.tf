@@ -22,6 +22,6 @@ output "brs_private_hostname" {
 output "brs_vpe_ips" {
   description = "Map of VPEG name → list of reserved IP addresses bound to each subnet zone in the source-account VPC."
   value = {
-    (local.brs_vpe_name) = values(ibm_is_subnet_reserved_ip.brs_vpe_ip)[*].address
+    (local.brs_vpe_name) = module.brs_vpe.vpe_ips[*].address
   }
 }

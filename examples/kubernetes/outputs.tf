@@ -36,7 +36,7 @@ output "brs_private_hostname" {
 output "brs_vpe_ips" {
   description = "Map of VPEG name → reserved IP list. Populated only when create_source_cluster_brs_vpe_gateway = true and cluster is VPC-based; empty map otherwise."
   value = local.brs_vpe_active ? {
-    (local.brs_vpe_name) = values(ibm_is_subnet_reserved_ip.brs_vpe_ip)[*].address
+    (local.brs_vpe_name) = module.brs_vpe[0].vpe_ips[*].address
   } : {}
 }
 

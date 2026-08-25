@@ -372,41 +372,39 @@ data "ibm_is_security_group" "kube_vpeg_sg" {
   ]
 }
 
-resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
-  for_each    = local.brs_vpe_subnets
-  provider    = ibm.source
-  subnet      = each.value.id
-  name        = "${local.brs_vpe_name}-${each.key}-ip"
-  auto_delete = false
-  lifecycle {
-    prevent_destroy = true
+module "brs_vpe" {
+  source  = "terraform-ibm-modules/vpe-gateway/ibm"
+  version = "5.4.0"
+  providers = {
+    ibm = ibm.source
   }
-}
 
-resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
-  provider        = ibm.source
-  name            = local.brs_vpe_name
-  vpc             = local.vpc_id
-  resource_group  = module.source_resource_group.resource_group_id
-  security_groups = [data.ibm_is_security_group.kube_vpeg_sg.id]
+  region             = var.source_region
+  vpc_id             = local.vpc_id
+  vpc_name           = local.brs_vpe_name
+  resource_group_id  = module.source_resource_group.resource_group_id
+  security_group_ids = [data.ibm_is_security_group.kube_vpeg_sg.id]
+  subnet_zone_list   = [for s in local.brs_vpe_subnets : { name = s.name, id = s.id, zone = s.zone }]
 
-  target {
-    crn           = module.brs_instance.brs_instance_crn
-    resource_type = "provider_cloud_service"
-  }
+  cloud_service_by_crn = [{
+    crn      = module.brs_instance.brs_instance_crn
+    vpe_name = local.brs_vpe_name
+  }]
 
   depends_on = [module.brs_s2s_auth]
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
-resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
-  for_each    = local.brs_vpe_subnets
-  provider    = ibm.source
-  gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe.id
-  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
-  lifecycle {
-    prevent_destroy = true
-  }
+removed {
+  from = ibm_is_subnet_reserved_ip.brs_vpe_ip
+  lifecycle { destroy = false }
+}
+
+removed {
+  from = ibm_is_virtual_endpoint_gateway.brs_vpe
+  lifecycle { destroy = false }
+}
+
+removed {
+  from = ibm_is_virtual_endpoint_gateway_ip.brs_vpe_ip
+  lifecycle { destroy = false }
 }

@@ -35,14 +35,14 @@ output "brs_private_hostname" {
 output "source_vpe_ips" {
   description = "Map of VPEG name → list of reserved IP addresses bound to each subnet in the source VPC."
   value = {
-    (local.source_vpe_name) = values(ibm_is_subnet_reserved_ip.source_vpe_ip)[*].address
+    (local.source_vpe_name) = module.source_vpe.vpe_ips[*].address
   }
 }
 
 output "target_vpe_ips" {
   description = "Map of VPEG name → list of reserved IP addresses bound to each subnet in the target VPC."
   value = {
-    (local.target_vpe_name) = values(ibm_is_subnet_reserved_ip.target_vpe_ip)[*].address
+    (local.target_vpe_name) = module.target_vpe.vpe_ips[*].address
   }
 }
 

@@ -278,55 +278,62 @@ module "brs_s2s_auth" {
   depends_on = [module.protect_cluster]
 }
 
-# Reserved IPs — one per subnet.
-resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
-  for_each = local.brs_vpe_active ? local.brs_vpe_subnets_map : {}
-  provider = ibm.source_cluster
-  subnet   = each.value.id
-  name     = "${local.brs_vpe_name_resolved}-${each.key}-ip"
-  # auto_delete=true is invalid for an unbound reserved IP (VPC API rejects it).
-  # prevent_destroy keeps these IPs alive across terraform destroy — the VPE is
-  # shared infrastructure and must not be torn down with the workspace.
-  auto_delete = false
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-# VPE Gateway — routes DSC↔BRS traffic over IBM private backbone.
-# IBM Cloud enforces one VPE per (service, VPC) pair — a second workspace
-# attempting to create a gateway for the same BRS instance in the same VPC
-# would fail. The gateway is therefore always treated as shared infrastructure
-# and is never destroyed when the workspace is torn down.
-resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
-  count           = local.brs_vpe_active ? 1 : 0
-  provider        = ibm.source_cluster
-  name            = local.brs_vpe_name_resolved
-  vpc             = local.resolved_vpc_id
-  resource_group  = var.source_cluster_resource_group_id
-  security_groups = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
-
-  target {
-    crn           = module.protect_cluster.brs_instance_crn
-    resource_type = "provider_cloud_service"
+# VPE Gateway for source cluster — routes DSC↔BRS traffic over IBM private backbone.
+# Uses terraform-ibm-vpe-gateway so that the VPE is treated as shared
+# infrastructure and is never destroyed when the workspace is torn down.
+# The removed blocks below detach any previously inline-managed resources
+# from state without destroying the actual cloud objects.
+module "brs_vpe" {
+  count   = local.brs_vpe_active ? 1 : 0
+  source  = "terraform-ibm-modules/vpe-gateway/ibm"
+  version = "5.4.0"
+  providers = {
+    ibm = ibm.source_cluster
   }
 
-  lifecycle {
-    prevent_destroy = true
-  }
+  region            = local.region
+  vpc_id            = local.resolved_vpc_id
+  vpc_name          = local.brs_vpe_name_resolved
+  resource_group_id = var.source_cluster_resource_group_id
+  security_group_ids = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
+  subnet_zone_list  = [for s in local.resolved_vpc_subnets : { name = s.name, id = s.id, zone = s.zone }]
+  service_endpoints = var.brs_endpoint_type
+
+  cloud_service_by_crn = [{
+    crn      = module.protect_cluster.brs_instance_crn
+    vpe_name = local.brs_vpe_name_resolved
+  }]
+
+  resource_tags = var.resource_tags
+  access_tags   = var.access_tags
 
   depends_on = [module.brs_s2s_auth]
 }
 
-resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
-  for_each    = local.brs_vpe_active ? local.brs_vpe_subnets_map : {}
-  provider    = ibm.source_cluster
-  gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe[0].id
-  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
+# Detach previously inline-managed source VPE resources from state.
+# The cloud objects are NOT destroyed — only removed from Terraform management.
+# This is safe because the VPE is shared infrastructure (one per VPC/service pair).
+removed {
+  from = ibm_is_subnet_reserved_ip.brs_vpe_ip
 
   lifecycle {
-    prevent_destroy = true
+    destroy = false
+  }
+}
+
+removed {
+  from = ibm_is_virtual_endpoint_gateway.brs_vpe
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = ibm_is_virtual_endpoint_gateway_ip.brs_vpe_ip
+
+  lifecycle {
+    destroy = false
   }
 }
 
@@ -555,49 +562,58 @@ data "ibm_is_security_group" "target_kube_vpeg_sg" {
   name     = "kube-vpegw-${local.target_resolved_vpc_id}"
 }
 
-resource "ibm_is_subnet_reserved_ip" "target_brs_vpe_ip" {
-  for_each = local.target_brs_vpe_active ? local.target_brs_vpe_subnets_map : {}
-  provider = ibm.target_cluster
-  subnet   = each.value.id
-  name     = "${local.target_brs_vpe_name_resolved}-${each.key}-ip"
-  # auto_delete=true is invalid for an unbound reserved IP (VPC API rejects it).
-  # prevent_destroy keeps these IPs alive across terraform destroy — the VPE is
-  # shared infrastructure and must not be torn down with the workspace.
-  auto_delete = false
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "ibm_is_virtual_endpoint_gateway" "target_brs_vpe" {
-  count           = local.target_brs_vpe_active ? 1 : 0
-  provider        = ibm.target_cluster
-  name            = local.target_brs_vpe_name_resolved
-  vpc             = local.target_resolved_vpc_id
-  resource_group  = var.target_cluster_resource_group_id
-  security_groups = [data.ibm_is_security_group.target_kube_vpeg_sg[0].id]
-
-  target {
-    crn           = module.protect_cluster.brs_instance_crn
-    resource_type = "provider_cloud_service"
+# VPE Gateway for target cluster — routes DSC↔BRS traffic over IBM private backbone.
+# Same create-and-forget pattern as the source VPE above.
+module "target_brs_vpe" {
+  count   = local.target_brs_vpe_active ? 1 : 0
+  source  = "terraform-ibm-modules/vpe-gateway/ibm"
+  version = "5.4.0"
+  providers = {
+    ibm = ibm.target_cluster
   }
 
-  lifecycle {
-    prevent_destroy = true
-  }
+  region             = var.target_cluster_region
+  vpc_id             = local.target_resolved_vpc_id
+  vpc_name           = local.target_brs_vpe_name_resolved
+  resource_group_id  = var.target_cluster_resource_group_id
+  security_group_ids = [data.ibm_is_security_group.target_kube_vpeg_sg[0].id]
+  subnet_zone_list   = [for s in local.target_resolved_vpc_subnets : { name = s.name, id = s.id, zone = s.zone }]
+  service_endpoints  = var.brs_endpoint_type
+
+  cloud_service_by_crn = [{
+    crn      = module.protect_cluster.brs_instance_crn
+    vpe_name = local.target_brs_vpe_name_resolved
+  }]
+
+  resource_tags = var.resource_tags
+  access_tags   = var.access_tags
 
   depends_on = [module.target_cluster_registration]
 }
 
-resource "ibm_is_virtual_endpoint_gateway_ip" "target_brs_vpe_ip" {
-  for_each    = local.target_brs_vpe_active ? local.target_brs_vpe_subnets_map : {}
-  provider    = ibm.target_cluster
-  gateway     = ibm_is_virtual_endpoint_gateway.target_brs_vpe[0].id
-  reserved_ip = ibm_is_subnet_reserved_ip.target_brs_vpe_ip[each.key].reserved_ip
+# Detach previously inline-managed target VPE resources from state.
+# The cloud objects are NOT destroyed — only removed from Terraform management.
+removed {
+  from = ibm_is_subnet_reserved_ip.target_brs_vpe_ip
 
   lifecycle {
-    prevent_destroy = true
+    destroy = false
+  }
+}
+
+removed {
+  from = ibm_is_virtual_endpoint_gateway.target_brs_vpe
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = ibm_is_virtual_endpoint_gateway_ip.target_brs_vpe_ip
+
+  lifecycle {
+    destroy = false
   }
 }
 

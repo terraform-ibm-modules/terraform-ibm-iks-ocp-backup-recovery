@@ -582,77 +582,73 @@ data "ibm_is_security_group" "target_kube_vpeg_sg" {
 }
 
 # Source VPE
-resource "ibm_is_subnet_reserved_ip" "source_vpe_ip" {
-  for_each    = local.source_vpe_subnets
-  subnet      = each.value.id
-  name        = "${local.source_vpe_name}-${each.key}-ip"
-  auto_delete = false
-  lifecycle {
-    prevent_destroy = true
-  }
-}
+module "source_vpe" {
+  source  = "terraform-ibm-modules/vpe-gateway/ibm"
+  version = "5.4.0"
 
-resource "ibm_is_virtual_endpoint_gateway" "source_vpe" {
-  name            = local.source_vpe_name
-  vpc             = local.source_vpc_id
-  resource_group  = module.resource_group.resource_group_id
-  security_groups = [data.ibm_is_security_group.source_kube_vpeg_sg.id]
+  region             = var.region
+  vpc_id             = local.source_vpc_id
+  vpc_name           = local.source_vpe_name
+  resource_group_id  = module.resource_group.resource_group_id
+  security_group_ids = [data.ibm_is_security_group.source_kube_vpeg_sg.id]
+  subnet_zone_list   = [for s in local.source_vpe_subnets : { name = s.name, id = s.id, zone = s.zone }]
 
-  target {
-    crn           = local.brs_instance_crn
-    resource_type = "provider_cloud_service"
-  }
+  cloud_service_by_crn = [{
+    crn      = local.brs_instance_crn
+    vpe_name = local.source_vpe_name
+  }]
 
   depends_on = [module.source_backup_recovery]
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
-resource "ibm_is_virtual_endpoint_gateway_ip" "source_vpe_ip" {
-  for_each    = local.source_vpe_subnets
-  gateway     = ibm_is_virtual_endpoint_gateway.source_vpe.id
-  reserved_ip = ibm_is_subnet_reserved_ip.source_vpe_ip[each.key].reserved_ip
-  lifecycle {
-    prevent_destroy = true
-  }
+removed {
+  from = ibm_is_subnet_reserved_ip.source_vpe_ip
+  lifecycle { destroy = false }
+}
+
+removed {
+  from = ibm_is_virtual_endpoint_gateway.source_vpe
+  lifecycle { destroy = false }
+}
+
+removed {
+  from = ibm_is_virtual_endpoint_gateway_ip.source_vpe_ip
+  lifecycle { destroy = false }
 }
 
 # Target VPE
-resource "ibm_is_subnet_reserved_ip" "target_vpe_ip" {
-  for_each    = local.target_vpe_subnets
-  subnet      = each.value.id
-  name        = "${local.target_vpe_name}-${each.key}-ip"
-  auto_delete = false
-  lifecycle {
-    prevent_destroy = true
-  }
-}
+module "target_vpe" {
+  source  = "terraform-ibm-modules/vpe-gateway/ibm"
+  version = "5.4.0"
 
-resource "ibm_is_virtual_endpoint_gateway" "target_vpe" {
-  name            = local.target_vpe_name
-  vpc             = local.target_vpc_id
-  resource_group  = module.resource_group.resource_group_id
-  security_groups = [data.ibm_is_security_group.target_kube_vpeg_sg.id]
+  region             = var.target_region
+  vpc_id             = local.target_vpc_id
+  vpc_name           = local.target_vpe_name
+  resource_group_id  = module.resource_group.resource_group_id
+  security_group_ids = [data.ibm_is_security_group.target_kube_vpeg_sg.id]
+  subnet_zone_list   = [for s in local.target_vpe_subnets : { name = s.name, id = s.id, zone = s.zone }]
 
-  target {
-    crn           = local.brs_instance_crn
-    resource_type = "provider_cloud_service"
-  }
+  cloud_service_by_crn = [{
+    crn      = local.brs_instance_crn
+    vpe_name = local.target_vpe_name
+  }]
 
   depends_on = [module.source_backup_recovery, module.target_backup_recovery]
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
-resource "ibm_is_virtual_endpoint_gateway_ip" "target_vpe_ip" {
-  for_each    = local.target_vpe_subnets
-  gateway     = ibm_is_virtual_endpoint_gateway.target_vpe.id
-  reserved_ip = ibm_is_subnet_reserved_ip.target_vpe_ip[each.key].reserved_ip
-  lifecycle {
-    prevent_destroy = true
-  }
+removed {
+  from = ibm_is_subnet_reserved_ip.target_vpe_ip
+  lifecycle { destroy = false }
+}
+
+removed {
+  from = ibm_is_virtual_endpoint_gateway.target_vpe
+  lifecycle { destroy = false }
+}
+
+removed {
+  from = ibm_is_virtual_endpoint_gateway_ip.target_vpe_ip
+  lifecycle { destroy = false }
 }
 
 ##############################################################################
