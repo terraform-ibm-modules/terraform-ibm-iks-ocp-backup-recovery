@@ -475,7 +475,7 @@ module "source_backup_recovery" {
     description = "Backup source cluster workloads"
     priority    = "kHigh"
 
-    enable_indexing       = true
+    enable_indexing = true
     # CSI snapshot mode requires a VolumeSnapshotClass with driver=vpc.block.csi.ibm.io
     # to be present in the cluster before the backup runs.  If the VolumeSnapshotClass
     # is absent the snapshot stays Pending and BRS times out with kTimeout.

@@ -698,6 +698,18 @@ resource "terraform_data" "wait_for_backup" {
 # Snapshot info — read after wait_for_backup writes /tmp/snapshot_id_<id>.txt
 ##############################################################################
 
+# Tombstone: local_file.snapshot_id existed in older state. The empty lifecycle
+# block allows terraform refresh/destroy to reconcile it from state without
+# calling file(). Will be absent from state after the next destroy.
+resource "local_file" "snapshot_id" {
+  count    = 0
+  content  = ""
+  filename = "${path.module}/snapshot_id.txt"
+  lifecycle {
+    ignore_changes = all
+  }
+}
+
 # Stores the snapshot_id in Terraform state without any file() call at plan time.
 #
 # PROBLEM with file() in a resource attribute:
@@ -748,7 +760,11 @@ resource "terraform_data" "snapshot_id" {
 
   triggers_replace = [terraform_data.snapshot_id_writer[0].id]
 
-  input = trimspace(file("/tmp/snapshot_id_out_${terraform_data.snapshot_id_writer[0].id}.txt"))
+  input = try(trimspace(file("/tmp/snapshot_id_out_${terraform_data.snapshot_id_writer[0].id}.txt")), "")
+
+  lifecycle {
+    ignore_changes = [input]
+  }
 
   depends_on = [terraform_data.snapshot_id_writer]
 }
