@@ -388,21 +388,6 @@ data "ibm_container_vpc_cluster" "target_cluster" {
   wait_till_timeout = var.wait_till_timeout
 }
 
-locals {
-  # True region of the target cluster, taken from its CRN rather than from
-  # var.source_cluster_region — the provider region is a caller input and can disagree
-  # with where the cluster actually lives, which is precisely the failure this
-  # guards against. CRN segment 5 is the region.
-  target_cluster_region = local.deploy_target_cluster ? split(":", data.ibm_container_vpc_cluster.target_cluster[0].crn)[5] : null
-
-  # A VPE is only ever built for a VPC target — the target module gates
-  # module.brs_vpe on (create_target_cluster_brs_vpe_gateway && is_vpc). Mirroring
-  # that here keeps the region precondition from rejecting a config where
-  # create_target_cluster_brs_vpe_gateway is true but the target is Classic, in
-  # which case no VPE exists and the region relationship is irrelevant.
-  target_is_vpc = length(regexall("Vpc$", coalesce(var.target_connection_env_type, var.source_connection_env_type))) > 0
-}
-
 data "ibm_container_cluster_config" "target_cluster_config" {
   depends_on = [data.ibm_container_vpc_cluster.target_cluster]
 
@@ -413,30 +398,6 @@ data "ibm_container_cluster_config" "target_cluster_config" {
   config_dir        = "${path.module}/kubeconfig"
   endpoint_type     = var.target_cluster_config_endpoint_type == "default" ? null : var.target_cluster_config_endpoint_type
   admin             = true
-
-  # Fail at plan time when a VPE is requested for a target cluster whose region
-  # does not match the BRS instance's region.
-  #
-  # VPE gateways are regional: one built in a us-east VPC cannot front a us-south
-  # service endpoint. The VPC API accepts a cross-region gateway and reports it
-  # "stable", but the DSC simply never connects — ibm_backup_recovery_source_registration
-  # blocks for ~20 minutes before failing with "context deadline exceeded".
-  #
-  # To deploy the target cluster in a different region from BRS, set `target_cluster_region`
-  # to match `region` (co-locate BRS with the target), or set `region` to match the target
-  # cluster's region, or set `create_target_cluster_brs_vpe_gateway = false` if you provide
-  # private connectivity by other means.
-  #
-  # This lives on an existing data source rather than a dedicated resource on purpose:
-  # adding a new resource to module.target_cluster_registration's depends_on would defer
-  # that module's data sources to apply time, making local.cluster_subnet_ids unknown and
-  # breaking the count on data.ibm_is_subnet.cluster_subnet.
-  lifecycle {
-    precondition {
-      condition     = !(var.create_target_cluster_brs_vpe_gateway && local.target_is_vpc) || local.target_cluster_region == local.region
-      error_message = "Target cluster region '${local.target_cluster_region}' does not match the BRS instance region '${local.region}', but create_target_cluster_brs_vpe_gateway = true. A VPE gateway is regional and cannot route to a BRS instance in a different region. Fix by: (1) setting `target_cluster_region` to '${local.region}' so the target cluster's VPC is in the same region as BRS, (2) setting `region` to '${local.target_cluster_region}' to co-locate BRS with the target cluster, or (3) setting create_target_cluster_brs_vpe_gateway = false if you provide private connectivity by other means."
-    }
-  }
 }
 
 # Target cluster BRS connection — reuses the same BRS instance, creates a
