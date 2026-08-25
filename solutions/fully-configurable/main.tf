@@ -799,13 +799,22 @@ locals {
 #
 # KNOWN PROVIDER BEHAVIOUR (ibm-cloud/ibm v2.4.0):
 #   * The provider's CustomizeDiff marks ALL fields immutable — any diff on
-#     any attribute causes "Field: <x> cannot be updated". This fires during
-#     terraform refresh when upstream values (snapshot_id, protection_group_id)
-#     are unknown. `ignore_changes = all` suppresses plan-time diffs but does
-#     NOT suppress CustomizeDiff during refresh. The fix: snapshot data is
-#     stored in terraform_data.snapshot_id.output (persisted in state), so
-#     the value is always known during refresh and no diff reaches
-#     CustomizeDiff.
+#     any attribute causes "Field: <x> cannot be updated". This fires when
+#     upstream values (snapshot_id, protection_group_id) are unknown at plan
+#     time, producing a diff that reaches CustomizeDiff even when
+#     ignore_changes = all is set (CustomizeDiff runs before ignore_changes is
+#     applied by Terraform).
+#
+#     FIX — create_before_destroy = true:
+#       When a replacement is triggered (via replace_triggered_by), Terraform
+#       creates the NEW instance BEFORE destroying the old one. For the new
+#       create the provider's CustomizeDiff sees old-state = null → HasChange()
+#       returns false for all fields → no immutability error. The old instance
+#       is then destroyed after the new one is live.
+#
+#     ignore_changes = all suppresses in-place update diffs reaching
+#     CustomizeDiff on subsequent refreshes where the resource is not replaced.
+#
 #   * The BRS API does not implement DELETE for recovery records (they are
 #     immutable audit history). On `terraform destroy` the provider will
 #     attempt DELETE, receive an error, and surface it. If destroy fails
@@ -881,15 +890,19 @@ resource "ibm_backup_recovery" "recovery" {
 
   lifecycle {
     replace_triggered_by = [terraform_data.recovery_trigger]
-    # The provider's CustomizeDiff marks ALL fields immutable — any diff on any
-    # attribute (name, kubernetes_params, snapshot_id, etc.) causes:
-    #   "Resource ibm_backup_recovery_recovery cannot be updated. Field: <x>"
-    # This fires whenever upstream resources (protection group, snapshot id) are
-    # unknown at plan time, cascading a diff into kubernetes_params even though
-    # nothing actually changed. ignore_changes = all prevents any post-creation
-    # diff from reaching CustomizeDiff. replace_triggered_by above is the sole
-    # mechanism that re-fires a recovery (when a new backup run completes).
-    ignore_changes = all
+    # create_before_destroy: when replace_triggered_by fires (new backup run or
+    # new target registration), Terraform creates the NEW recovery resource first
+    # and destroys the old one after. During the new create the provider's
+    # CustomizeDiff sees old-state = null → HasChange() = false for all fields
+    # → the immutable-field error ("Field: kubernetes_params cannot be updated")
+    # does not fire even when kubernetes_params contains unknown values at plan
+    # time (e.g. protection_group_id is (known after apply) because the
+    # protection group is being recreated in the same apply).
+    #
+    # ignore_changes = all suppresses in-place update diffs that would otherwise
+    # reach CustomizeDiff on refreshes where the resource is not being replaced.
+    create_before_destroy = true
+    ignore_changes        = all
   }
 
   depends_on = [
