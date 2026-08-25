@@ -789,40 +789,33 @@ locals {
 ##############################################################################
 # Recovery (same-cluster and cross-cluster)
 #
-# ibm_backup_recovery fires POST /v2/data-protect/recoveries and stores the
-# returned recovery_id in state. No polling — that is handled by the
-# wait_for_recovery_completion resource below.
+# PROVIDER LIMITATION (ibm-cloud/ibm v2.4.0):
+#   ibm_backup_recovery has a CustomizeDiff that marks ALL fields immutable.
+#   It fires for every plan computation — even with ignore_changes = all and
+#   even for create-before-destroy replacements — any time a config attribute
+#   differs from state at plan time. Because local.recovery_pg_id is
+#   (known after apply) whenever the protection group is being recreated
+#   in the same apply, any replace_triggered_by on ibm_backup_recovery
+#   consistently triggers this error:
 #
-# replace_triggered_by re-creates this resource — and therefore re-triggers
-# the recovery — whenever wait_for_backup is replaced (i.e. on every fresh
-# apply that completes a new backup run).
+#     "[ERROR] Resource ibm_backup_recovery cannot be updated. Field: kubernetes_params"
 #
-# KNOWN PROVIDER BEHAVIOUR (ibm-cloud/ibm v2.4.0):
-#   * The provider's CustomizeDiff marks ALL fields immutable — any diff on
-#     any attribute causes "Field: <x> cannot be updated". This fires when
-#     upstream values (snapshot_id, protection_group_id) are unknown at plan
-#     time, producing a diff that reaches CustomizeDiff even when
-#     ignore_changes = all is set (CustomizeDiff runs before ignore_changes is
-#     applied by Terraform).
+#   The fix: replace ibm_backup_recovery with a script-based approach.
+#   terraform_data.recovery_trigger calls scripts/trigger_recovery.sh
+#   (which POSTs /v2/data-protect/recoveries directly) and writes the
+#   recovery_id to /tmp. terraform_data.recovery_id reads that file and
+#   stores the recovery_id in .output for use by wait_for_recovery_completion.
 #
-#     FIX — create_before_destroy = true:
-#       When a replacement is triggered (via replace_triggered_by), Terraform
-#       creates the NEW instance BEFORE destroying the old one. For the new
-#       create the provider's CustomizeDiff sees old-state = null → HasChange()
-#       returns false for all fields → no immutability error. The old instance
-#       is then destroyed after the new one is live.
-#
-#     ignore_changes = all suppresses in-place update diffs reaching
-#     CustomizeDiff on subsequent refreshes where the resource is not replaced.
-#
-#   * The BRS API does not implement DELETE for recovery records (they are
-#     immutable audit history). On `terraform destroy` the provider will
-#     attempt DELETE, receive an error, and surface it. If destroy fails
-#     on this resource, remove it from state manually:
-#       terraform state rm 'ibm_backup_recovery.recovery[0]'
-#     then re-run destroy.
+#   ibm_backup_recovery.recovery is retained as a zero-count tombstone so
+#   that existing state records are not destroyed (BRS API rejects DELETE
+#   on recovery records — they are immutable audit history). Remove orphaned
+#   state entries manually if needed:
+#     terraform state rm 'ibm_backup_recovery.recovery[0]'
 ##############################################################################
 
+# Step 1 — Trigger the recovery via script and write recovery_id to a file
+# keyed by self.id (unknown at plan time → defers file write to apply).
+# Triggered on every new backup run or new target registration.
 resource "terraform_data" "recovery_trigger" {
   count = local.is_full_recovery ? 1 : 0
 
@@ -830,87 +823,107 @@ resource "terraform_data" "recovery_trigger" {
     wait_for_backup     = terraform_data.wait_for_backup[0].id
     target_registration = var.recovery_type == "cross-cluster" ? module.target_cluster_registration[0].source_registration_id : ""
   }
+
+  input = {
+    url                  = module.protect_cluster.brs_instance_url
+    tenant               = module.protect_cluster.brs_tenant_id
+    endpoint_type        = var.brs_endpoint_type
+    instance_id          = module.protect_cluster.brs_instance_guid
+    api_key              = sensitive(var.ibmcloud_api_key)
+    pg_id                = local.recovery_pg_id
+    namespace_prefix     = var.recovery_namespace_prefix
+    target_source_id     = var.recovery_type == "cross-cluster" ? tostring(tonumber(split("::", module.target_cluster_registration[0].source_registration_id)[1])) : ""
+    binaries_path        = "/tmp"
+    recovery_type        = var.recovery_type
+    recovery_pg_label    = local.recovery_pg_label
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    # Capture only the last line of stdout (the recovery_id) so that
+    # script progress/info lines written to stdout do not corrupt the file.
+    command = <<-EOT
+      ${path.module}/../../scripts/trigger_recovery.sh \
+        '${self.input.url}' \
+        '${self.input.tenant}' \
+        '${self.input.endpoint_type}' \
+        '${self.input.instance_id}' \
+        '${self.input.pg_id}' \
+        "${tostring(terraform_data.snapshot_id[0].output)}" \
+        "${self.input.recovery_type == "cross-cluster" ? "cross-cluster-" : ""}recovery-${self.input.recovery_pg_label}-$(date +%Y%m%d-%H%M)" \
+        '${self.input.namespace_prefix}' \
+        '${self.input.target_source_id}' \
+        '${self.input.binaries_path}' \
+        | tail -n1 > /tmp/recovery_id_out_${self.id}.txt
+    EOT
+    environment = {
+      IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
+    }
+  }
+
+  depends_on = [
+    terraform_data.snapshot_id,
+    terraform_data.wait_for_backup,
+    module.target_cluster_registration,
+    time_sleep.wait_for_target_registration,
+  ]
 }
 
-resource "ibm_backup_recovery" "recovery" {
+# Step 2 — Read recovery_id written by recovery_trigger into Terraform state.
+# Uses the snapshot_id pattern: input uses file() keyed by recovery_trigger[0].id
+# which is unknown at plan time on first create → deferred to apply. After first
+# apply the id is known and ignore_changes = [input] prevents re-reads.
+resource "terraform_data" "recovery_id" {
   count = local.is_full_recovery ? 1 : 0
 
-  x_ibm_tenant_id      = module.protect_cluster.brs_tenant_id
-  name                 = "${var.recovery_type == "cross-cluster" ? "cross-cluster-" : ""}recovery-${local.recovery_pg_label}-${formatdate("YYYYMMDD-hhmm", timestamp())}"
+  triggers_replace = [terraform_data.recovery_trigger[0].id]
+
+  input = try(trimspace(file("/tmp/recovery_id_out_${terraform_data.recovery_trigger[0].id}.txt")), "")
+
+  lifecycle {
+    ignore_changes = [input]
+  }
+
+  depends_on = [terraform_data.recovery_trigger]
+}
+
+# Tombstone: ibm_backup_recovery.recovery existed in older state. count = 0 so
+# it is not managed going forward. BRS rejects DELETE on recovery records
+# (immutable audit history) so any existing state entry is left as-is.
+# Remove orphaned entries manually if needed:
+#   terraform state rm 'ibm_backup_recovery.recovery[0]'
+resource "ibm_backup_recovery" "recovery" {
+  count = 0
+
+  x_ibm_tenant_id      = ""
+  name                 = ""
   snapshot_environment = "kKubernetes"
-  endpoint_type        = var.brs_endpoint_type
-  instance_id          = module.protect_cluster.brs_instance_guid
-  region               = local.region
+  endpoint_type        = "public"
+  instance_id          = ""
+  region               = ""
 
   kubernetes_params {
     recovery_action = "RecoverNamespaces"
-
     recover_namespace_params {
       target_environment = "kKubernetes"
-
       kubernetes_target_params {
         objects {
-          snapshot_id         = local.snapshot_data != null ? local.snapshot_data.snapshot_id : ""
-          protection_group_id = local.recovery_pg_id
+          snapshot_id         = ""
+          protection_group_id = ""
         }
-
         recovery_target_config {
-          recover_to_new_source = var.recovery_type == "cross-cluster"
-
-          dynamic "new_source_config" {
-            for_each = var.recovery_type == "cross-cluster" ? [1] : []
-            content {
-              source {
-                id = tonumber(split("::", module.target_cluster_registration[0].source_registration_id)[1])
-              }
-            }
-          }
+          recover_to_new_source = false
         }
-
         rename_recovered_namespaces_params {
-          prefix = var.recovery_namespace_prefix
-        }
-
-        dynamic "storage_class" {
-          for_each = length(var.recovery_storage_class_mapping) > 0 ? [1] : []
-          content {
-            use_storage_class_mapping = true
-            dynamic "storage_class_mapping" {
-              for_each = var.recovery_storage_class_mapping
-              content {
-                key   = storage_class_mapping.key
-                value = storage_class_mapping.value
-              }
-            }
-          }
+          prefix = ""
         }
       }
     }
   }
 
   lifecycle {
-    replace_triggered_by = [terraform_data.recovery_trigger]
-    # create_before_destroy: when replace_triggered_by fires (new backup run or
-    # new target registration), Terraform creates the NEW recovery resource first
-    # and destroys the old one after. During the new create the provider's
-    # CustomizeDiff sees old-state = null → HasChange() = false for all fields
-    # → the immutable-field error ("Field: kubernetes_params cannot be updated")
-    # does not fire even when kubernetes_params contains unknown values at plan
-    # time (e.g. protection_group_id is (known after apply) because the
-    # protection group is being recreated in the same apply).
-    #
-    # ignore_changes = all suppresses in-place update diffs that would otherwise
-    # reach CustomizeDiff on refreshes where the resource is not being replaced.
-    create_before_destroy = true
-    ignore_changes        = all
+    ignore_changes = all
   }
-
-  depends_on = [
-    terraform_data.wait_for_backup,
-    terraform_data.snapshot_id,
-    module.target_cluster_registration,
-    time_sleep.wait_for_target_registration,
-  ]
 }
 
 ##############################################################################
@@ -919,13 +932,14 @@ resource "ibm_backup_recovery" "recovery" {
 
 # Poll recovery status and wait for completion before refreshing the protection source.
 # Recovery operations are asynchronous — this ensures namespaces are fully restored.
-# The recovery_id is read from ibm_backup_recovery.recovery[0].recovery_id in state.
+# The recovery_id is read from terraform_data.recovery_id[0].output (stored in state
+# after recovery_trigger's provisioner runs).
 resource "terraform_data" "wait_for_recovery_completion" {
   count = local.is_full_recovery ? 1 : 0
 
-  # Re-run whenever the recovery resource is replaced (new backup run completed).
+  # Re-run whenever a new recovery is triggered (recovery_trigger replaced).
   triggers_replace = {
-    recovery_id = ibm_backup_recovery.recovery[0].recovery_id
+    recovery_trigger_id = terraform_data.recovery_trigger[0].id
   }
 
   input = {
@@ -937,7 +951,7 @@ resource "terraform_data" "wait_for_recovery_completion" {
     timeout_minutes       = var.recovery_wait_timeout_minutes
     poll_interval_seconds = var.recovery_poll_interval_seconds
     binaries_path         = "/tmp"
-    recovery_id           = ibm_backup_recovery.recovery[0].recovery_id
+    recovery_id           = tostring(terraform_data.recovery_id[0].output)
   }
 
   provisioner "local-exec" {
@@ -963,7 +977,7 @@ resource "terraform_data" "wait_for_recovery_completion" {
     }
   }
 
-  depends_on = [ibm_backup_recovery.recovery]
+  depends_on = [terraform_data.recovery_id]
 }
 
 ##############################################################################
