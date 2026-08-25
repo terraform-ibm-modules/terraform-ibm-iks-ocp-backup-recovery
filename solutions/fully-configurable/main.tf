@@ -257,6 +257,12 @@ module "target_cluster_registration" {
 # Recovery Storage Class Aliases (target cluster)
 ##############################################################################
 
+locals {
+  # A VPE is only ever built for a VPC target cluster.
+  target_is_vpc         = length(regexall("Vpc$", coalesce(var.target_connection_env_type, var.source_connection_env_type))) > 0
+  target_brs_vpe_active = var.create_target_cluster_brs_vpe_gateway && local.target_is_vpc && local.deploy_target_cluster
+}
+
 # Velero restores each PVC with the storageClassName it had on the SOURCE
 # cluster. In a Classic -> VPC migration those names (e.g. "ibmc-block-silver")
 # do not and cannot exist on the VPC target, which only has ibmc-vpc-block-*
