@@ -176,21 +176,6 @@ data "ibm_container_vpc_cluster" "target_cluster" {
   wait_till_timeout = var.wait_till_timeout
 }
 
-locals {
-  # True region of the target cluster, taken from its CRN rather than from
-  # var.cluster_region — the provider region is a caller input and can disagree
-  # with where the cluster actually lives, which is precisely the failure this
-  # guards against. CRN segment 5 is the region.
-  target_cluster_region = local.deploy_target_cluster ? split(":", data.ibm_container_vpc_cluster.target_cluster[0].crn)[5] : null
-
-  # A VPE is only ever built for a VPC target — the target module gates
-  # module.brs_vpe on (create_brs_vpe && is_vpc). Mirroring that here keeps the
-  # region precondition from rejecting a config where target_create_brs_vpe is
-  # true but the target is Classic, in which case no VPE exists and the region
-  # relationship is irrelevant.
-  target_is_vpc = length(regexall("Vpc$", coalesce(var.target_connection_env_type, var.connection_env_type))) > 0
-}
-
 data "ibm_container_cluster_config" "target_cluster_config" {
   depends_on = [data.ibm_container_vpc_cluster.target_cluster]
 
@@ -201,30 +186,6 @@ data "ibm_container_cluster_config" "target_cluster_config" {
   config_dir        = "${path.module}/kubeconfig"
   endpoint_type     = var.target_cluster_config_endpoint_type == "default" ? null : var.target_cluster_config_endpoint_type
   admin             = true
-
-  # Fail at plan time when a VPE is requested for a target cluster that is not
-  # in the BRS instance's region.
-  #
-  # The Data Source Connector always dials the BRS *private* endpoint — the
-  # hostname is embedded in the registration-token JWT and is unaffected by
-  # brs_endpoint_type. A VPC cluster can only reach that endpoint through a VPE
-  # gateway, and VPE gateways are regional: one built in a us-east VPC cannot
-  # front a us-south service endpoint. The VPC API accepts the cross-region
-  # gateway and reports it "stable", so there is nothing to observe — the DSC
-  # simply never connects, and ibm_backup_recovery_source_registration blocks
-  # for ~20 minutes before failing with "context deadline exceeded".
-  #
-  # This lives on an existing data source rather than a dedicated resource on
-  # purpose: adding a new resource to module.target_cluster_registration's
-  # depends_on would defer that module's data sources to apply time, making
-  # local.cluster_subnet_ids unknown and breaking the count on
-  # data.ibm_is_subnet.cluster_subnet.
-  lifecycle {
-    precondition {
-      condition     = !(var.target_create_brs_vpe && local.target_is_vpc) || local.target_cluster_region == local.region
-      error_message = "Target cluster region '${local.target_cluster_region}' does not match the BRS instance region '${local.region}', but target_create_brs_vpe = true. A VPE gateway is regional and cannot route to a Backup & Recovery instance in another region, so the target cluster's Data Source Connector would never connect and registration would time out after ~20 minutes. Fix by using a BRS instance in '${local.target_cluster_region}', choosing a target cluster in '${local.region}', or setting target_create_brs_vpe = false if you are providing private connectivity by other means."
-    }
-  }
 }
 
 # Register target cluster with BRS
