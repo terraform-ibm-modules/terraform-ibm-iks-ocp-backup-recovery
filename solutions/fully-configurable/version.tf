@@ -20,5 +20,10 @@ terraform {
       source  = "hashicorp/time"
       version = "0.13.1"
     }
+    # Required by the local_file tombstone resource; remove once state is clean.
+    local = {
+      source  = "hashicorp/local"
+      version = "2.5.3"
+    }
   }
 }
