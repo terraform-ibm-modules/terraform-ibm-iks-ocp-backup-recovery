@@ -7,7 +7,13 @@
 # Usage:
 #   trigger_recovery.sh URL TENANT ENDPOINT_TYPE INSTANCE_ID \
 #       PG_ID SNAPSHOT_ID RECOVERY_NAME NAMESPACE_PREFIX \
-#       [TARGET_SOURCE_ID] [BINARIES_PATH]
+#       [TARGET_SOURCE_ID] [BINARIES_PATH] [STORAGE_CLASS_MAPPING_JSON]
+#
+# STORAGE_CLASS_MAPPING_JSON: optional JSON array of {source,target} objects,
+#   e.g. '[{"source":"ibmc-block-silver","target":"ibmc-vpc-block-metro-5iops-tier"}]'
+#   Passed as storageClassMapping in kubernetesTargetParams. Required for
+#   Classic-to-VPC cross-cluster recovery where source storage classes do not
+#   exist on the target cluster. Omit or pass '' for same-class clusters.
 #
 # IBMCLOUD_API_KEY must be set as an environment variable.
 #
@@ -20,7 +26,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/common_utils.sh"
 
 if [ "$#" -lt 8 ]; then
-  echo "Usage: $0 URL TENANT ENDPOINT_TYPE INSTANCE_ID PG_ID SNAPSHOT_ID RECOVERY_NAME NAMESPACE_PREFIX [TARGET_SOURCE_ID] [BINARIES_PATH]" >&2
+  echo "Usage: $0 URL TENANT ENDPOINT_TYPE INSTANCE_ID PG_ID SNAPSHOT_ID RECOVERY_NAME NAMESPACE_PREFIX [TARGET_SOURCE_ID] [BINARIES_PATH] [STORAGE_CLASS_MAPPING_JSON]" >&2
   echo "Note: IBMCLOUD_API_KEY must be set as an environment variable" >&2 # pragma: allowlist secret
   exit 1
 fi
@@ -40,6 +46,7 @@ RECOVERY_NAME=$7
 NAMESPACE_PREFIX=$8
 TARGET_SOURCE_ID=${9:-}
 BINARIES_PATH=${10:-/tmp}
+STORAGE_CLASS_MAPPING_JSON=${11:-}
 
 export PATH="${PATH}:${BINARIES_PATH}"
 VERBOSE="${VERBOSE:-1}"
@@ -53,6 +60,9 @@ if [ -n "${TARGET_SOURCE_ID}" ]; then
   echo "Target source ID: ${TARGET_SOURCE_ID} (cross-cluster)" >&2
 else
   echo "Recovery type:   same-cluster" >&2
+fi
+if [ -n "${STORAGE_CLASS_MAPPING_JSON}" ] && [ "${STORAGE_CLASS_MAPPING_JSON}" != "[]" ]; then
+  echo "Storage class mapping: ${STORAGE_CLASS_MAPPING_JSON}" >&2
 fi
 
 IAM_TOKEN=$(get_iam_token "${IBMCLOUD_API_KEY}" "${ENDPOINT_TYPE}") # pragma: allowlist secret
@@ -75,6 +85,19 @@ else
   RECOVERY_TARGET_CONFIG='{"recoverToNewSource": false}'
 fi
 
+# Build optional storageClass fragment for the payload.
+# API schema (KubernetesTargetParamsForRecoverKubernetesNamespace):
+#   storageClass: KubernetesStorageClassParams
+#     storageClassMapping: array of KubernetesLabel [{key: <source>, value: <target>}]
+#     useStorageClassMapping: boolean
+# Non-empty, non-trivial JSON array → include storageClass block; empty or '[]' → omit
+# the field entirely so the API does not reject a redundant empty object.
+if [ -n "${STORAGE_CLASS_MAPPING_JSON}" ] && [ "${STORAGE_CLASS_MAPPING_JSON}" != "[]" ]; then
+  STORAGE_CLASS_FRAGMENT=",\"storageClass\": {\"useStorageClassMapping\": true, \"storageClassMapping\": ${STORAGE_CLASS_MAPPING_JSON}}"
+else
+  STORAGE_CLASS_FRAGMENT=""
+fi
+
 RECOVERY_PAYLOAD=$(cat <<PAYLOAD
 {
   "name": "${RECOVERY_NAME}",
@@ -87,7 +110,7 @@ RECOVERY_PAYLOAD=$(cat <<PAYLOAD
       "kubernetesTargetParams": {
         "objects": [{"snapshotId": "${SNAPSHOT_ID}", "protectionGroupId": "${PG_ID}"}],
         "recoveryTargetConfig": ${RECOVERY_TARGET_CONFIG},
-        "renameRecoveredNamespacesParams": {"prefix": "${NAMESPACE_PREFIX}"}
+        "renameRecoveredNamespacesParams": {"prefix": "${NAMESPACE_PREFIX}"}${STORAGE_CLASS_FRAGMENT}
       }
     }
   }

@@ -1105,8 +1105,9 @@ variable "target_brs_vpe_name" {
   default     = null
 }
 
+
 variable "recovery_storage_class_mapping" {
-  description = "Maps source storage class names to target storage class names for cross-cluster recovery. Both key and value must be the exact storage class name as it appears in Kubernetes. The default covers every Classic IKS/ROKS block storage class mapped to its nearest VPC block equivalent using metro classes (WaitForFirstConsumer binding, correct for multi-zone VPC clusters). Override or extend this map if your source PVCs use different storage classes, or if your target cluster requires non-metro classes (Immediate binding). File storage classes (ibmc-file-*) cannot be mapped to VPC block — omit them and reconfigure those PVCs manually after recovery. Leave empty only when the source and target clusters share identical storage class names."
+  description = "Maps source storage class names to target storage class names during cross-cluster recovery. Required when recovering from a Classic IKS/ROKS cluster to a VPC IKS/ROKS cluster, because Classic storage classes (e.g. ibmc-block-silver) do not exist on VPC clusters. Both key and value must be exact storage class names as they appear in Kubernetes. The default covers every Classic IKS/ROKS block storage class mapped to its nearest VPC block equivalent using metro classes (WaitForFirstConsumer binding, correct for multi-zone VPC clusters). Override or extend this map if your source PVCs use different storage classes, or if your target cluster requires non-metro classes (Immediate binding). File storage classes (ibmc-file-*) cannot be mapped to VPC block — omit them and reconfigure those PVCs manually after recovery. Leave empty only when the source and target clusters share identical storage class names."
   type        = map(string)
   nullable    = false
   default = {

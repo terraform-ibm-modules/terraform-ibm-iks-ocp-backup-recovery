@@ -223,7 +223,6 @@ locals {
   resolved_vpc_subnets = length(var.source_vpc_subnets) > 0 ? var.source_vpc_subnets : [
     for s in data.ibm_is_subnet.cluster_subnet : { name = s.name, id = s.id, zone = s.zone }
   ]
-  brs_vpe_subnets_map = { for s in local.resolved_vpc_subnets : s.zone => s }
 }
 
 # IAM tokens used for cross-account detection.
@@ -536,7 +535,6 @@ locals {
   target_resolved_vpc_subnets = length(var.target_vpc_subnets) > 0 ? var.target_vpc_subnets : [
     for s in data.ibm_is_subnet.target_cluster_subnet : { name = s.name, id = s.id, zone = s.zone }
   ]
-  target_brs_vpe_subnets_map = { for s in local.target_resolved_vpc_subnets : s.zone => s }
 }
 
 data "ibm_is_subnet" "target_cluster_subnet" {
@@ -788,6 +786,8 @@ resource "terraform_data" "recovery_trigger" {
     binaries_path     = "/tmp"
     recovery_type     = var.recovery_type
     recovery_pg_label = local.recovery_pg_label
+    # KubernetesLabel schema: {key: <source_class>, value: <target_class>}
+    storage_class_mapping_json = jsonencode([for src, tgt in var.recovery_storage_class_mapping : { key = src, value = tgt }])
   }
 
   provisioner "local-exec" {
@@ -806,6 +806,7 @@ resource "terraform_data" "recovery_trigger" {
         '${self.input.namespace_prefix}' \
         '${self.input.target_source_id}' \
         '${self.input.binaries_path}' \
+        '${self.input.storage_class_mapping_json}' \
         | tail -n1 > /tmp/recovery_id_out_${self.id}.txt
     EOT
     environment = {
