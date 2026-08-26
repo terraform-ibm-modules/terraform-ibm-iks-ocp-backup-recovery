@@ -21,8 +21,8 @@ import (
 	"github.com/terraform-ibm-modules/ibmcloud-terratest-wrapper/testschematic"
 )
 
-const resourceGroup = "BRT-General-testing"
-const existing_brs_instance_crn = "crn:v1:bluemix:public:backup-recovery:au-syd:a/7d8f9e928b9d6c2dfa06475946765e01:4dde55c7-e8a8-48c8-b431-c226f75090f7::"
+const resourceGroup = "E2E Test"
+const existing_brs_instance_crn = "crn:v1:bluemix:public:backup-recovery:au-syd:a/0f628e88c6594675bbefa097a63b9293:e0c89382-56e2-453f-906e-a2b91a60f19a::"
 const fullyConfigurableTerraformDir = "solutions/fully-configurable"
 const iksExampleDir = "examples/kubernetes"
 const ocpExampleDir = "examples/openshift"
@@ -37,12 +37,8 @@ var includeFiletypes = []string{".tf", ".yaml", ".py", ".tpl", ".md", ".sh"}
 // to minimise same-region collisions, which slow down IKS cluster provisioning
 // and can push total wall-clock time over the GitHub Actions job limit.
 var validRegions = []string{
-	"us-south",
-	"us-east",
 	"eu-es",
-	"eu-gb",
 	"eu-de",
-	"au-syd",
 	"br-sao",
 	"ca-tor",
 	"jp-osa",
