@@ -101,7 +101,7 @@ output "brs_tags" {
 
 output "brs_vpe_ips" {
   description = "Map of VPEG name to reserved IP list. Populated only when create_brs_vpe = true; empty map otherwise. Each entry contains the private IPs bound to each subnet zone."
-  value       = var.create_brs_vpe && local.is_vpc ? { (local.brs_vpe_name) = ibm_is_virtual_endpoint_gateway.brs_vpe[0].ips } : {}
+  value       = var.create_brs_vpe && local.is_vpc ? { (local.brs_vpe_name) = ibm_is_virtual_endpoint_gateway.brs_vpe[0].ips } : tomap({})
 }
 
 output "s2s_auth_policies" {

@@ -521,25 +521,21 @@ module "brs_s2s_auth" {
 locals {
   brs_vpe_name = var.brs_vpe_name != null ? var.brs_vpe_name : "${lower(var.brs_connection_name)}-vpe"
 
-  # One reserved-IP entry per subnet, keyed by subnet ID.
-  brs_vpe_ip_map = var.create_brs_vpe && local.is_vpc ? {
-    for subnet in local.resolved_vpc_subnets :
-    subnet.id => {
-      name   = "${local.brs_vpe_name}-${replace(subnet.zone, "${var.region}-", "")}"
-      subnet = subnet.id
-    }
-  } : {}
+  # Subnet list used for reserved IP creation — only populated when VPE is needed.
+  brs_vpe_subnets = var.create_brs_vpe && local.is_vpc ? local.resolved_vpc_subnets : []
 }
 
-# 1. Reserved IPs — one per subnet.
+# 1. Reserved IPs — one per subnet, count-based so the key is a static integer
+#    known at plan time (subnet IDs and names are unknown until apply when
+#    auto-discovered from the cluster worker pools).
 #    auto_delete = false prevents IBM Cloud from cascade-deleting them when the
 #    gateway is destroyed, so Terraform can delete them cleanly afterwards.
 resource "ibm_is_subnet_reserved_ip" "brs_vpe" {
-  for_each = local.brs_vpe_ip_map
+  count    = length(local.brs_vpe_subnets)
   provider = ibm.cluster
 
-  subnet      = each.value.subnet
-  name        = each.value.name
+  subnet      = local.brs_vpe_subnets[count.index].id
+  name        = "${local.brs_vpe_name}-${replace(local.brs_vpe_subnets[count.index].zone, "${var.region}-", "")}"
   auto_delete = false
 }
 
@@ -568,11 +564,11 @@ resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
 
 # 3. Bind each reserved IP to the gateway.
 resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe" {
-  for_each = local.brs_vpe_ip_map
+  count    = length(local.brs_vpe_subnets)
   provider = ibm.cluster
 
   gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe[0].id
-  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe[each.key].reserved_ip
+  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe[count.index].reserved_ip
 }
 
 # Fetch the kube-vpegw-<vpc-id> security group that IKS/ROKS creates on every
