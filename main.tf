@@ -390,6 +390,9 @@ resource "kubernetes_namespace_v1" "dsc_namespace" {
 
   metadata {
     name = var.dsc_namespace
+    labels = {
+      "velero.io/exclude-from-backup" = "true"
+    }
   }
 
   timeouts {
