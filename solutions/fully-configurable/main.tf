@@ -278,51 +278,61 @@ module "brs_s2s_auth" {
 }
 
 # VPE Gateway for source cluster — routes DSC↔BRS traffic over IBM private backbone.
-# The VPE is shared infrastructure (one per VPC/service pair) and must never be
-# destroyed when the workspace is torn down.
-# `removed { lifecycle { destroy = false } }` below detaches the module from state
-# on `terraform destroy` without deleting the cloud resources — the VPE outlives
-# any individual workspace apply/destroy cycle.
-module "brs_vpe" {
-  count   = local.brs_vpe_active ? 1 : 0
-  source  = "terraform-ibm-modules/vpe-gateway/ibm"
-  version = "5.4.0"
-  providers = {
-    ibm = ibm.source_cluster
+# Inlined to fix a destroy-ordering bug in the upstream vpe-gateway module: it destroys
+# ibm_is_virtual_endpoint_gateway before ibm_is_subnet_reserved_ip, causing IBM Cloud
+# to cascade-delete the reserved IPs with the gateway and leaving Terraform with 404
+# errors / orphaned state entries.
+# Fix: set auto_delete = false on reserved IPs and depend the gateway on them so
+# IBM Cloud never cascade-deletes them and Terraform cleans them up in the correct order.
+
+locals {
+  brs_vpe_subnets = local.brs_vpe_active ? local.resolved_vpc_subnets : []
+}
+
+# 1. Reserved IPs — one per subnet, count-based (subnet IDs/names are unknown at plan
+#    time when auto-discovered; count is static from cluster_subnet_lookup_count).
+#    auto_delete = false prevents IBM Cloud from cascade-deleting them on gateway destroy.
+resource "ibm_is_subnet_reserved_ip" "brs_vpe" {
+  count    = length(local.brs_vpe_subnets)
+  provider = ibm.source_cluster
+
+  subnet      = local.brs_vpe_subnets[count.index].id
+  name        = "${local.brs_vpe_name_resolved}-${replace(local.brs_vpe_subnets[count.index].zone, "${local.region}-", "")}"
+  auto_delete = false
+}
+
+# 2. VPE Gateway.
+#    depends_on = [ibm_is_subnet_reserved_ip.brs_vpe] ensures on destroy Terraform
+#    tears down the gateway first, then the reserved IPs (which are already unbound
+#    and auto_delete=false so IBM Cloud won't touch them).
+resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
+  count           = local.brs_vpe_active ? 1 : 0
+  provider        = ibm.source_cluster
+  name            = local.brs_vpe_name_resolved
+  vpc             = local.resolved_vpc_id
+  resource_group  = var.source_cluster_resource_group_id
+  security_groups = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
+  tags            = var.resource_tags
+  access_tags     = var.access_tags
+
+  target {
+    crn           = module.protect_cluster.brs_instance_crn
+    resource_type = "provider_cloud_service"
   }
 
-  region             = local.region
-  vpc_id             = local.resolved_vpc_id
-  vpc_name           = local.brs_vpe_name_resolved
-  resource_group_id  = var.source_cluster_resource_group_id
-  security_group_ids = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
-  subnet_zone_list   = [for s in local.resolved_vpc_subnets : { name = s.name, id = s.id, zone = s.zone }]
-  service_endpoints  = var.brs_endpoint_type
-
-  cloud_service_by_crn = [{
-    crn      = module.protect_cluster.brs_instance_crn
-    vpe_name = local.brs_vpe_name_resolved
-  }]
-
-  resource_tags = var.resource_tags
-  access_tags   = var.access_tags
-
-  depends_on = [module.brs_s2s_auth]
+  depends_on = [
+    module.brs_s2s_auth,
+    ibm_is_subnet_reserved_ip.brs_vpe,
+  ]
 }
 
-removed {
-  from = module.brs_vpe.ibm_is_virtual_endpoint_gateway.vpe
-  lifecycle { destroy = false }
-}
+# 3. Bind each reserved IP to the gateway.
+resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe" {
+  count    = length(local.brs_vpe_subnets)
+  provider = ibm.source_cluster
 
-removed {
-  from = module.brs_vpe.ibm_is_virtual_endpoint_gateway_ip.endpoint_gateway_ip
-  lifecycle { destroy = false }
-}
-
-removed {
-  from = module.brs_vpe.module.ip.ibm_is_subnet_reserved_ip.ip
-  lifecycle { destroy = false }
+  gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe[0].id
+  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe[count.index].reserved_ip
 }
 
 ##############################################################################
@@ -549,47 +559,51 @@ data "ibm_is_security_group" "target_kube_vpeg_sg" {
   name     = "kube-vpegw-${local.target_resolved_vpc_id}"
 }
 
-# VPE Gateway for target cluster — same create-and-detach pattern as source VPE.
-module "target_brs_vpe" {
-  count   = local.target_brs_vpe_active ? 1 : 0
-  source  = "terraform-ibm-modules/vpe-gateway/ibm"
-  version = "5.4.0"
-  providers = {
-    ibm = ibm.target_cluster
+# VPE Gateway for target cluster — same inline pattern as source VPE above.
+
+locals {
+  target_brs_vpe_subnets = local.target_brs_vpe_active ? local.target_resolved_vpc_subnets : []
+}
+
+# 1. Reserved IPs for target cluster VPE.
+resource "ibm_is_subnet_reserved_ip" "target_brs_vpe" {
+  count    = length(local.target_brs_vpe_subnets)
+  provider = ibm.target_cluster
+
+  subnet      = local.target_brs_vpe_subnets[count.index].id
+  name        = "${local.target_brs_vpe_name_resolved}-${replace(local.target_brs_vpe_subnets[count.index].zone, "${var.target_cluster_region}-", "")}"
+  auto_delete = false
+}
+
+# 2. VPE Gateway for target cluster.
+resource "ibm_is_virtual_endpoint_gateway" "target_brs_vpe" {
+  count           = local.target_brs_vpe_active ? 1 : 0
+  provider        = ibm.target_cluster
+  name            = local.target_brs_vpe_name_resolved
+  vpc             = local.target_resolved_vpc_id
+  resource_group  = var.target_cluster_resource_group_id
+  security_groups = [data.ibm_is_security_group.target_kube_vpeg_sg[0].id]
+  tags            = var.resource_tags
+  access_tags     = var.access_tags
+
+  target {
+    crn           = module.protect_cluster.brs_instance_crn
+    resource_type = "provider_cloud_service"
   }
 
-  region             = var.target_cluster_region
-  vpc_id             = local.target_resolved_vpc_id
-  vpc_name           = local.target_brs_vpe_name_resolved
-  resource_group_id  = var.target_cluster_resource_group_id
-  security_group_ids = [data.ibm_is_security_group.target_kube_vpeg_sg[0].id]
-  subnet_zone_list   = [for s in local.target_resolved_vpc_subnets : { name = s.name, id = s.id, zone = s.zone }]
-  service_endpoints  = var.brs_endpoint_type
-
-  cloud_service_by_crn = [{
-    crn      = module.protect_cluster.brs_instance_crn
-    vpe_name = local.target_brs_vpe_name_resolved
-  }]
-
-  resource_tags = var.resource_tags
-  access_tags   = var.access_tags
-
-  depends_on = [module.target_cluster_registration]
+  depends_on = [
+    module.target_cluster_registration,
+    ibm_is_subnet_reserved_ip.target_brs_vpe,
+  ]
 }
 
-removed {
-  from = module.target_brs_vpe.ibm_is_virtual_endpoint_gateway.vpe
-  lifecycle { destroy = false }
-}
+# 3. Bind each reserved IP to the target gateway.
+resource "ibm_is_virtual_endpoint_gateway_ip" "target_brs_vpe" {
+  count    = length(local.target_brs_vpe_subnets)
+  provider = ibm.target_cluster
 
-removed {
-  from = module.target_brs_vpe.ibm_is_virtual_endpoint_gateway_ip.endpoint_gateway_ip
-  lifecycle { destroy = false }
-}
-
-removed {
-  from = module.target_brs_vpe.module.ip.ibm_is_subnet_reserved_ip.ip
-  lifecycle { destroy = false }
+  gateway     = ibm_is_virtual_endpoint_gateway.target_brs_vpe[0].id
+  reserved_ip = ibm_is_subnet_reserved_ip.target_brs_vpe[count.index].reserved_ip
 }
 
 # Wait for target registration to propagate

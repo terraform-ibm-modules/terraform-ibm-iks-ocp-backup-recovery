@@ -22,6 +22,6 @@ output "brs_private_hostname" {
 output "brs_vpe_ips" {
   description = "Map of VPEG name to reserved IP list. Each entry contains the private IP addresses bound to each subnet zone."
   value = var.create_source_cluster_brs_vpe_gateway ? {
-    (local.brs_vpe_name) = module.brs_vpe[0].vpe_ips[*].address
+    (local.brs_vpe_name) = ibm_is_virtual_endpoint_gateway.brs_vpe[0].ips[*].address
   } : {}
 }
