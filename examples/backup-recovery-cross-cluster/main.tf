@@ -582,73 +582,75 @@ data "ibm_is_security_group" "target_kube_vpeg_sg" {
 }
 
 # Source VPE
-module "source_vpe" {
-  source  = "terraform-ibm-modules/vpe-gateway/ibm"
-  version = "5.4.0"
-
-  region             = var.region
-  vpc_id             = local.source_vpc_id
-  vpc_name           = local.source_vpe_name
-  resource_group_id  = module.resource_group.resource_group_id
-  security_group_ids = [data.ibm_is_security_group.source_kube_vpeg_sg.id]
-  subnet_zone_list   = [for s in local.source_vpe_subnets : { name = s.name, id = s.id, zone = s.zone }]
-
-  cloud_service_by_crn = [{
-    crn      = local.brs_instance_crn
-    vpe_name = local.source_vpe_name
-  }]
-
-  depends_on = [module.source_backup_recovery]
+locals {
+  source_vpe_subnets_list = values(local.source_vpe_subnets)
+  target_vpe_subnets_list = values(local.target_vpe_subnets)
 }
 
-removed {
-  from = module.source_vpe.ibm_is_virtual_endpoint_gateway.vpe
-  lifecycle { destroy = false }
+resource "ibm_is_subnet_reserved_ip" "source_vpe" {
+  count = length(local.source_vpe_subnets_list)
+
+  subnet      = local.source_vpe_subnets_list[count.index].id
+  name        = "${local.source_vpe_name}-${replace(local.source_vpe_subnets_list[count.index].zone, "${var.region}-", "")}"
+  auto_delete = false
 }
 
-removed {
-  from = module.source_vpe.ibm_is_virtual_endpoint_gateway_ip.endpoint_gateway_ip
-  lifecycle { destroy = false }
+resource "ibm_is_virtual_endpoint_gateway" "source_vpe" {
+  name            = local.source_vpe_name
+  vpc             = local.source_vpc_id
+  resource_group  = module.resource_group.resource_group_id
+  security_groups = [data.ibm_is_security_group.source_kube_vpeg_sg.id]
+
+  target {
+    crn           = local.brs_instance_crn
+    resource_type = "provider_cloud_service"
+  }
+
+  depends_on = [
+    module.source_backup_recovery,
+    ibm_is_subnet_reserved_ip.source_vpe,
+  ]
 }
 
-removed {
-  from = module.source_vpe.module.ip.ibm_is_subnet_reserved_ip.ip
-  lifecycle { destroy = false }
+resource "ibm_is_virtual_endpoint_gateway_ip" "source_vpe" {
+  count = length(local.source_vpe_subnets_list)
+
+  gateway     = ibm_is_virtual_endpoint_gateway.source_vpe.id
+  reserved_ip = ibm_is_subnet_reserved_ip.source_vpe[count.index].reserved_ip
 }
 
 # Target VPE
-module "target_vpe" {
-  source  = "terraform-ibm-modules/vpe-gateway/ibm"
-  version = "5.4.0"
+resource "ibm_is_subnet_reserved_ip" "target_vpe" {
+  count = length(local.target_vpe_subnets_list)
 
-  region             = var.region
-  vpc_id             = local.target_vpc_id
-  vpc_name           = local.target_vpe_name
-  resource_group_id  = module.resource_group.resource_group_id
-  security_group_ids = [data.ibm_is_security_group.target_kube_vpeg_sg.id]
-  subnet_zone_list   = [for s in local.target_vpe_subnets : { name = s.name, id = s.id, zone = s.zone }]
-
-  cloud_service_by_crn = [{
-    crn      = local.brs_instance_crn
-    vpe_name = local.target_vpe_name
-  }]
-
-  depends_on = [module.source_backup_recovery, module.target_backup_recovery]
+  subnet      = local.target_vpe_subnets_list[count.index].id
+  name        = "${local.target_vpe_name}-${replace(local.target_vpe_subnets_list[count.index].zone, "${var.region}-", "")}"
+  auto_delete = false
 }
 
-removed {
-  from = module.target_vpe.ibm_is_virtual_endpoint_gateway.vpe
-  lifecycle { destroy = false }
+resource "ibm_is_virtual_endpoint_gateway" "target_vpe" {
+  name            = local.target_vpe_name
+  vpc             = local.target_vpc_id
+  resource_group  = module.resource_group.resource_group_id
+  security_groups = [data.ibm_is_security_group.target_kube_vpeg_sg.id]
+
+  target {
+    crn           = local.brs_instance_crn
+    resource_type = "provider_cloud_service"
+  }
+
+  depends_on = [
+    module.source_backup_recovery,
+    module.target_backup_recovery,
+    ibm_is_subnet_reserved_ip.target_vpe,
+  ]
 }
 
-removed {
-  from = module.target_vpe.ibm_is_virtual_endpoint_gateway_ip.endpoint_gateway_ip
-  lifecycle { destroy = false }
-}
+resource "ibm_is_virtual_endpoint_gateway_ip" "target_vpe" {
+  count = length(local.target_vpe_subnets_list)
 
-removed {
-  from = module.target_vpe.module.ip.ibm_is_subnet_reserved_ip.ip
-  lifecycle { destroy = false }
+  gateway     = ibm_is_virtual_endpoint_gateway.target_vpe.id
+  reserved_ip = ibm_is_subnet_reserved_ip.target_vpe[count.index].reserved_ip
 }
 
 ##############################################################################
