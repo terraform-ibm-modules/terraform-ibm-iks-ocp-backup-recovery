@@ -421,14 +421,14 @@ module "source_backup_recovery" {
     name              = "${var.prefix}-continuous-backup"
     create_new_policy = true
     schedule = {
-      unit = "Minutes"
-      minute_schedule = {
-        frequency = 240
+      unit = "Hours"
+      hour_schedule = {
+        frequency = 4
       }
     }
     retention = {
-      unit     = "Days"
-      duration = 7
+      unit     = "Weeks"
+      duration = 1
     }
   }]
 
