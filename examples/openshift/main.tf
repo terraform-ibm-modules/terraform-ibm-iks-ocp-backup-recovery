@@ -281,39 +281,37 @@ data "ibm_is_security_group" "kube_vpeg_sg" {
   ]
 }
 
-resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
-  for_each    = local.brs_vpe_active ? local.brs_vpe_subnets : {}
-  subnet      = each.value.id
-  name        = "${local.brs_vpe_name}-${each.key}-ip"
-  auto_delete = false
-  lifecycle {
-    prevent_destroy = true
-  }
-}
+module "brs_vpe" {
+  count   = local.brs_vpe_active ? 1 : 0
+  source  = "terraform-ibm-modules/vpe-gateway/ibm"
+  version = "5.4.0"
 
-resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
-  count           = local.brs_vpe_active ? 1 : 0
-  name            = local.brs_vpe_name
-  vpc             = local.vpc_id
-  resource_group  = module.resource_group.resource_group_id
-  security_groups = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
+  region             = var.region
+  vpc_id             = local.vpc_id
+  vpc_name           = local.brs_vpe_name
+  resource_group_id  = module.resource_group.resource_group_id
+  security_group_ids = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
+  subnet_zone_list   = [for s in local.brs_vpe_subnets : { name = s.name, id = s.id, zone = s.zone }]
 
-  target {
-    crn           = module.backup_recover_protect_ocp.brs_instance_crn
-    resource_type = "provider_cloud_service"
-  }
+  cloud_service_by_crn = [{
+    crn      = module.backup_recover_protect_ocp.brs_instance_crn
+    vpe_name = local.brs_vpe_name
+  }]
 
   depends_on = [module.backup_recover_protect_ocp]
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
-resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
-  for_each    = local.brs_vpe_active ? local.brs_vpe_subnets : {}
-  gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe[0].id
-  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
-  lifecycle {
-    prevent_destroy = true
-  }
+removed {
+  from = module.brs_vpe.ibm_is_virtual_endpoint_gateway.vpe
+  lifecycle { destroy = false }
+}
+
+removed {
+  from = module.brs_vpe.ibm_is_virtual_endpoint_gateway_ip.endpoint_gateway_ip
+  lifecycle { destroy = false }
+}
+
+removed {
+  from = module.brs_vpe.module.ip.ibm_is_subnet_reserved_ip.ip
+  lifecycle { destroy = false }
 }

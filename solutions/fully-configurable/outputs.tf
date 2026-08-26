@@ -89,8 +89,6 @@ output "recovery_status" {
 }
 
 output "brs_vpe_ips" {
-  description = "Map of VPE gateway name to reserved IP addresses. Populated only when create_source_cluster_brs_vpe_gateway = true; empty map otherwise."
-  value = local.brs_vpe_active ? {
-    (local.brs_vpe_name_resolved) = values(ibm_is_subnet_reserved_ip.brs_vpe_ip)[*].address
-  } : {}
+  description = "Map of VPE gateway name to reserved IP addresses. Populated only when create_source_cluster_brs_vpe_gateway = true; empty map otherwise. Note: VPE is created via fire-and-forget script and IPs are not tracked in Terraform state."
+  value       = local.brs_vpe_active ? { (local.brs_vpe_name_resolved) = [] } : {}
 }

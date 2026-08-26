@@ -278,56 +278,52 @@ module "brs_s2s_auth" {
   depends_on = [module.protect_cluster]
 }
 
-# Reserved IPs — one per subnet.
-resource "ibm_is_subnet_reserved_ip" "brs_vpe_ip" {
-  for_each = local.brs_vpe_active ? local.brs_vpe_subnets_map : {}
-  provider = ibm.source_cluster
-  subnet   = each.value.id
-  name     = "${local.brs_vpe_name_resolved}-${each.key}-ip"
-  # auto_delete=true is invalid for an unbound reserved IP (VPC API rejects it).
-  # prevent_destroy keeps these IPs alive across terraform destroy — the VPE is
-  # shared infrastructure and must not be torn down with the workspace.
-  auto_delete = false
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-# VPE Gateway — routes DSC↔BRS traffic over IBM private backbone.
-# IBM Cloud enforces one VPE per (service, VPC) pair — a second workspace
-# attempting to create a gateway for the same BRS instance in the same VPC
-# would fail. The gateway is therefore always treated as shared infrastructure
-# and is never destroyed when the workspace is torn down.
-resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
-  count           = local.brs_vpe_active ? 1 : 0
-  provider        = ibm.source_cluster
-  name            = local.brs_vpe_name_resolved
-  vpc             = local.resolved_vpc_id
-  resource_group  = var.source_cluster_resource_group_id
-  security_groups = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
-
-  target {
-    crn           = module.protect_cluster.brs_instance_crn
-    resource_type = "provider_cloud_service"
+# VPE Gateway for source cluster — routes DSC↔BRS traffic over IBM private backbone.
+# The VPE is shared infrastructure (one per VPC/service pair) and must never be
+# destroyed when the workspace is torn down.
+# `removed { lifecycle { destroy = false } }` below detaches the module from state
+# on `terraform destroy` without deleting the cloud resources — the VPE outlives
+# any individual workspace apply/destroy cycle.
+module "brs_vpe" {
+  count   = local.brs_vpe_active ? 1 : 0
+  source  = "terraform-ibm-modules/vpe-gateway/ibm"
+  version = "5.4.0"
+  providers = {
+    ibm = ibm.source_cluster
   }
 
-  lifecycle {
-    prevent_destroy = true
-  }
+  region             = local.region
+  vpc_id             = local.resolved_vpc_id
+  vpc_name           = local.brs_vpe_name_resolved
+  resource_group_id  = var.source_cluster_resource_group_id
+  security_group_ids = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
+  subnet_zone_list   = [for s in local.resolved_vpc_subnets : { name = s.name, id = s.id, zone = s.zone }]
+  service_endpoints  = var.brs_endpoint_type
+
+  cloud_service_by_crn = [{
+    crn      = module.protect_cluster.brs_instance_crn
+    vpe_name = local.brs_vpe_name_resolved
+  }]
+
+  resource_tags = var.resource_tags
+  access_tags   = var.access_tags
 
   depends_on = [module.brs_s2s_auth]
 }
 
-resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe_ip" {
-  for_each    = local.brs_vpe_active ? local.brs_vpe_subnets_map : {}
-  provider    = ibm.source_cluster
-  gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe[0].id
-  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe_ip[each.key].reserved_ip
+removed {
+  from = module.brs_vpe.ibm_is_virtual_endpoint_gateway.vpe
+  lifecycle { destroy = false }
+}
 
-  lifecycle {
-    prevent_destroy = true
-  }
+removed {
+  from = module.brs_vpe.ibm_is_virtual_endpoint_gateway_ip.endpoint_gateway_ip
+  lifecycle { destroy = false }
+}
+
+removed {
+  from = module.brs_vpe.module.ip.ibm_is_subnet_reserved_ip.ip
+  lifecycle { destroy = false }
 }
 
 ##############################################################################
@@ -555,50 +551,47 @@ data "ibm_is_security_group" "target_kube_vpeg_sg" {
   name     = "kube-vpegw-${local.target_resolved_vpc_id}"
 }
 
-resource "ibm_is_subnet_reserved_ip" "target_brs_vpe_ip" {
-  for_each = local.target_brs_vpe_active ? local.target_brs_vpe_subnets_map : {}
-  provider = ibm.target_cluster
-  subnet   = each.value.id
-  name     = "${local.target_brs_vpe_name_resolved}-${each.key}-ip"
-  # auto_delete=true is invalid for an unbound reserved IP (VPC API rejects it).
-  # prevent_destroy keeps these IPs alive across terraform destroy — the VPE is
-  # shared infrastructure and must not be torn down with the workspace.
-  auto_delete = false
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "ibm_is_virtual_endpoint_gateway" "target_brs_vpe" {
-  count           = local.target_brs_vpe_active ? 1 : 0
-  provider        = ibm.target_cluster
-  name            = local.target_brs_vpe_name_resolved
-  vpc             = local.target_resolved_vpc_id
-  resource_group  = var.target_cluster_resource_group_id
-  security_groups = [data.ibm_is_security_group.target_kube_vpeg_sg[0].id]
-
-  target {
-    crn           = module.protect_cluster.brs_instance_crn
-    resource_type = "provider_cloud_service"
+# VPE Gateway for target cluster — same create-and-detach pattern as source VPE.
+module "target_brs_vpe" {
+  count   = local.target_brs_vpe_active ? 1 : 0
+  source  = "terraform-ibm-modules/vpe-gateway/ibm"
+  version = "5.4.0"
+  providers = {
+    ibm = ibm.target_cluster
   }
 
-  lifecycle {
-    prevent_destroy = true
-  }
+  region             = var.target_cluster_region
+  vpc_id             = local.target_resolved_vpc_id
+  vpc_name           = local.target_brs_vpe_name_resolved
+  resource_group_id  = var.target_cluster_resource_group_id
+  security_group_ids = [data.ibm_is_security_group.target_kube_vpeg_sg[0].id]
+  subnet_zone_list   = [for s in local.target_resolved_vpc_subnets : { name = s.name, id = s.id, zone = s.zone }]
+  service_endpoints  = var.brs_endpoint_type
+
+  cloud_service_by_crn = [{
+    crn      = module.protect_cluster.brs_instance_crn
+    vpe_name = local.target_brs_vpe_name_resolved
+  }]
+
+  resource_tags = var.resource_tags
+  access_tags   = var.access_tags
 
   depends_on = [module.target_cluster_registration]
 }
 
-resource "ibm_is_virtual_endpoint_gateway_ip" "target_brs_vpe_ip" {
-  for_each    = local.target_brs_vpe_active ? local.target_brs_vpe_subnets_map : {}
-  provider    = ibm.target_cluster
-  gateway     = ibm_is_virtual_endpoint_gateway.target_brs_vpe[0].id
-  reserved_ip = ibm_is_subnet_reserved_ip.target_brs_vpe_ip[each.key].reserved_ip
+removed {
+  from = module.target_brs_vpe.ibm_is_virtual_endpoint_gateway.vpe
+  lifecycle { destroy = false }
+}
 
-  lifecycle {
-    prevent_destroy = true
-  }
+removed {
+  from = module.target_brs_vpe.ibm_is_virtual_endpoint_gateway_ip.endpoint_gateway_ip
+  lifecycle { destroy = false }
+}
+
+removed {
+  from = module.target_brs_vpe.module.ip.ibm_is_subnet_reserved_ip.ip
+  lifecycle { destroy = false }
 }
 
 # Wait for target registration to propagate
@@ -665,16 +658,12 @@ resource "terraform_data" "wait_for_backup" {
 # Snapshot info — read after wait_for_backup writes /tmp/snapshot_id_<id>.txt
 ##############################################################################
 
-# Tombstone: local_file.snapshot_id existed in older state. The empty lifecycle
-# block allows terraform refresh/destroy to reconcile it from state without
-# calling file(). Will be absent from state after the next destroy.
-resource "local_file" "snapshot_id" {
-  count    = 0
-  content  = ""
-  filename = "${path.module}/snapshot_id.txt"
-  lifecycle {
-    ignore_changes = all
-  }
+# local_file.snapshot_id existed in older state. Silently detach from state
+# without any provider operations (the local provider has no delete API for
+# files that no longer exist on Schematics workers).
+removed {
+  from = local_file.snapshot_id
+  lifecycle { destroy = false }
 }
 
 # Stores the snapshot_id in Terraform state without any file() call at plan time.
@@ -788,17 +777,17 @@ resource "terraform_data" "recovery_trigger" {
   }
 
   input = {
-    url                  = module.protect_cluster.brs_instance_url
-    tenant               = module.protect_cluster.brs_tenant_id
-    endpoint_type        = var.brs_endpoint_type
-    instance_id          = module.protect_cluster.brs_instance_guid
-    api_key              = sensitive(var.ibmcloud_api_key)
-    pg_id                = local.recovery_pg_id
-    namespace_prefix     = var.recovery_namespace_prefix
-    target_source_id     = var.recovery_type == "cross-cluster" ? tostring(tonumber(split("::", module.target_cluster_registration[0].source_registration_id)[1])) : ""
-    binaries_path        = "/tmp"
-    recovery_type        = var.recovery_type
-    recovery_pg_label    = local.recovery_pg_label
+    url               = module.protect_cluster.brs_instance_url
+    tenant            = module.protect_cluster.brs_tenant_id
+    endpoint_type     = var.brs_endpoint_type
+    instance_id       = module.protect_cluster.brs_instance_guid
+    api_key           = sensitive(var.ibmcloud_api_key)
+    pg_id             = local.recovery_pg_id
+    namespace_prefix  = var.recovery_namespace_prefix
+    target_source_id  = var.recovery_type == "cross-cluster" ? tostring(tonumber(split("::", module.target_cluster_registration[0].source_registration_id)[1])) : ""
+    binaries_path     = "/tmp"
+    recovery_type     = var.recovery_type
+    recovery_pg_label = local.recovery_pg_label
   }
 
   provisioner "local-exec" {
@@ -850,43 +839,15 @@ resource "terraform_data" "recovery_id" {
   depends_on = [terraform_data.recovery_trigger]
 }
 
-# Tombstone: ibm_backup_recovery.recovery existed in older state. count = 0 so
-# it is not managed going forward. BRS rejects DELETE on recovery records
-# (immutable audit history) so any existing state entry is left as-is.
-# Remove orphaned entries manually if needed:
-#   terraform state rm 'ibm_backup_recovery.recovery[0]'
-resource "ibm_backup_recovery" "recovery" {
-  count = 0
-
-  x_ibm_tenant_id      = ""
-  name                 = ""
-  snapshot_environment = "kKubernetes"
-  endpoint_type        = "public"
-  instance_id          = ""
-  region               = ""
-
-  kubernetes_params {
-    recovery_action = "RecoverNamespaces"
-    recover_namespace_params {
-      target_environment = "kKubernetes"
-      kubernetes_target_params {
-        objects {
-          snapshot_id         = ""
-          protection_group_id = ""
-        }
-        recovery_target_config {
-          recover_to_new_source = false
-        }
-        rename_recovered_namespaces_params {
-          prefix = ""
-        }
-      }
-    }
-  }
-
-  lifecycle {
-    ignore_changes = all
-  }
+# ibm_backup_recovery.recovery existed in older state but cannot be managed
+# going forward — the provider's CustomizeDiff marks kubernetes_params
+# immutable and fires even on a plan with count=0 when the state record
+# still exists.  Using `removed` with destroy=false causes Terraform to
+# silently drop the state entry without calling the provider at all.
+# BRS rejects DELETE on recovery records anyway (immutable audit history).
+removed {
+  from = ibm_backup_recovery.recovery
+  lifecycle { destroy = false }
 }
 
 ##############################################################################
