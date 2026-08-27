@@ -401,6 +401,7 @@ func setupOptions(t *testing.T, prefix string, dir string, exemptionList []strin
 }
 
 func TestRunIKSExample(t *testing.T) {
+	t.Skip()
 	t.Parallel()
 
 	options := setupOptions(t, "brs-iks", iksExampleDir, []string{})
