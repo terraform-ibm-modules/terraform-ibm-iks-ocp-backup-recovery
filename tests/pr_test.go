@@ -192,7 +192,7 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 		TarIncludePatterns:    tarIncludePatterns,
 		TemplateFolder:        fullyConfigurableTerraformDir,
 		Tags:                  []string{"test-schematic"},
-		DeleteWorkspaceOnFail: false,
+		DeleteWorkspaceOnFail: true,
 	})
 
 	options.TerraformVars = getSchematicTerraformVars(t, prefix, options, existingTerraformOptions)
