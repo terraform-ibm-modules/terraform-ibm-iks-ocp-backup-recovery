@@ -39,6 +39,11 @@
 ##############################################################################
 
 locals {
+  # When an existing BRS CRN is provided, derive its region from field [5] of the CRN
+  # (e.g. "crn:v1:bluemix:public:backup-recovery:au-syd:...") so the registry module's
+  # region/CRN validation always passes regardless of what var.region is set to.
+  brs_region = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? element(split(":", var.existing_brs_instance_crn), 5) : var.region
+
   source_cluster_id = var.source_cluster_name_id != null ? var.source_cluster_name_id : ibm_container_vpc_cluster.source_cluster[0].id
   target_cluster_id = var.target_cluster_name_id != null ? var.target_cluster_name_id : ibm_container_vpc_cluster.target_cluster[0].id
 
@@ -378,7 +383,7 @@ module "brs_instance" {
     ibm = ibm
   }
 
-  region                    = var.region
+  region                    = local.brs_region
   resource_group_id         = module.resource_group.resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
   instance_name             = "${var.prefix}-brs-instance"
@@ -417,7 +422,7 @@ module "brs_target_connection" {
     ibm = ibm
   }
 
-  region                    = var.region
+  region                    = local.brs_region
   resource_group_id         = module.resource_group.resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
   instance_name             = "${var.prefix}-brs-instance"

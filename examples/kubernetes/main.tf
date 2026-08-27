@@ -1,4 +1,9 @@
 locals {
+  # When an existing BRS CRN is provided, derive its region from field [5] of the CRN
+  # (e.g. "crn:v1:bluemix:public:backup-recovery:au-syd:...") so the registry module's
+  # region/CRN validation always passes regardless of what var.region is set to.
+  brs_region = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? element(split(":", var.existing_brs_instance_crn), 5) : var.region
+
   default_version = data.ibm_container_cluster_versions.cluster_versions.default_kube_version
   cluster_id      = var.cluster_name_id != null ? (var.classic_cluster ? data.ibm_container_cluster.classic_cluster_data[0].id : data.ibm_container_vpc_cluster.vpc_cluster_data[0].id) : (var.classic_cluster ? ibm_container_cluster.classic_cluster[0].id : ibm_container_vpc_cluster.vpc_cluster[0].id)
 
@@ -162,7 +167,7 @@ module "brs_instance" {
     ibm = ibm
   }
 
-  region                    = var.region
+  region                    = local.brs_region
   resource_group_id         = module.resource_group.resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
   instance_name             = "${var.prefix}-brs-instance"

@@ -33,7 +33,7 @@
 ##############################################################################
 
 locals {
-  brs_region = var.brs_region != null ? var.brs_region : var.region
+  brs_region = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? element(split(":", var.existing_brs_instance_crn), 5) : (var.brs_region != null ? var.brs_region : var.region)
 
   # cluster_id: existing cluster name/ID or newly created cluster ID.
   cluster_id = var.cluster_name_id != null ? data.ibm_container_vpc_cluster.vpc_cluster_data[0].name : ibm_container_vpc_cluster.vpc_cluster[0].id

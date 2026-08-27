@@ -192,6 +192,13 @@ resource "time_sleep" "wait_operators" {
 # BRS Instance (owned by this example)
 ########################################################################################################################
 
+locals {
+  # When an existing BRS CRN is provided, derive its region from field [5] of the CRN
+  # (e.g. "crn:v1:bluemix:public:backup-recovery:au-syd:...") so the registry module's
+  # region/CRN validation always passes regardless of what var.region is set to.
+  brs_region = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? element(split(":", var.existing_brs_instance_crn), 5) : var.region
+}
+
 module "brs_instance" {
   source  = "terraform-ibm-modules/backup-recovery/ibm"
   version = "1.12.3"
@@ -199,7 +206,7 @@ module "brs_instance" {
     ibm = ibm
   }
 
-  region                    = var.region
+  region                    = local.brs_region
   resource_group_id         = module.resource_group.resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
   instance_name             = "${var.prefix}-brs-instance"
