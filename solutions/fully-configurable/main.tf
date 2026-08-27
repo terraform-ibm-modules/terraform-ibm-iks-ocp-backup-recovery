@@ -82,6 +82,11 @@ module "brs_instance" {
   policies                  = var.policies
 }
 
+removed {
+  from = module.brs_instance.ibm_resource_instance.backup_recovery_instance
+  lifecycle { destroy = false }
+}
+
 # Stage 1: Source Cluster Infrastructure & DSC Helm Deployment (Source Account)
 module "source_cluster_prep" {
   source = "../.."
