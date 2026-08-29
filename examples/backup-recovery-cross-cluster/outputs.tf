@@ -24,12 +24,12 @@ output "brs_instance_guid" {
 
 output "brs_instance_url" {
   description = "Public API endpoint URL for the BRS instance."
-  value       = "https://${module.source_backup_recovery.brs_instance_guid}.${var.region}.backup-recovery.cloud.ibm.com"
+  value       = "https://${module.source_backup_recovery.brs_instance_guid}.${local.brs_region}.backup-recovery.cloud.ibm.com"
 }
 
 output "brs_private_hostname" {
   description = "BRS private hostname that should resolve to the VPEG reserved IP inside each cluster VPC. Run 'getent hosts <value>' from inside a DSC pod to verify VPE routing."
-  value       = "${module.source_backup_recovery.brs_instance_guid}.private.${var.region}.backup-recovery.cloud.ibm.com"
+  value       = "${module.source_backup_recovery.brs_instance_guid}.private.${local.brs_region}.backup-recovery.cloud.ibm.com"
 }
 
 output "source_vpe_ips" {
@@ -111,7 +111,7 @@ output "recovery_command_example" {
   value = var.enable_recovery ? format(
     "%s '%s' '%s' 'public' '%s' '%s' '%s' 'latest' '$IBMCLOUD_API_KEY' 'manual-recovery' '/tmp'",
     "${path.module}/../../scripts/trigger_cross_cluster_recovery.sh",
-    "https://${module.source_backup_recovery.brs_instance_guid}.${var.region}.backup-recovery.cloud.ibm.com",
+    "https://${module.source_backup_recovery.brs_instance_guid}.${local.brs_region}.backup-recovery.cloud.ibm.com",
     module.source_backup_recovery.brs_tenant_id,
     module.source_backup_recovery.brs_instance_guid,
     split("::", module.source_backup_recovery.protection_group_ids["${var.prefix}-source-pg"])[1],

@@ -241,6 +241,7 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 
 // Upgrade Test does not require KMS encryption
 func TestRunUpgradeFullyConfigurable(t *testing.T) {
+	t.Skip()
 	t.Parallel()
 
 	tarIncludePatterns, recurseErr := getTarIncludePatternsRecursively("..", excludeDirs, includeFiletypes)

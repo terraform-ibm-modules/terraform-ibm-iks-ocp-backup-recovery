@@ -30,7 +30,7 @@ output "brs_instance_url" {
 
 output "brs_private_hostname" {
   description = "BRS private hostname that should resolve to the VPEG reserved IP inside the cluster VPC. Run 'getent hosts <value>' from inside a DSC pod to verify VPE routing. Only relevant when create_source_cluster_brs_vpe_gateway = true."
-  value       = var.create_source_cluster_brs_vpe_gateway && !var.classic_cluster ? "${module.backup_recover_protect_iks.brs_instance_guid}.private.${var.region}.backup-recovery.cloud.ibm.com" : null
+  value       = var.create_source_cluster_brs_vpe_gateway && !var.classic_cluster ? "${module.backup_recover_protect_iks.brs_instance_guid}.private.${local.brs_region}.backup-recovery.cloud.ibm.com" : null
 }
 
 output "brs_vpe_ips" {

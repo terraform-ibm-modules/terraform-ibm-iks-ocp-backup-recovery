@@ -344,6 +344,10 @@ resource "terraform_data" "wait_for_dsc_node_ready" {
     kubeconfig_path = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
   }
 
+  lifecycle {
+    ignore_changes = [input]
+  }
+
   provisioner "local-exec" {
     # Wait up to 15 minutes for at least one DSC node to become Ready.
     # --selector matches the label applied to every dsc-pool-zone-* worker pool.
@@ -467,6 +471,10 @@ resource "terraform_data" "check_existing_registration" {
     kubeconfig_path = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
   }
 
+  lifecycle {
+    ignore_changes = [input]
+  }
+
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
     environment = {
@@ -500,6 +508,10 @@ resource "terraform_data" "purge_stale_dsc_pvc" {
     namespace       = kubernetes_namespace_v1.dsc_namespace[0].metadata[0].name
     kubeconfig_path = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
     dsc_name        = var.dsc_name
+  }
+
+  lifecycle {
+    ignore_changes = [input]
   }
 
   provisioner "local-exec" {

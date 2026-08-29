@@ -75,6 +75,15 @@ call_api() {
     return 0
   fi
 
+  # HTTP 000 means curl could not connect at all (DNS failure, network not ready,
+  # BRS endpoint not yet reachable). Treat it as a retryable transient error so
+  # the polling loop keeps trying rather than failing immediately.
+  if [[ "$http_code" -eq 0 ]]; then
+    echo "API Error: Received HTTP 000 (curl connection failure) from $path — will retry" >&2
+    echo "__HTTP_000__"
+    return 0
+  fi
+
   if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
     echo "API Error: Received HTTP $http_code from $path" >&2
     echo "Response Body: $body" >&2
@@ -211,7 +220,9 @@ main() {
 
     echo "API call completed, response length: ${#run_response} chars" | tee -a "$debug_file" >&2
 
-    if [[ "$run_response" != "__HTTP_404__" ]]; then
+    if [[ "$run_response" == "__HTTP_000__" ]]; then
+      echo "BRS endpoint unreachable (HTTP 000), waiting ${POLL_INTERVAL_SECONDS}s before retry..." | tee -a "$debug_file" >&2
+    elif [[ "$run_response" != "__HTTP_404__" ]]; then
       # Debug: Write full response to file
       echo "=== Poll at $(date) ===" | tee -a "$debug_file" >&2
       echo "$run_response" | jq '.' >> "$debug_file" 2>&1

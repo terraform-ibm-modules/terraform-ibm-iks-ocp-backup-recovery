@@ -768,7 +768,7 @@ resource "terraform_data" "wait_for_source_backup" {
   ]
 
   input = {
-    url                   = "https://${module.brs_instance.brs_instance_guid}.${var.region}.backup-recovery.cloud.ibm.com"
+    url                   = "https://${module.brs_instance.brs_instance_guid}.${local.brs_region}.backup-recovery.cloud.ibm.com"
     tenant                = module.brs_instance.tenant_id
     endpoint_type         = "public"
     instance_id           = module.brs_instance.brs_instance_guid
@@ -800,7 +800,7 @@ resource "terraform_data" "cross_cluster_recovery" {
   count = var.enable_recovery ? 1 : 0
 
   input = {
-    url              = "https://${module.brs_instance.brs_instance_guid}.${var.region}.backup-recovery.cloud.ibm.com"
+    url              = "https://${module.brs_instance.brs_instance_guid}.${local.brs_region}.backup-recovery.cloud.ibm.com"
     tenant           = module.brs_instance.tenant_id
     endpoint_type    = "public"
     instance_id      = module.brs_instance.brs_instance_guid
