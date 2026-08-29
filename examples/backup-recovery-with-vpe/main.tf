@@ -107,6 +107,20 @@ resource "ibm_container_vpc_cluster" "vpc_cluster" {
   }
 }
 
+# Install / upgrade vpc-block-csi-driver to 5.2 immediately after the cluster
+# is created. This must complete before the backup module runs because the DSC
+# PVC uses ibmc-vpc-block-metro-5iops-tier which depends on the CSI driver.
+resource "ibm_container_addons" "vpc_cluster_addons" {
+  count      = var.cluster_name_id == null ? 1 : 0
+  cluster    = ibm_container_vpc_cluster.vpc_cluster[0].name
+  depends_on = [ibm_container_vpc_cluster.vpc_cluster]
+
+  addons {
+    name    = "vpc-block-csi-driver"
+    version = "5.2"
+  }
+}
+
 ##############################################################################
 # Existing cluster lookup  (only when cluster_name_id is provided)
 ##############################################################################
@@ -115,6 +129,39 @@ data "ibm_container_vpc_cluster" "vpc_cluster_data" {
   count             = var.cluster_name_id != null ? 1 : 0
   name              = var.cluster_name_id
   resource_group_id = module.resource_group.resource_group_id
+}
+
+# For existing clusters: fetch current addons then upgrade vpc-block-csi-driver
+# to 5.2 while preserving all other installed addons unchanged.
+data "ibm_container_addons" "existing_cluster_addons" {
+  count      = var.cluster_name_id != null ? 1 : 0
+  cluster    = var.cluster_name_id
+  depends_on = [data.ibm_container_vpc_cluster.vpc_cluster_data]
+}
+
+locals {
+  existing_addons_map = var.cluster_name_id != null ? {
+    for addon in try(data.ibm_container_addons.existing_cluster_addons[0].addons, []) :
+    addon.name => addon.version
+  } : {}
+  merged_addons = var.cluster_name_id != null ? merge(
+    local.existing_addons_map,
+    { "vpc-block-csi-driver" = "5.2" }
+  ) : {}
+}
+
+resource "ibm_container_addons" "existing_cluster_addons_upgrade" {
+  count      = var.cluster_name_id != null ? 1 : 0
+  cluster    = var.cluster_name_id
+  depends_on = [data.ibm_container_addons.existing_cluster_addons]
+
+  dynamic "addons" {
+    for_each = local.merged_addons
+    content {
+      name    = addons.key
+      version = addons.value
+    }
+  }
 }
 
 ##############################################################################
@@ -133,7 +180,11 @@ data "ibm_container_cluster_config" "cluster_config" {
 # making API calls. Without this, providers initialise before the kubeconfig
 # host is populated and fall back to localhost:80.
 resource "time_sleep" "wait_operators" {
-  depends_on      = [data.ibm_container_cluster_config.cluster_config]
+  depends_on = [
+    data.ibm_container_cluster_config.cluster_config,
+    ibm_container_addons.vpc_cluster_addons,
+    ibm_container_addons.existing_cluster_addons_upgrade,
+  ]
   create_duration = "60s"
 }
 

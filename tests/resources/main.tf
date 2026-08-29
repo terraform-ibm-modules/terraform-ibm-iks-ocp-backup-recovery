@@ -43,6 +43,17 @@ resource "ibm_is_subnet" "subnet_zone_1" {
 }
 
 ########################################################################################################################
+# Wait for IAM to propagate subnet visibility before creating the cluster.
+# Without this, the container service sometimes rejects the token as not
+# authorised to view the subnet that was just created in the same apply.
+########################################################################################################################
+
+resource "time_sleep" "wait_for_subnet" {
+  depends_on      = [ibm_is_subnet.subnet_zone_1]
+  create_duration = "30s"
+}
+
+########################################################################################################################
 # OCP VPC cluster (single zone)
 ########################################################################################################################
 
@@ -83,4 +94,10 @@ module "ocp_base" {
   vpc_subnets          = local.cluster_vpc_subnets
   worker_pools         = local.worker_pools
   access_tags          = []
+  addons = {
+    vpc-block-csi-driver = {
+      version = "5.2"
+    }
+  }
+  depends_on = [time_sleep.wait_for_subnet]
 }

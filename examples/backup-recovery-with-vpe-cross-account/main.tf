@@ -169,6 +169,22 @@ resource "ibm_container_vpc_cluster" "vpc_cluster" {
   }
 }
 
+# Install / upgrade vpc-block-csi-driver to 5.2 immediately after the cluster
+# is created. Must complete before the backup module runs because DSC PVC
+# provisioning depends on the CSI driver.
+resource "ibm_container_addons" "vpc_cluster_addons" {
+  count    = var.cluster_name_id == null ? 1 : 0
+  provider = ibm.source
+  cluster  = ibm_container_vpc_cluster.vpc_cluster[0].name
+
+  depends_on = [ibm_container_vpc_cluster.vpc_cluster]
+
+  addons {
+    name    = "vpc-block-csi-driver"
+    version = "5.2"
+  }
+}
+
 ##############################################################################
 # Existing cluster lookup  (when cluster_name_id is provided)
 ##############################################################################
@@ -179,6 +195,41 @@ data "ibm_container_vpc_cluster" "vpc_cluster_data" {
 
   name              = var.cluster_name_id
   resource_group_id = module.source_resource_group.resource_group_id
+}
+
+# For existing clusters: fetch current addons then upgrade vpc-block-csi-driver
+# to 5.2 while preserving all other installed addons unchanged.
+data "ibm_container_addons" "existing_cluster_addons" {
+  count      = var.cluster_name_id != null ? 1 : 0
+  provider   = ibm.source
+  cluster    = var.cluster_name_id
+  depends_on = [data.ibm_container_vpc_cluster.vpc_cluster_data]
+}
+
+locals {
+  existing_addons_map = var.cluster_name_id != null ? {
+    for addon in try(data.ibm_container_addons.existing_cluster_addons[0].addons, []) :
+    addon.name => addon.version
+  } : {}
+  merged_addons = var.cluster_name_id != null ? merge(
+    local.existing_addons_map,
+    { "vpc-block-csi-driver" = "5.2" }
+  ) : {}
+}
+
+resource "ibm_container_addons" "existing_cluster_addons_upgrade" {
+  count      = var.cluster_name_id != null ? 1 : 0
+  provider   = ibm.source
+  cluster    = var.cluster_name_id
+  depends_on = [data.ibm_container_addons.existing_cluster_addons]
+
+  dynamic "addons" {
+    for_each = local.merged_addons
+    content {
+      name    = addons.key
+      version = addons.value
+    }
+  }
 }
 
 ##############################################################################
@@ -266,6 +317,11 @@ module "source_cluster_prep" {
 
   # Registration token passed from BRS connection so DSC Helm deployment can authenticate
   brs_registration_token = module.brs_instance.registration_token
+
+  depends_on = [
+    ibm_container_addons.vpc_cluster_addons,
+    ibm_container_addons.existing_cluster_addons_upgrade,
+  ]
 }
 
 module "backup_recovery" {

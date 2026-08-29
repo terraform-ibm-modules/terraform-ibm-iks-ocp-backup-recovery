@@ -66,6 +66,13 @@ variable "brs_resource_group_id" {
   default     = null
 }
 
+variable "vpc_block_csi_driver_version" {
+  description = "Target version for the `vpc-block-csi-driver` addon on the source cluster. The DA fetches all currently installed addons and upgrades (or installs) `vpc-block-csi-driver` to this version while preserving all other addons. Only applies to VPC clusters — ignored for Classic."
+  type        = string
+  default     = "5.2"
+  nullable    = false
+}
+
 variable "add_cluster_tags" {
   description = "Whether to add BRS tags to the cluster. Set to false if you manage cluster tags externally to avoid drift. When false, you should manually add the tags 'brs-region:<region>' and 'brs-guid:<guid>' to your cluster."
   type        = bool

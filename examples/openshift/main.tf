@@ -115,6 +115,11 @@ module "ocp_base" {
   access_tags                         = var.access_tags
   ocp_entitlement                     = var.ocp_entitlement
   disable_outbound_traffic_protection = true
+  addons = {
+    vpc-block-csi-driver = {
+      version = "5.2"
+    }
+  }
 }
 
 # Lookup the current default OpenShift version
@@ -176,9 +181,13 @@ data "ibm_container_cluster_config" "cluster_config" {
   endpoint_type     = var.cluster_config_endpoint_type != "default" ? var.cluster_config_endpoint_type : null
 }
 
-# Sleep to allow RBAC sync on cluster
+# Sleep to allow RBAC sync on cluster and wait for ocp_base (which manages the
+# vpc-block-csi-driver addon) to fully complete before the backup module starts.
 resource "time_sleep" "wait_operators" {
-  depends_on      = [data.ibm_container_cluster_config.cluster_config]
+  depends_on = [
+    data.ibm_container_cluster_config.cluster_config,
+    module.ocp_base,
+  ]
   create_duration = "60s"
 }
 

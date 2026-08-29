@@ -179,6 +179,19 @@ resource "ibm_container_vpc_cluster" "source_cluster" {
   }
 }
 
+# Install / upgrade vpc-block-csi-driver to 5.2 on the source cluster immediately
+# after it is created. Must complete before backup module runs.
+resource "ibm_container_addons" "source_cluster_addons" {
+  count      = var.source_cluster_name_id == null ? 1 : 0
+  cluster    = ibm_container_vpc_cluster.source_cluster[0].name
+  depends_on = [ibm_container_vpc_cluster.source_cluster]
+
+  addons {
+    name    = "vpc-block-csi-driver"
+    version = "5.2"
+  }
+}
+
 ##############################################################################
 # Target IKS cluster  (created when target_cluster_name_id = null)
 ##############################################################################
@@ -205,6 +218,83 @@ resource "ibm_container_vpc_cluster" "target_cluster" {
   }
 }
 
+# Install / upgrade vpc-block-csi-driver to 5.2 on the target cluster immediately
+# after it is created. Must complete before recovery module runs.
+resource "ibm_container_addons" "target_cluster_addons" {
+  count      = var.target_cluster_name_id == null ? 1 : 0
+  cluster    = ibm_container_vpc_cluster.target_cluster[0].name
+  depends_on = [ibm_container_vpc_cluster.target_cluster]
+
+  addons {
+    name    = "vpc-block-csi-driver"
+    version = "5.2"
+  }
+}
+
+##############################################################################
+# Existing cluster addon upgrade (only when existing clusters are provided)
+##############################################################################
+
+# For existing source cluster: fetch current addons then upgrade vpc-block-csi-driver
+# to 5.2 while preserving all other installed addons unchanged.
+data "ibm_container_addons" "existing_source_cluster_addons" {
+  count      = var.source_cluster_name_id != null ? 1 : 0
+  cluster    = var.source_cluster_name_id
+}
+
+data "ibm_container_addons" "existing_target_cluster_addons" {
+  count      = var.target_cluster_name_id != null ? 1 : 0
+  cluster    = var.target_cluster_name_id
+}
+
+locals {
+  existing_source_addons_map = var.source_cluster_name_id != null ? {
+    for addon in try(data.ibm_container_addons.existing_source_cluster_addons[0].addons, []) :
+    addon.name => addon.version
+  } : {}
+  merged_source_addons = var.source_cluster_name_id != null ? merge(
+    local.existing_source_addons_map,
+    { "vpc-block-csi-driver" = "5.2" }
+  ) : {}
+
+  existing_target_addons_map = var.target_cluster_name_id != null ? {
+    for addon in try(data.ibm_container_addons.existing_target_cluster_addons[0].addons, []) :
+    addon.name => addon.version
+  } : {}
+  merged_target_addons = var.target_cluster_name_id != null ? merge(
+    local.existing_target_addons_map,
+    { "vpc-block-csi-driver" = "5.2" }
+  ) : {}
+}
+
+resource "ibm_container_addons" "existing_source_cluster_addons_upgrade" {
+  count      = var.source_cluster_name_id != null ? 1 : 0
+  cluster    = var.source_cluster_name_id
+  depends_on = [data.ibm_container_addons.existing_source_cluster_addons]
+
+  dynamic "addons" {
+    for_each = local.merged_source_addons
+    content {
+      name    = addons.key
+      version = addons.value
+    }
+  }
+}
+
+resource "ibm_container_addons" "existing_target_cluster_addons_upgrade" {
+  count      = var.target_cluster_name_id != null ? 1 : 0
+  cluster    = var.target_cluster_name_id
+  depends_on = [data.ibm_container_addons.existing_target_cluster_addons]
+
+  dynamic "addons" {
+    for_each = local.merged_target_addons
+    content {
+      name    = addons.key
+      version = addons.value
+    }
+  }
+}
+
 ##############################################################################
 # Cluster kubeconfigs
 ##############################################################################
@@ -223,11 +313,17 @@ data "ibm_container_cluster_config" "target_cluster_config" {
   endpoint_type     = var.cluster_config_endpoint_type != "default" ? var.cluster_config_endpoint_type : null
 }
 
-# Brief pause after kubeconfig is available to let RBAC sync propagate
+# Brief pause after kubeconfig is available to let RBAC sync propagate.
+# Also waits for vpc-block-csi-driver addon upgrade on both clusters so the
+# DSC PVC provisioner is ready before the backup module starts.
 resource "time_sleep" "wait_clusters" {
   depends_on = [
     data.ibm_container_cluster_config.source_cluster_config,
     data.ibm_container_cluster_config.target_cluster_config,
+    ibm_container_addons.source_cluster_addons,
+    ibm_container_addons.target_cluster_addons,
+    ibm_container_addons.existing_source_cluster_addons_upgrade,
+    ibm_container_addons.existing_target_cluster_addons_upgrade,
   ]
   create_duration = "60s"
 }
@@ -567,10 +663,6 @@ locals {
 data "ibm_is_security_group" "source_kube_vpeg_sg" {
   name = "kube-vpegw-${local.source_vpc_id}"
 
-  # The kube-vpegw-<vpc-id> security group is created by IKS only after the
-  # cluster is fully provisioned.  Without this dependency Terraform starts
-  # polling the SG in parallel with cluster creation and fails because the SG
-  # does not exist yet.
   depends_on = [
     ibm_container_vpc_cluster.source_cluster,
   ]
@@ -579,14 +671,11 @@ data "ibm_is_security_group" "source_kube_vpeg_sg" {
 data "ibm_is_security_group" "target_kube_vpeg_sg" {
   name = "kube-vpegw-${local.target_vpc_id}"
 
-  # Same race condition as above — wait for the target cluster to be fully
-  # provisioned before polling for its kube-vpegw security group.
   depends_on = [
     ibm_container_vpc_cluster.target_cluster,
   ]
 }
 
-# Source VPE
 locals {
   source_vpe_subnets_list = values(local.source_vpe_subnets)
   target_vpe_subnets_list = values(local.target_vpe_subnets)
@@ -624,7 +713,6 @@ resource "ibm_is_virtual_endpoint_gateway_ip" "source_vpe" {
   reserved_ip = ibm_is_subnet_reserved_ip.source_vpe[count.index].reserved_ip
 }
 
-# Target VPE
 resource "ibm_is_subnet_reserved_ip" "target_vpe" {
   count = length(local.target_vpe_subnets_list)
 

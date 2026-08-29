@@ -108,6 +108,16 @@ resource "ibm_container_vpc_cluster" "vpc_cluster" {
   }
 }
 
+resource "ibm_container_addons" "vpc_cluster_addons" {
+  count      = var.cluster_name_id == null && !var.classic_cluster ? 1 : 0
+  cluster    = ibm_container_vpc_cluster.vpc_cluster[0].name
+  depends_on = [ibm_container_vpc_cluster.vpc_cluster]
+  addons {
+    name    = "vpc-block-csi-driver"
+    version = "5.2"
+  }
+}
+
 resource "ibm_container_cluster" "classic_cluster" {
   #checkov:skip=CKV2_IBM_7:Public endpoint is required for testing purposes
   count                = var.cluster_name_id == null && var.classic_cluster ? 1 : 0
@@ -142,6 +152,39 @@ data "ibm_container_cluster" "classic_cluster_data" {
   resource_group_id = module.resource_group.resource_group_id
 }
 
+# For existing VPC clusters: fetch current addons then upgrade vpc-block-csi-driver
+# to 5.2 while preserving all other installed addons unchanged.
+data "ibm_container_addons" "existing_cluster_addons" {
+  count   = var.cluster_name_id != null && !var.classic_cluster ? 1 : 0
+  cluster = var.cluster_name_id
+  depends_on = [data.ibm_container_vpc_cluster.vpc_cluster_data]
+}
+
+locals {
+  existing_addons_map = var.cluster_name_id != null && !var.classic_cluster ? {
+    for addon in try(data.ibm_container_addons.existing_cluster_addons[0].addons, []) :
+    addon.name => addon.version
+  } : {}
+  merged_addons = var.cluster_name_id != null && !var.classic_cluster ? merge(
+    local.existing_addons_map,
+    { "vpc-block-csi-driver" = "5.2" }
+  ) : {}
+}
+
+resource "ibm_container_addons" "existing_cluster_addons_upgrade" {
+  count   = var.cluster_name_id != null && !var.classic_cluster ? 1 : 0
+  cluster = var.cluster_name_id
+  depends_on = [data.ibm_container_addons.existing_cluster_addons]
+
+  dynamic "addons" {
+    for_each = local.merged_addons
+    content {
+      name    = addons.key
+      version = addons.value
+    }
+  }
+}
+
 data "ibm_container_cluster_config" "cluster_config" {
   cluster_name_id   = local.cluster_id
   resource_group_id = module.resource_group.resource_group_id
@@ -149,9 +192,14 @@ data "ibm_container_cluster_config" "cluster_config" {
   endpoint_type     = var.cluster_config_endpoint_type != "default" ? var.cluster_config_endpoint_type : null
 }
 
-# Sleep to allow RBAC sync on cluster
+# Sleep to allow RBAC sync on cluster and wait for addon upgrade to complete
+# so the vpc-block-csi-driver is fully ready before the backup module starts.
 resource "time_sleep" "wait_operators" {
-  depends_on      = [data.ibm_container_cluster_config.cluster_config]
+  depends_on = [
+    data.ibm_container_cluster_config.cluster_config,
+    ibm_container_addons.vpc_cluster_addons,
+    ibm_container_addons.existing_cluster_addons_upgrade,
+  ]
   create_duration = "60s"
 }
 

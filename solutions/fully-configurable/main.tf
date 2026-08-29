@@ -42,6 +42,55 @@ data "ibm_container_cluster_config" "cluster_config" {
   ]
 }
 
+##############################################################################
+# VPC Block CSI Driver Addon Upgrade (VPC clusters only, always-on)
+##############################################################################
+
+# Fetch the full list of currently installed addons on the source cluster.
+# Always runs for VPC clusters — vpc_block_csi_driver_version is non-nullable
+# so it always has a value (default "5.2"). Skipped for Classic clusters.
+data "ibm_container_addons" "source_cluster_addons" {
+  count    = local.is_vpc ? 1 : 0
+  provider = ibm.source_cluster
+  cluster  = var.source_cluster_id
+
+  depends_on = [data.ibm_container_vpc_cluster.vpc_cluster]
+}
+
+locals {
+  # Build a map of existing addons keyed by name, then override vpc-block-csi-driver
+  # with the target version.  All other addons are preserved as-is.
+  # When the addon is not yet installed, it is added fresh.
+  existing_addons_map = local.is_vpc ? {
+    for addon in try(data.ibm_container_addons.source_cluster_addons[0].addons, []) :
+    addon.name => addon.version
+  } : {}
+
+  merged_addons = local.is_vpc ? merge(
+    local.existing_addons_map,
+    { "vpc-block-csi-driver" = var.vpc_block_csi_driver_version }
+  ) : {}
+}
+
+# Re-declare all addons with vpc-block-csi-driver pinned to the target version.
+# ibm_container_addons manages the full addon set — all addons from the data
+# source are included so nothing is removed unintentionally.
+resource "ibm_container_addons" "source_cluster_addons" {
+  count    = local.is_vpc ? 1 : 0
+  provider = ibm.source_cluster
+  cluster  = var.source_cluster_id
+
+  dynamic "addons" {
+    for_each = local.merged_addons
+    content {
+      name    = addons.key
+      version = addons.value
+    }
+  }
+
+  depends_on = [data.ibm_container_addons.source_cluster_addons]
+}
+
 module "existing_brs_crn_parser" {
   count   = var.existing_brs_instance_crn != null ? 1 : 0
   source  = "terraform-ibm-modules/common-utilities/ibm//modules/crn-parser"
@@ -51,6 +100,17 @@ module "existing_brs_crn_parser" {
 
 locals {
   region = var.existing_brs_instance_crn != null ? module.existing_brs_crn_parser[0].region : var.region
+
+  # Cluster regions — mirror the provider.tf fallback chains so that VPC IS API
+  # calls (subnet lookups, security group, VPE gateway) target the right region.
+  # The VPC and BRS instance can be in different regions (e.g. cluster in br-sao,
+  # BRS in au-syd), so local.region (BRS region) must NOT be used for VPC calls.
+  source_cluster_region_resolved = var.source_cluster_region != null ? var.source_cluster_region : var.region
+  target_cluster_region_resolved = (
+    var.target_cluster_region != null ? var.target_cluster_region : (
+      var.source_cluster_region != null ? var.source_cluster_region : var.region
+    )
+  )
 }
 
 ##############################################################################
@@ -80,11 +140,6 @@ module "brs_instance" {
   endpoint_type             = var.brs_endpoint_type
   connection_env_type       = var.source_connection_env_type
   policies                  = var.policies
-}
-
-removed {
-  from = module.brs_instance.ibm_resource_instance.backup_recovery_instance
-  lifecycle { destroy = false }
 }
 
 # Stage 1: Source Cluster Infrastructure & DSC Helm Deployment (Source Account)
@@ -123,6 +178,10 @@ module "source_cluster_prep" {
 
   # Auth token passed from BRS connection so DSC Helm deployment can register
   brs_registration_token = module.brs_instance.registration_token
+
+  # Wait for addon upgrade to complete before DSC Helm install — the DSC PVC
+  # uses ibmc-vpc-block-metro-5iops-tier which requires the CSI driver to be ready.
+  depends_on = [ibm_container_addons.source_cluster_addons]
 }
 
 # Stage 2: Source Cluster BRS Registration, Protection Groups & Operations (BRS Account)
@@ -179,7 +238,10 @@ module "protect_cluster" {
   target_cluster_resource_group_id = var.target_cluster_resource_group_id
 
   depends_on = [
-    module.source_cluster_prep
+    module.source_cluster_prep,
+    # Ensure VPE gateway is created before registering the source cluster with BRS
+    # so that DSC↔BRS traffic can route over the IBM private backbone from the start.
+    terraform_data.brs_vpe,
   ]
 }
 
@@ -273,71 +335,55 @@ module "brs_s2s_auth" {
       source_resource_type        = "endpoint-gateway"
       source_service_account_id   = local.cluster_account_id
       target_service_name         = "backup-recovery"
-      target_resource_instance_id = module.protect_cluster.brs_instance_guid
+      # Use module.brs_instance directly to avoid a circular dependency:
+      # brs_s2s_auth → brs_vpe → protect_cluster requires that protect_cluster
+      # does NOT feed back into brs_s2s_auth. The value is identical because
+      # module.protect_cluster receives brs_instance_guid from module.brs_instance.
+      target_resource_instance_id = module.brs_instance.brs_instance_guid
       roles                       = ["Viewer"]
-      description                 = "Allow VPC endpoint-gateway in account ${local.cluster_account_id} to target BRS instance ${module.protect_cluster.brs_instance_guid}"
+      description                 = "Allow VPC endpoint-gateway in account ${local.cluster_account_id} to target BRS instance ${module.brs_instance.brs_instance_guid}"
     }
   }
 
-  depends_on = [module.protect_cluster]
+  # Depends on source_cluster_prep (not protect_cluster) so that the VPE can be
+  # created before protect_cluster runs source registration.
+  depends_on = [module.source_cluster_prep]
 }
 
-# VPE Gateway for source cluster — routes DSC↔BRS traffic over IBM private backbone.
-# Inlined to fix a destroy-ordering bug in the upstream vpe-gateway module: it destroys
-# ibm_is_virtual_endpoint_gateway before ibm_is_subnet_reserved_ip, causing IBM Cloud
-# to cascade-delete the reserved IPs with the gateway and leaving Terraform with 404
-# errors / orphaned state entries.
-# Fix: set auto_delete = false on reserved IPs and depend the gateway on them so
-# IBM Cloud never cascade-deletes them and Terraform cleans them up in the correct order.
+# VPE Gateway for source cluster — idempotent shell-based creation.
+# Uses ensure_vpe.sh so the gateway is never destroyed by terraform destroy.
 
 locals {
-  brs_vpe_subnets = local.brs_vpe_active ? local.resolved_vpc_subnets : []
+  brs_vpe_subnet_ids = local.brs_vpe_active ? join(",", [for s in local.resolved_vpc_subnets : s.id]) : ""
 }
 
-# 1. Reserved IPs — one per subnet, count-based (subnet IDs/names are unknown at plan
-#    time when auto-discovered; count is static from cluster_subnet_lookup_count).
-#    auto_delete = false prevents IBM Cloud from cascade-deleting them on gateway destroy.
-resource "ibm_is_subnet_reserved_ip" "brs_vpe" {
-  count    = length(local.brs_vpe_subnets)
-  provider = ibm.source_cluster
+resource "terraform_data" "brs_vpe" {
+  count = local.brs_vpe_active ? 1 : 0
 
-  subnet      = local.brs_vpe_subnets[count.index].id
-  name        = "${local.brs_vpe_name_resolved}-${replace(local.brs_vpe_subnets[count.index].zone, "${local.region}-", "")}"
-  auto_delete = false
-}
+  triggers_replace = {
+    vpe_name          = local.brs_vpe_name_resolved
+    vpc_id            = local.resolved_vpc_id
+    brs_instance_crn  = module.brs_instance.brs_instance_crn
+    resource_group_id = var.source_cluster_resource_group_id
+    # Use the cluster region (not local.region which is the BRS instance region).
+    # The VPC IS endpoint-gateway API must be called against the VPC's region.
+    region            = local.source_cluster_region_resolved
+    security_group_id = data.ibm_is_security_group.kube_vpeg_sg[0].id
+    subnet_ids        = local.brs_vpe_subnet_ids
+  }
 
-# 2. VPE Gateway.
-#    depends_on = [ibm_is_subnet_reserved_ip.brs_vpe] ensures on destroy Terraform
-#    tears down the gateway first, then the reserved IPs (which are already unbound
-#    and auto_delete=false so IBM Cloud won't touch them).
-resource "ibm_is_virtual_endpoint_gateway" "brs_vpe" {
-  count           = local.brs_vpe_active ? 1 : 0
-  provider        = ibm.source_cluster
-  name            = local.brs_vpe_name_resolved
-  vpc             = local.resolved_vpc_id
-  resource_group  = var.source_cluster_resource_group_id
-  security_groups = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
-  tags            = var.resource_tags
-  access_tags     = var.access_tags
-
-  target {
-    crn           = module.protect_cluster.brs_instance_crn
-    resource_type = "provider_cloud_service"
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = "${path.module}/../../scripts/ensure_vpe.sh '${self.triggers_replace.vpe_name}' '${self.triggers_replace.vpc_id}' '${self.triggers_replace.brs_instance_crn}' '${self.triggers_replace.resource_group_id}' '${self.triggers_replace.region}' '${self.triggers_replace.security_group_id}' '${self.triggers_replace.subnet_ids}'"
+    environment = {
+      IBMCLOUD_API_KEY = var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key # pragma: allowlist secret
+    }
   }
 
   depends_on = [
     module.brs_s2s_auth,
-    ibm_is_subnet_reserved_ip.brs_vpe,
+    data.ibm_is_security_group.kube_vpeg_sg,
   ]
-}
-
-# 3. Bind each reserved IP to the gateway.
-resource "ibm_is_virtual_endpoint_gateway_ip" "brs_vpe" {
-  count    = length(local.brs_vpe_subnets)
-  provider = ibm.source_cluster
-
-  gateway     = ibm_is_virtual_endpoint_gateway.brs_vpe[0].id
-  reserved_ip = ibm_is_subnet_reserved_ip.brs_vpe[count.index].reserved_ip
 }
 
 ##############################################################################
@@ -536,7 +582,7 @@ locals {
   target_is_vpc         = length(regexall("Vpc$", coalesce(var.target_connection_env_type, var.source_connection_env_type))) > 0
   target_brs_vpe_active = var.create_target_cluster_brs_vpe_gateway && local.target_is_vpc && local.deploy_target_cluster
 
-  target_brs_vpe_name_resolved = var.target_brs_vpe_name != null ? var.target_brs_vpe_name : "${lower(var.target_brs_connection_name != null ? var.target_brs_connection_name : "${var.target_cluster_id}-target-connection")}-vpe"
+  target_brs_vpe_name_resolved = var.target_brs_vpe_name != null ? var.target_brs_vpe_name : "${lower(var.target_brs_connection_name != null ? var.target_brs_connection_name : "${coalesce(var.target_cluster_id, "unknown")}-target-connection")}-vpe"
 
   # Subnet auto-discovery for target cluster (same pattern as source).
   target_cluster_subnet_ids = local.target_brs_vpe_active && length(var.target_vpc_subnets) == 0 ? distinct(flatten(
@@ -564,51 +610,40 @@ data "ibm_is_security_group" "target_kube_vpeg_sg" {
   name     = "kube-vpegw-${local.target_resolved_vpc_id}"
 }
 
-# VPE Gateway for target cluster — same inline pattern as source VPE above.
+# VPE Gateway for target cluster — idempotent shell-based creation.
+# Uses ensure_vpe.sh so the gateway is never destroyed by terraform destroy.
 
 locals {
-  target_brs_vpe_subnets = local.target_brs_vpe_active ? local.target_resolved_vpc_subnets : []
+  target_brs_vpe_subnet_ids = local.target_brs_vpe_active ? join(",", [for s in local.target_resolved_vpc_subnets : s.id]) : ""
 }
 
-# 1. Reserved IPs for target cluster VPE.
-resource "ibm_is_subnet_reserved_ip" "target_brs_vpe" {
-  count    = length(local.target_brs_vpe_subnets)
-  provider = ibm.target_cluster
+resource "terraform_data" "target_brs_vpe" {
+  count = local.target_brs_vpe_active ? 1 : 0
 
-  subnet      = local.target_brs_vpe_subnets[count.index].id
-  name        = "${local.target_brs_vpe_name_resolved}-${replace(local.target_brs_vpe_subnets[count.index].zone, "${var.target_cluster_region}-", "")}"
-  auto_delete = false
-}
+  triggers_replace = {
+    vpe_name          = local.target_brs_vpe_name_resolved
+    vpc_id            = local.target_resolved_vpc_id
+    brs_instance_crn  = module.protect_cluster.brs_instance_crn
+    resource_group_id = var.target_cluster_resource_group_id
+    # Use the resolved target cluster region (not var.target_cluster_region directly,
+    # which may be null — null would be passed literally to the shell script).
+    region            = local.target_cluster_region_resolved
+    security_group_id = data.ibm_is_security_group.target_kube_vpeg_sg[0].id
+    subnet_ids        = local.target_brs_vpe_subnet_ids
+  }
 
-# 2. VPE Gateway for target cluster.
-resource "ibm_is_virtual_endpoint_gateway" "target_brs_vpe" {
-  count           = local.target_brs_vpe_active ? 1 : 0
-  provider        = ibm.target_cluster
-  name            = local.target_brs_vpe_name_resolved
-  vpc             = local.target_resolved_vpc_id
-  resource_group  = var.target_cluster_resource_group_id
-  security_groups = [data.ibm_is_security_group.target_kube_vpeg_sg[0].id]
-  tags            = var.resource_tags
-  access_tags     = var.access_tags
-
-  target {
-    crn           = module.protect_cluster.brs_instance_crn
-    resource_type = "provider_cloud_service"
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = "${path.module}/../../scripts/ensure_vpe.sh '${self.triggers_replace.vpe_name}' '${self.triggers_replace.vpc_id}' '${self.triggers_replace.brs_instance_crn}' '${self.triggers_replace.resource_group_id}' '${self.triggers_replace.region}' '${self.triggers_replace.security_group_id}' '${self.triggers_replace.subnet_ids}'"
+    environment = {
+      IBMCLOUD_API_KEY = var.target_ibmcloud_api_key != null ? var.target_ibmcloud_api_key : (var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key) # pragma: allowlist secret
+    }
   }
 
   depends_on = [
     module.target_cluster_registration,
-    ibm_is_subnet_reserved_ip.target_brs_vpe,
+    data.ibm_is_security_group.target_kube_vpeg_sg,
   ]
-}
-
-# 3. Bind each reserved IP to the target gateway.
-resource "ibm_is_virtual_endpoint_gateway_ip" "target_brs_vpe" {
-  count    = length(local.target_brs_vpe_subnets)
-  provider = ibm.target_cluster
-
-  gateway     = ibm_is_virtual_endpoint_gateway.target_brs_vpe[0].id
-  reserved_ip = ibm_is_subnet_reserved_ip.target_brs_vpe[count.index].reserved_ip
 }
 
 # Wait for target registration to propagate
@@ -678,11 +713,6 @@ resource "terraform_data" "wait_for_backup" {
 # local_file.snapshot_id existed in older state. Silently detach from state
 # without any provider operations (the local provider has no delete API for
 # files that no longer exist on Schematics workers).
-removed {
-  from = local_file.snapshot_id
-  lifecycle { destroy = false }
-}
-
 # Stores the snapshot_id in Terraform state without any file() call at plan time.
 #
 # PROBLEM with file() in a resource attribute:
@@ -865,11 +895,6 @@ resource "terraform_data" "recovery_id" {
 # still exists.  Using `removed` with destroy=false causes Terraform to
 # silently drop the state entry without calling the provider at all.
 # BRS rejects DELETE on recovery records anyway (immutable audit history).
-removed {
-  from = ibm_backup_recovery.recovery
-  lifecycle { destroy = false }
-}
-
 ##############################################################################
 # Wait for Recovery Completion
 ##############################################################################
