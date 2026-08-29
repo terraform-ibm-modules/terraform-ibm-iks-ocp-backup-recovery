@@ -155,8 +155,8 @@ data "ibm_container_cluster" "classic_cluster_data" {
 # For existing VPC clusters: fetch current addons then upgrade vpc-block-csi-driver
 # to 5.2 while preserving all other installed addons unchanged.
 data "ibm_container_addons" "existing_cluster_addons" {
-  count   = var.cluster_name_id != null && !var.classic_cluster ? 1 : 0
-  cluster = var.cluster_name_id
+  count      = var.cluster_name_id != null && !var.classic_cluster ? 1 : 0
+  cluster    = var.cluster_name_id
   depends_on = [data.ibm_container_vpc_cluster.vpc_cluster_data]
 }
 
@@ -172,8 +172,8 @@ locals {
 }
 
 resource "ibm_container_addons" "existing_cluster_addons_upgrade" {
-  count   = var.cluster_name_id != null && !var.classic_cluster ? 1 : 0
-  cluster = var.cluster_name_id
+  count      = var.cluster_name_id != null && !var.classic_cluster ? 1 : 0
+  cluster    = var.cluster_name_id
   depends_on = [data.ibm_container_addons.existing_cluster_addons]
 
   dynamic "addons" {

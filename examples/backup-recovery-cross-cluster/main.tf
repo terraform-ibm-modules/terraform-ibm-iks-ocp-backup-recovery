@@ -238,13 +238,13 @@ resource "ibm_container_addons" "target_cluster_addons" {
 # For existing source cluster: fetch current addons then upgrade vpc-block-csi-driver
 # to 5.2 while preserving all other installed addons unchanged.
 data "ibm_container_addons" "existing_source_cluster_addons" {
-  count      = var.source_cluster_name_id != null ? 1 : 0
-  cluster    = var.source_cluster_name_id
+  count   = var.source_cluster_name_id != null ? 1 : 0
+  cluster = var.source_cluster_name_id
 }
 
 data "ibm_container_addons" "existing_target_cluster_addons" {
-  count      = var.target_cluster_name_id != null ? 1 : 0
-  cluster    = var.target_cluster_name_id
+  count   = var.target_cluster_name_id != null ? 1 : 0
+  cluster = var.target_cluster_name_id
 }
 
 locals {

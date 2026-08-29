@@ -331,10 +331,10 @@ module "brs_s2s_auth" {
 
   service_map = {
     "brs-vpe-source-to-brs-target" = {
-      source_service_name         = "is"
-      source_resource_type        = "endpoint-gateway"
-      source_service_account_id   = local.cluster_account_id
-      target_service_name         = "backup-recovery"
+      source_service_name       = "is"
+      source_resource_type      = "endpoint-gateway"
+      source_service_account_id = local.cluster_account_id
+      target_service_name       = "backup-recovery"
       # Use module.brs_instance directly to avoid a circular dependency:
       # brs_s2s_auth → brs_vpe → protect_cluster requires that protect_cluster
       # does NOT feed back into brs_s2s_auth. The value is identical because
