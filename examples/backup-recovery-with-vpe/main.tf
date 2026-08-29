@@ -119,6 +119,12 @@ resource "ibm_container_addons" "vpc_cluster_addons" {
     name    = "vpc-block-csi-driver"
     version = "5.2"
   }
+  lifecycle {
+    # The IBM IKS API returns additional system-managed addons (e.g. kube-audit-webhook,
+    # vpc-file-csi-driver) that are not declared here. Ignoring these fields prevents
+    # the consistency check from detecting a perpetual update diff after first apply.
+    ignore_changes = [addons, managed_addons]
+  }
 }
 
 ##############################################################################

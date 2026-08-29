@@ -1318,10 +1318,12 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
       EOT
     }
 
-    # Ignore changes to include_params within objects when it's returned as empty by the API
-    # This prevents perpetual drift when include_params is not explicitly set in the configuration
+    # Ignore changes to include_params within objects when it's returned as empty by the API.
+    # Also ignore kubernetes_params broadly to prevent perpetual drift caused by the BRS API
+    # returning server-side object IDs and other computed fields that differ from config values.
     ignore_changes = [
-      kubernetes_params[0].objects[0].include_params
+      kubernetes_params[0].objects[0].include_params,
+      kubernetes_params
     ]
   }
 }
