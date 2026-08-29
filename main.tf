@@ -206,8 +206,8 @@ resource "ibm_container_vpc_worker_pool" "data_source_connector" {
   resource_group_id = var.cluster_resource_group_id
 
   zones {
-    name      = local.zones_list[count.index].name
-    subnet_id = local.zones_list[count.index].subnet_id
+    name      = local.zones_list[min(count.index, length(local.zones_list) - 1)].name
+    subnet_id = local.zones_list[min(count.index, length(local.zones_list) - 1)].subnet_id
   }
 
   labels = {
