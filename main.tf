@@ -219,6 +219,13 @@ resource "ibm_container_vpc_worker_pool" "data_source_connector" {
     value  = "data-source-connector"
     effect = "NoSchedule"
   }
+
+  lifecycle {
+    # The IBM IKS API returns the zones block with computed subnet_id/name values
+    # that differ from config after apply, causing a forced replace on every plan.
+    # Ignoring zones prevents this perpetual destroy+recreate cycle.
+    ignore_changes = [zones]
+  }
 }
 
 # Classic clusters — one pool per zone (mirrors VPC), each with its own

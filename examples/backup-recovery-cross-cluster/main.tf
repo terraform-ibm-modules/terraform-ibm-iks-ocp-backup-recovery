@@ -190,6 +190,11 @@ resource "ibm_container_addons" "source_cluster_addons" {
     name    = "vpc-block-csi-driver"
     version = "5.2"
   }
+  lifecycle {
+    # The IBM IKS API returns additional system-managed addons that are not declared
+    # here. Ignoring these fields prevents perpetual update diffs after first apply.
+    ignore_changes = [addons, managed_addons]
+  }
 }
 
 ##############################################################################
@@ -228,6 +233,11 @@ resource "ibm_container_addons" "target_cluster_addons" {
   addons {
     name    = "vpc-block-csi-driver"
     version = "5.2"
+  }
+  lifecycle {
+    # The IBM IKS API returns additional system-managed addons that are not declared
+    # here. Ignoring these fields prevents perpetual update diffs after first apply.
+    ignore_changes = [addons, managed_addons]
   }
 }
 
