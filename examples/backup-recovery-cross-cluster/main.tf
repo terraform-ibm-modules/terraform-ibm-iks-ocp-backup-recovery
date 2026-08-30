@@ -8,18 +8,19 @@
 # Both clusters live in the same account but in separate VPCs so that each
 # gets its own VPE Gateway bound to the BRS instance.
 #
-#   SOURCE cluster  (ibm / ibm.cluster = ibm)
+#   SOURCE cluster  (ibm / ibm.source_cluster = ibm)
 #     - IKS VPC cluster  (created or existing)
 #     - VPC + subnet + public gateway  (created when source_cluster_name_id = null)
-#     - VPE Gateway bound to source VPC  (create_brs_vpe = true)
+#     - VPE Gateway bound to source VPC  (create_source_cluster_brs_vpe_gateway = true)
 #
-#   TARGET cluster  (ibm / ibm.cluster = ibm)
+#   TARGET cluster  (ibm / ibm.source_cluster = ibm)
 #     - IKS VPC cluster  (created or existing)
 #     - VPC + subnet + public gateway  (created when target_cluster_name_id = null)
-#     - VPE Gateway bound to target VPC  (create_brs_vpe = true)
+#     - VPE Gateway bound to target VPC  (create_source_cluster_brs_vpe_gateway = true)
 #
-# The BRS instance is created once (by module.source_backup_recovery) and
-# reused by module.target_backup_recovery via create_new_brs_instance = false.
+# The BRS instance is created once (by module.brs_instance) and shared between
+# module.source_backup_recovery and module.target_backup_recovery.
+# Each cluster gets its own data-source connection (module.brs_target_connection).
 #
 # Apply order (enforced by the module's internal dependency graph)
 # -----------------------------------------------------------------------
@@ -38,6 +39,11 @@
 ##############################################################################
 
 locals {
+  # When an existing BRS CRN is provided, derive its region from field [5] of the CRN
+  # (e.g. "crn:v1:bluemix:public:backup-recovery:au-syd:...") so the registry module's
+  # region/CRN validation always passes regardless of what var.region is set to.
+  brs_region = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? element(split(":", var.existing_brs_instance_crn), 5) : var.region
+
   source_cluster_id = var.source_cluster_name_id != null ? var.source_cluster_name_id : ibm_container_vpc_cluster.source_cluster[0].id
   target_cluster_id = var.target_cluster_name_id != null ? var.target_cluster_name_id : ibm_container_vpc_cluster.target_cluster[0].id
 
@@ -173,6 +179,24 @@ resource "ibm_container_vpc_cluster" "source_cluster" {
   }
 }
 
+# Install / upgrade vpc-block-csi-driver to 5.2 on the source cluster immediately
+# after it is created. Must complete before backup module runs.
+resource "ibm_container_addons" "source_cluster_addons" {
+  count      = var.source_cluster_name_id == null ? 1 : 0
+  cluster    = ibm_container_vpc_cluster.source_cluster[0].name
+  depends_on = [ibm_container_vpc_cluster.source_cluster]
+
+  addons {
+    name    = "vpc-block-csi-driver"
+    version = "5.2"
+  }
+  lifecycle {
+    # The IBM IKS API returns additional system-managed addons that are not declared
+    # here. Ignoring these fields prevents perpetual update diffs after first apply.
+    ignore_changes = [addons, managed_addons]
+  }
+}
+
 ##############################################################################
 # Target IKS cluster  (created when target_cluster_name_id = null)
 ##############################################################################
@@ -199,6 +223,88 @@ resource "ibm_container_vpc_cluster" "target_cluster" {
   }
 }
 
+# Install / upgrade vpc-block-csi-driver to 5.2 on the target cluster immediately
+# after it is created. Must complete before recovery module runs.
+resource "ibm_container_addons" "target_cluster_addons" {
+  count      = var.target_cluster_name_id == null ? 1 : 0
+  cluster    = ibm_container_vpc_cluster.target_cluster[0].name
+  depends_on = [ibm_container_vpc_cluster.target_cluster]
+
+  addons {
+    name    = "vpc-block-csi-driver"
+    version = "5.2"
+  }
+  lifecycle {
+    # The IBM IKS API returns additional system-managed addons that are not declared
+    # here. Ignoring these fields prevents perpetual update diffs after first apply.
+    ignore_changes = [addons, managed_addons]
+  }
+}
+
+##############################################################################
+# Existing cluster addon upgrade (only when existing clusters are provided)
+##############################################################################
+
+# For existing source cluster: fetch current addons then upgrade vpc-block-csi-driver
+# to 5.2 while preserving all other installed addons unchanged.
+data "ibm_container_addons" "existing_source_cluster_addons" {
+  count   = var.source_cluster_name_id != null ? 1 : 0
+  cluster = var.source_cluster_name_id
+}
+
+data "ibm_container_addons" "existing_target_cluster_addons" {
+  count   = var.target_cluster_name_id != null ? 1 : 0
+  cluster = var.target_cluster_name_id
+}
+
+locals {
+  existing_source_addons_map = var.source_cluster_name_id != null ? {
+    for addon in try(data.ibm_container_addons.existing_source_cluster_addons[0].addons, []) :
+    addon.name => addon.version
+  } : {}
+  merged_source_addons = var.source_cluster_name_id != null ? merge(
+    local.existing_source_addons_map,
+    { "vpc-block-csi-driver" = "5.2" }
+  ) : {}
+
+  existing_target_addons_map = var.target_cluster_name_id != null ? {
+    for addon in try(data.ibm_container_addons.existing_target_cluster_addons[0].addons, []) :
+    addon.name => addon.version
+  } : {}
+  merged_target_addons = var.target_cluster_name_id != null ? merge(
+    local.existing_target_addons_map,
+    { "vpc-block-csi-driver" = "5.2" }
+  ) : {}
+}
+
+resource "ibm_container_addons" "existing_source_cluster_addons_upgrade" {
+  count      = var.source_cluster_name_id != null ? 1 : 0
+  cluster    = var.source_cluster_name_id
+  depends_on = [data.ibm_container_addons.existing_source_cluster_addons]
+
+  dynamic "addons" {
+    for_each = local.merged_source_addons
+    content {
+      name    = addons.key
+      version = addons.value
+    }
+  }
+}
+
+resource "ibm_container_addons" "existing_target_cluster_addons_upgrade" {
+  count      = var.target_cluster_name_id != null ? 1 : 0
+  cluster    = var.target_cluster_name_id
+  depends_on = [data.ibm_container_addons.existing_target_cluster_addons]
+
+  dynamic "addons" {
+    for_each = local.merged_target_addons
+    content {
+      name    = addons.key
+      version = addons.value
+    }
+  }
+}
+
 ##############################################################################
 # Cluster kubeconfigs
 ##############################################################################
@@ -217,11 +323,17 @@ data "ibm_container_cluster_config" "target_cluster_config" {
   endpoint_type     = var.cluster_config_endpoint_type != "default" ? var.cluster_config_endpoint_type : null
 }
 
-# Brief pause after kubeconfig is available to let RBAC sync propagate
+# Brief pause after kubeconfig is available to let RBAC sync propagate.
+# Also waits for vpc-block-csi-driver addon upgrade on both clusters so the
+# DSC PVC provisioner is ready before the backup module starts.
 resource "time_sleep" "wait_clusters" {
   depends_on = [
     data.ibm_container_cluster_config.source_cluster_config,
     data.ibm_container_cluster_config.target_cluster_config,
+    ibm_container_addons.source_cluster_addons,
+    ibm_container_addons.target_cluster_addons,
+    ibm_container_addons.existing_source_cluster_addons_upgrade,
+    ibm_container_addons.existing_target_cluster_addons_upgrade,
   ]
   create_duration = "60s"
 }
@@ -367,56 +479,28 @@ resource "terraform_data" "wait_for_source_workload" {
 }
 
 ##############################################################################
-# Source cluster — BRS backup & recovery module
-#
-# ibm         = ibm   → BRS instance, connection, policies live in this account
-# ibm.cluster = ibm   → cluster data sources, DSC worker pool, VPEG (same account)
-#
-# create_brs_vpe = true → VPEG created in source VPC so DSC→BRS traffic stays
-#                         on the IBM private backbone instead of the public internet.
-# vpc_id / vpc_subnets  → supplied explicitly: cluster created in same apply so
-#                         auto-discovery from worker pools would be unknown at plan time.
+# BRS Instance (owned by this example — shared by source and target clusters)
 ##############################################################################
 
-module "source_backup_recovery" {
-  source = "../.."
+module "brs_instance" {
+  source  = "terraform-ibm-modules/backup-recovery/ibm"
+  version = "1.12.3"
   providers = {
-    ibm         = ibm
-    ibm.cluster = ibm
-    helm        = helm.source
-    kubernetes  = kubernetes.source
+    ibm = ibm
   }
 
-  # ---- Cluster ----
-  cluster_id                   = local.source_cluster_id
-  cluster_resource_group_id    = module.resource_group.resource_group_id
-  cluster_config_endpoint_type = var.cluster_config_endpoint_type
-  add_dsc_rules_to_cluster_sg  = false
-  kube_type                    = "kubernetes"
-  connection_env_type          = "kIksVpc"
-  ibmcloud_api_key             = var.ibmcloud_api_key
-  region                       = var.region
-  dsc_storage_class            = "ibmc-vpc-block-metro-5iops-tier"
-  dsc_worker_pool_zones        = 1
-  enable_auto_protect          = false
-
-  # ---- BRS instance ----
-  existing_brs_instance_crn = var.existing_brs_instance_crn
-  brs_instance_name         = "${var.prefix}-brs-instance"
-  brs_connection_name       = var.source_connection_name != null ? var.source_connection_name : "${var.prefix}-source-connection"
-  brs_create_new_connection = var.brs_create_new_connection
-
-  # Use public endpoint so Terraform (CI/workstation) can reach the BRS API.
-  # DSC traffic routes privately via the VPE Gateway.
-  brs_endpoint_type = "public"
-
-  # ---- VPE Gateway (source VPC) ----
-  create_brs_vpe = true
-  brs_vpe_name   = "${var.prefix}-source-vpe"
-  vpc_id         = local.source_vpc_id
-  vpc_subnets    = local.source_vpc_subnets
-
-  # ---- Backup policy ----
+  region                    = local.brs_region
+  resource_group_id         = module.resource_group.resource_group_id
+  ibmcloud_api_key          = var.ibmcloud_api_key
+  instance_name             = "${var.prefix}-brs-instance"
+  existing_brs_instance_crn = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : null
+  create_new_instance       = var.existing_brs_instance_crn == null
+  connection_name           = var.source_connection_name != null ? var.source_connection_name : "${var.prefix}-source-connection"
+  create_new_connection     = var.brs_create_new_connection
+  resource_tags             = var.resource_tags
+  access_tags               = var.access_tags
+  endpoint_type             = "public"
+  connection_env_type       = "kIksVpc"
   policies = [{
     name              = "${var.prefix}-continuous-backup"
     create_new_policy = true
@@ -431,6 +515,69 @@ module "source_backup_recovery" {
       duration = 1
     }
   }]
+}
+
+##############################################################################
+# Target cluster BRS connection (reuses the same BRS instance)
+##############################################################################
+
+module "brs_target_connection" {
+  source  = "terraform-ibm-modules/backup-recovery/ibm"
+  version = "1.12.3"
+  providers = {
+    ibm = ibm
+  }
+
+  region                    = local.brs_region
+  resource_group_id         = module.resource_group.resource_group_id
+  ibmcloud_api_key          = var.ibmcloud_api_key
+  instance_name             = "${var.prefix}-brs-instance"
+  existing_brs_instance_crn = module.brs_instance.brs_instance_crn
+  create_new_instance       = false
+  connection_name           = var.target_connection_name != null ? var.target_connection_name : "${var.prefix}-target-connection"
+  create_new_connection     = var.brs_create_new_connection
+  resource_tags             = var.resource_tags
+  access_tags               = var.access_tags
+  endpoint_type             = "public"
+  connection_env_type       = "kIksVpc"
+  policies                  = []
+}
+
+##############################################################################
+# Source cluster — BRS backup & recovery module
+##############################################################################
+
+module "source_backup_recovery" {
+  source = "../.."
+  providers = {
+    ibm        = ibm
+    helm       = helm.source
+    kubernetes = kubernetes.source
+  }
+
+  # ---- Cluster ----
+  cluster_id                   = local.source_cluster_id
+  cluster_resource_group_id    = module.resource_group.resource_group_id
+  cluster_config_endpoint_type = var.cluster_config_endpoint_type
+  kube_type                    = "kubernetes"
+  connection_env_type          = "kIksVpc"
+  ibmcloud_api_key             = var.ibmcloud_api_key
+  dsc_storage_class            = "ibmc-vpc-block-metro-5iops-tier"
+  dsc_worker_pool_zones        = 1
+  enable_auto_protect          = false
+
+  # ---- BRS prerequisite inputs (from module.brs_instance) ----
+  # Use public endpoint so Terraform (CI/workstation) can reach the BRS API.
+  # DSC traffic routes privately via the source VPE Gateway created below.
+  brs_endpoint_type        = "public"
+  brs_tenant_id            = module.brs_instance.tenant_id
+  brs_connection_id        = module.brs_instance.connection_id
+  brs_registration_token   = module.brs_instance.registration_token
+  brs_instance_guid        = module.brs_instance.brs_instance_guid
+  brs_instance_crn         = module.brs_instance.brs_instance_crn
+  brs_instance_public_url  = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.public"])
+  brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
+  resolved_policy_ids      = module.brs_instance.resolved_policy_ids
 
   # ---- Protection group ----
   protection_groups = [{
@@ -439,7 +586,12 @@ module "source_backup_recovery" {
     description = "Backup source cluster workloads"
     priority    = "kHigh"
 
-    enable_indexing       = true
+    enable_indexing = true
+    # CSI snapshot mode requires a VolumeSnapshotClass with driver=vpc.block.csi.ibm.io
+    # to be present in the cluster before the backup runs.  If the VolumeSnapshotClass
+    # is absent the snapshot stays Pending and BRS times out with kTimeout.
+    # The resource "kubernetes_manifest" "source_vpc_block_snapshot_class" below creates
+    # that class; both levers must be set to true together for CSI snapshots to work.
     leverage_csi_snapshot = true
     non_snapshot_backup   = false
     volume_backup_failure = false
@@ -457,68 +609,151 @@ module "source_backup_recovery" {
   target_cluster_id                = local.target_cluster_id
   target_cluster_resource_group_id = module.resource_group.resource_group_id
   recoveries                       = []
-
-  resource_tags = var.resource_tags
-  access_tags   = var.access_tags
 }
 
 ##############################################################################
 # Target cluster — BRS backup & recovery module
-#
-# Reuses the same BRS instance created by module.source_backup_recovery.
-# create_new_brs_instance = false tells the root module at plan time that no
-# new BRS instance should be provisioned even though the source CRN is
-# post-apply unknown when var.existing_brs_instance_crn is null.
-#
-# create_brs_vpe = true → VPEG created in the target VPC (separate from the
-#                         source VPE) so target DSC traffic also stays private.
+# Reuses the same BRS instance; uses the target connection from module.brs_target_connection.
 ##############################################################################
 
 module "target_backup_recovery" {
   source = "../.."
   providers = {
-    ibm         = ibm
-    ibm.cluster = ibm
-    helm        = helm.target
-    kubernetes  = kubernetes.target
+    ibm        = ibm
+    helm       = helm.target
+    kubernetes = kubernetes.target
   }
+
+  # Serialise the two DSC Helm deployments so they do not race to download
+  # the OpenAPI schema from their respective (freshly created) cluster API
+  # servers at the same time.  The source module must fully complete before
+  # the target provider attempts its own schema fetch.
+  depends_on = [module.source_backup_recovery]
 
   # ---- Cluster ----
   cluster_id                   = local.target_cluster_id
   cluster_resource_group_id    = module.resource_group.resource_group_id
   cluster_config_endpoint_type = var.cluster_config_endpoint_type
-  add_dsc_rules_to_cluster_sg  = false
   kube_type                    = "kubernetes"
   connection_env_type          = "kIksVpc"
   ibmcloud_api_key             = var.ibmcloud_api_key
-  region                       = var.region
   dsc_storage_class            = "ibmc-vpc-block-metro-5iops-tier"
   dsc_worker_pool_zones        = 1
   enable_auto_protect          = false
 
-  # ---- BRS instance (reuse source instance) ----
-  # existing_brs_instance_crn references the source module output when no
-  # pre-existing CRN is provided; create_new_brs_instance = false ensures
-  # Terraform does not try to create a second instance at plan time.
-  existing_brs_instance_crn = var.existing_brs_instance_crn != null ? var.existing_brs_instance_crn : module.source_backup_recovery.brs_instance_crn
-  create_new_brs_instance   = false
-  brs_connection_name       = var.target_connection_name != null ? var.target_connection_name : "${var.prefix}-target-connection"
-  brs_create_new_connection = var.brs_create_new_connection
-  brs_endpoint_type         = "public"
-
-  # ---- VPE Gateway (target VPC) ----
-  create_brs_vpe = true
-  brs_vpe_name   = "${var.prefix}-target-vpe"
-  vpc_id         = local.target_vpc_id
-  vpc_subnets    = local.target_vpc_subnets
+  # ---- BRS prerequisite inputs (from module.brs_target_connection — same BRS instance, target connection) ----
+  brs_endpoint_type        = "public"
+  brs_tenant_id            = module.brs_target_connection.tenant_id
+  brs_connection_id        = module.brs_target_connection.connection_id
+  brs_registration_token   = module.brs_target_connection.registration_token
+  brs_instance_guid        = module.brs_instance.brs_instance_guid
+  brs_instance_crn         = module.brs_instance.brs_instance_crn
+  brs_instance_public_url  = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.public"])
+  brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
+  resolved_policy_ids      = module.brs_instance.resolved_policy_ids
 
   # Target cluster is a recovery destination only — no policies or protection groups
-  policies          = []
   protection_groups = []
   recoveries        = []
+}
 
-  resource_tags = var.resource_tags
-  access_tags   = var.access_tags
+##############################################################################
+# VPE Gateways — one per cluster VPC
+# Routes DSC↔BRS traffic over the IBM private backbone for both clusters.
+##############################################################################
+
+locals {
+  source_vpe_name    = "${var.prefix}-source-vpe"
+  target_vpe_name    = "${var.prefix}-target-vpe"
+  source_vpe_subnets = { for s in local.source_vpc_subnets : s.zone => s }
+  target_vpe_subnets = { for s in local.target_vpc_subnets : s.zone => s }
+  brs_instance_crn   = module.brs_instance.brs_instance_crn
+}
+
+data "ibm_is_security_group" "source_kube_vpeg_sg" {
+  name = "kube-vpegw-${local.source_vpc_id}"
+
+  depends_on = [
+    ibm_container_vpc_cluster.source_cluster,
+  ]
+}
+
+data "ibm_is_security_group" "target_kube_vpeg_sg" {
+  name = "kube-vpegw-${local.target_vpc_id}"
+
+  depends_on = [
+    ibm_container_vpc_cluster.target_cluster,
+  ]
+}
+
+locals {
+  source_vpe_subnets_list = values(local.source_vpe_subnets)
+  target_vpe_subnets_list = values(local.target_vpe_subnets)
+}
+
+resource "ibm_is_subnet_reserved_ip" "source_vpe" {
+  count = length(local.source_vpe_subnets_list)
+
+  subnet      = local.source_vpe_subnets_list[count.index].id
+  name        = "${local.source_vpe_name}-${replace(local.source_vpe_subnets_list[count.index].zone, "${var.region}-", "")}"
+  auto_delete = false
+}
+
+resource "ibm_is_virtual_endpoint_gateway" "source_vpe" {
+  name            = local.source_vpe_name
+  vpc             = local.source_vpc_id
+  resource_group  = module.resource_group.resource_group_id
+  security_groups = [data.ibm_is_security_group.source_kube_vpeg_sg.id]
+
+  target {
+    crn           = local.brs_instance_crn
+    resource_type = "provider_cloud_service"
+  }
+
+  depends_on = [
+    module.source_backup_recovery,
+    ibm_is_subnet_reserved_ip.source_vpe,
+  ]
+}
+
+resource "ibm_is_virtual_endpoint_gateway_ip" "source_vpe" {
+  count = length(local.source_vpe_subnets_list)
+
+  gateway     = ibm_is_virtual_endpoint_gateway.source_vpe.id
+  reserved_ip = ibm_is_subnet_reserved_ip.source_vpe[count.index].reserved_ip
+}
+
+resource "ibm_is_subnet_reserved_ip" "target_vpe" {
+  count = length(local.target_vpe_subnets_list)
+
+  subnet      = local.target_vpe_subnets_list[count.index].id
+  name        = "${local.target_vpe_name}-${replace(local.target_vpe_subnets_list[count.index].zone, "${var.region}-", "")}"
+  auto_delete = false
+}
+
+resource "ibm_is_virtual_endpoint_gateway" "target_vpe" {
+  name            = local.target_vpe_name
+  vpc             = local.target_vpc_id
+  resource_group  = module.resource_group.resource_group_id
+  security_groups = [data.ibm_is_security_group.target_kube_vpeg_sg.id]
+
+  target {
+    crn           = local.brs_instance_crn
+    resource_type = "provider_cloud_service"
+  }
+
+  depends_on = [
+    module.source_backup_recovery,
+    module.target_backup_recovery,
+    ibm_is_subnet_reserved_ip.target_vpe,
+  ]
+}
+
+resource "ibm_is_virtual_endpoint_gateway_ip" "target_vpe" {
+  count = length(local.target_vpe_subnets_list)
+
+  gateway     = ibm_is_virtual_endpoint_gateway.target_vpe.id
+  reserved_ip = ibm_is_subnet_reserved_ip.target_vpe[count.index].reserved_ip
 }
 
 ##############################################################################
@@ -543,10 +778,10 @@ resource "terraform_data" "wait_for_source_backup" {
   ]
 
   input = {
-    url                   = "https://${module.source_backup_recovery.brs_instance_guid}.${var.region}.backup-recovery.cloud.ibm.com"
-    tenant                = module.source_backup_recovery.brs_tenant_id
+    url                   = "https://${module.brs_instance.brs_instance_guid}.${local.brs_region}.backup-recovery.cloud.ibm.com"
+    tenant                = module.brs_instance.tenant_id
     endpoint_type         = "public"
-    instance_id           = module.source_backup_recovery.brs_instance_guid
+    instance_id           = module.brs_instance.brs_instance_guid
     protection_group_id   = module.source_backup_recovery.protection_group_ids["${var.prefix}-source-pg"]
     api_key               = sensitive(var.ibmcloud_api_key)
     timeout_minutes       = 45
@@ -566,7 +801,7 @@ resource "terraform_data" "wait_for_source_backup" {
 data "local_file" "snapshot_info" {
   count = var.enable_recovery ? 1 : 0
 
-  filename   = "/tmp/backup_snapshot_${module.source_backup_recovery.brs_instance_guid}.json"
+  filename   = "/tmp/backup_snapshot_${module.brs_instance.brs_instance_guid}.json"
   depends_on = [terraform_data.wait_for_source_backup]
 }
 
@@ -575,10 +810,10 @@ resource "terraform_data" "cross_cluster_recovery" {
   count = var.enable_recovery ? 1 : 0
 
   input = {
-    url              = "https://${module.source_backup_recovery.brs_instance_guid}.${var.region}.backup-recovery.cloud.ibm.com"
-    tenant           = module.source_backup_recovery.brs_tenant_id
+    url              = "https://${module.brs_instance.brs_instance_guid}.${local.brs_region}.backup-recovery.cloud.ibm.com"
+    tenant           = module.brs_instance.tenant_id
     endpoint_type    = "public"
-    instance_id      = module.source_backup_recovery.brs_instance_guid
+    instance_id      = module.brs_instance.brs_instance_guid
     source_pg_id     = split("::", module.source_backup_recovery.protection_group_ids["${var.prefix}-source-pg"])[1]
     target_source_id = split("::", module.target_backup_recovery.source_registration_id)[1]
     snapshot_id      = local.snapshot_data.snapshot_id

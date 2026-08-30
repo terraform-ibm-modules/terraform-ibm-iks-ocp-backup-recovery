@@ -1,287 +1,126 @@
 ##############################################################################
-# Locals
+# Locals — Execution Stage & Phase Control
 ##############################################################################
 
 locals {
-  # --- Environment type detection ---
+  # Resolved execution flags based on execution_stage profile
+  stage_cluster_infra_prep  = var.execution_stage == "all" || var.execution_stage == "cluster_prep" ? true : (var.execution_stage == "custom" ? var.enable_cluster_infra_prep : false)
+  stage_dsc_helm_deployment = var.execution_stage == "all" || var.execution_stage == "cluster_prep" ? true : (var.execution_stage == "custom" ? var.enable_dsc_helm_deployment : false)
+  stage_brs_registration    = var.execution_stage == "all" || var.execution_stage == "brs_management" ? true : (var.execution_stage == "custom" ? var.enable_brs_registration : false)
+  stage_protection_groups   = var.execution_stage == "all" || var.execution_stage == "brs_management" ? true : (var.execution_stage == "custom" ? var.enable_protection_groups : false)
+  stage_backup_and_recovery = var.execution_stage == "all" || var.execution_stage == "brs_management" ? true : (var.execution_stage == "custom" ? var.enable_backup_and_recovery : false)
+}
+
+
+##############################################################################
+# Locals — Environment & Cluster
+##############################################################################
+
+locals {
+  # Environment type detection — derived from connection_env_type suffix.
   is_vpc     = length(regexall("Vpc$", var.connection_env_type)) > 0
   is_classic = length(regexall("Classic$", var.connection_env_type)) > 0
 
-  # --- Cross-account detection ---
-  # S2S IAM authorization policy is only required when the VPEG (source account)
-  # and the BRS instance (target account) live in DIFFERENT IBM Cloud accounts.
-  # Both account IDs are auto-derived from IAM JWT tokens — no extra roles required.
-  # Cross-account detection compares the two provider tokens directly.
-  #
-  # Decode the target account ID from the IAM JWT.
-  tgt_jwt_payload_raw = split(".", data.ibm_iam_auth_token.target_account.iam_access_token)[1]
-  tgt_jwt_payload_padded = format("%s%s",
-    local.tgt_jwt_payload_raw,
-    substr("====", 0, (4 - (length(local.tgt_jwt_payload_raw) % 4)) % 4)
-  )
-  target_account_id = jsondecode(
-    base64decode(
-      replace(replace(local.tgt_jwt_payload_padded, "-", "+"), "_", "/")
-    )
-  ).account.bss
-
-  # Decode the source account ID from the ibm.cluster provider token.
-  src_jwt_payload_raw = split(".", data.ibm_iam_auth_token.source_account.iam_access_token)[1]
-  src_jwt_payload_padded = format("%s%s",
-    local.src_jwt_payload_raw,
-    substr("====", 0, (4 - (length(local.src_jwt_payload_raw) % 4)) % 4)
-  )
-  source_account_id = jsondecode(
-    base64decode(
-      replace(replace(local.src_jwt_payload_padded, "-", "+"), "_", "/")
-    )
-  ).account.bss
-
-  is_cross_account = (
-    var.create_brs_vpe &&
-    local.source_account_id != local.target_account_id
-  )
-
-  # --- Deployment mode flags ---
+  # Deployment mode flag.
   # DSC, source registration, and protection groups are always deployed in every
   # deployment_mode. deploy_recovery is the only mode-gated flag.
   deploy_recovery = var.deployment_mode == "full_backup_recovery"
 
-  # --- BRS region: cluster region for new instances, existing instance region otherwise ---
-  brs_region = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? split(":", var.existing_brs_instance_crn)[5] : var.region
+  # Cluster attributes — resolved from the VPC or Classic data source, or from
+  # caller-supplied overrides (used in cross-account brs_management invocations
+  # where the provider cannot reach the source cluster).
+  cluster_crn                  = var.cluster_crn != null ? var.cluster_crn : (local.is_vpc ? try(data.ibm_container_vpc_cluster.vpc_cluster[0].crn, null) : try(data.ibm_container_cluster.classic_cluster[0].crn, null))
+  cluster_private_endpoint_url = local.is_vpc ? try(data.ibm_container_vpc_cluster.vpc_cluster[0].private_service_endpoint_url, null) : try(data.ibm_container_cluster.classic_cluster[0].private_service_endpoint_url, null)
+  cluster_public_endpoint_url  = local.is_vpc ? try(data.ibm_container_vpc_cluster.vpc_cluster[0].public_service_endpoint_url, null) : try(data.ibm_container_cluster.classic_cluster[0].public_service_endpoint_url, null)
+  cluster_private_available    = local.is_vpc ? try(data.ibm_container_vpc_cluster.vpc_cluster[0].private_service_endpoint, false) : try(data.ibm_container_cluster.classic_cluster[0].private_service_endpoint, false)
+  cluster_endpoint             = var.cluster_endpoint != null ? var.cluster_endpoint : (var.cluster_config_endpoint_type == "private" && local.cluster_private_available ? local.cluster_private_endpoint_url : local.cluster_public_endpoint_url)
+}
 
-  # --- Cluster attributes (resolved from VPC or Classic data sources) ---
-  cluster_crn                  = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].crn : data.ibm_container_cluster.classic_cluster[0].crn
-  cluster_private_endpoint_url = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].private_service_endpoint_url : data.ibm_container_cluster.classic_cluster[0].private_service_endpoint_url
-  cluster_public_endpoint_url  = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].public_service_endpoint_url : data.ibm_container_cluster.classic_cluster[0].public_service_endpoint_url
-  cluster_private_available    = local.is_vpc ? data.ibm_container_vpc_cluster.vpc_cluster[0].private_service_endpoint : data.ibm_container_cluster.classic_cluster[0].private_service_endpoint
-  cluster_endpoint             = var.cluster_config_endpoint_type == "private" && local.cluster_private_available ? local.cluster_private_endpoint_url : local.cluster_public_endpoint_url
-  cluster_endpoint_port        = element(split(":", local.cluster_endpoint), -1)
+##############################################################################
+# Locals — DSC Configuration
+##############################################################################
 
-  # --- Helm chart URI parsing ---
+locals {
+  # Helm chart URI parsing — splits the OCI URI into its chart name, version,
+  # and registry location components used by the helm_release resource.
   uri_no_digest      = split("@", var.dsc_chart_uri)[0]
   chart_with_version = element(split("/", local.uri_no_digest), -1)
   dsc_chart          = split(":", local.chart_with_version)[0]
   dsc_chart_version  = replace(local.chart_with_version, "${local.dsc_chart}:", "")
   dsc_chart_location = replace(local.uri_no_digest, "/${local.chart_with_version}", "")
 
-  # --- BRS instance attributes ---
-  brs_tenant_id                        = module.backup_recovery_instance.tenant_id
-  connection_id                        = module.backup_recovery_instance.connection_id
-  registration_token                   = module.backup_recovery_instance.registration_token
-  backup_recovery_instance_public_url  = nonsensitive(module.backup_recovery_instance.brs_instance.extensions["endpoints.public"])
-  backup_recovery_instance_private_url = nonsensitive(module.backup_recovery_instance.brs_instance.extensions["endpoints.private"])
-  brs_instance_guid                    = module.backup_recovery_instance.brs_instance_guid
-  brs_instance_region                  = element(split(":", module.backup_recovery_instance.brs_instance_crn), 5)
-
-  # URL used by Terraform provider resources and scripts to reach the BRS API.
-  # The DSC Helm chart does NOT use this URL — it reads the BRS private endpoint
-  # directly from the cluster_endpoint field embedded in the registration token JWT.
-  # The VPE Gateway makes that private hostname resolvable inside the VPC without
-  # any change to this URL.
-  backup_recovery_instance_url = var.brs_endpoint_type == "public" ? local.backup_recovery_instance_public_url : local.backup_recovery_instance_private_url
-
-  # Get resolved policy IDs from the BRS module
-  resolved_policy_ids = module.backup_recovery_instance.resolved_policy_ids
-
-  binaries_path = "/tmp"
-
-  # --- VPC subnet auto-discovery (for VPE gateway) ---
-  # All subnet IDs attached to the cluster's worker pools — flattened then
-  # deduplicated. A single-zone cluster exposes the same subnet ID once per
-  # worker pool, so without distinct() the list has duplicates that produce
-  # duplicate for_each keys in the VPE gateway reserved-IP module.
-  # For classic clusters is_vpc is false so this will be [].
-  cluster_subnet_ids = local.is_vpc ? distinct(flatten(
-    data.ibm_container_vpc_cluster.vpc_cluster[0].worker_pools[*].zones[*].subnets[*].id
-  )) : []
-
-  # Only look up cluster subnets when ALL of the following hold:
-  #   1. VPE creation is requested
-  #   2. Caller did NOT supply vpc_subnets explicitly (auto-discovery path)
-  #   3. The cluster is a VPC cluster
-  # When the caller supplies vpc_subnets (including when a new cluster is being
-  # created in the same apply), skip the lookup entirely — the list length is
-  # already known at plan time from the caller-supplied value, so the count
-  # below is always static and Terraform can plan correctly.
-  cluster_subnet_lookup_count = (
-    var.create_brs_vpe &&
-    length(var.vpc_subnets) == 0 &&
-    local.is_vpc &&
-    length(local.cluster_subnet_ids) > 0
-  ) ? length(local.cluster_subnet_ids) : 0
-
-  # VPC ID: user-supplied takes precedence; auto-derived from the first
-  # cluster subnet lookup otherwise.
-  resolved_vpc_id = var.vpc_id != null ? var.vpc_id : (
-    local.cluster_subnet_lookup_count > 0 ? data.ibm_is_subnet.cluster_subnet[0].vpc : null
+  # Resolved storage class for the DSC PVC — used in both the Helm values and
+  # the diagnostics script so the expression is not repeated.
+  #
+  # On Classic clusters with a managed DSC worker pool, we auto-create one
+  # zone-pinned StorageClass per DSC zone (ibmc-block-silver-<zone>).  All
+  # Classic ibmc-block-* classes use Immediate volumeBindingMode — the PV is
+  # provisioned before the pod schedules, so without zone-pinning the IBM block
+  # provisioner picks any cluster zone at random and the pod can end up stuck
+  # Pending on a node in a different zone with no DSC node there.
+  # The StatefulSet creates PVCs sequentially (pod-0 first); with dsc_replicas=N
+  # pods spread across zones, pod-i uses the SC for zone-i.  With dsc_replicas=1
+  # only SC for zone-0 is used, matching the single DSC node in that zone.
+  # Users can override by setting var.dsc_storage_class explicitly.
+  dsc_storage_class = (
+    var.dsc_storage_class != null ? var.dsc_storage_class : (
+      local.is_vpc ? "ibmc-vpc-block-metro-5iops-tier" :
+      (local.is_classic && var.create_dsc_worker_pool && length(local.classic_zones_list) > 0
+        ? "ibmc-block-silver-${local.classic_zones_list[0].zone}"
+      : "ibmc-block-silver")
+    )
   )
 
-  # Subnet list: user-supplied takes precedence; built from the per-subnet
-  # lookups otherwise. Deduplication of cluster_subnet_ids ensures each subnet
-  # object appears exactly once — required by the VPE module's for_each key.
-  resolved_vpc_subnets = length(var.vpc_subnets) > 0 ? var.vpc_subnets : (
-    local.cluster_subnet_lookup_count > 0 ? [for s in data.ibm_is_subnet.cluster_subnet : {
-      name = s.name
-      id   = s.id
-      zone = s.zone
-    }] : []
-  )
+  # Resolved worker pool flavor — bxf.4x16 is a VPC-only flavor; classic clusters
+  # require classic flavors (b3c.* prefix). When the user has explicitly set
+  # dsc_worker_pool_flavor away from the default we honour it; otherwise we pick
+  # the correct default for the cluster type.
+  dsc_worker_pool_flavor = var.dsc_worker_pool_flavor != "bxf.4x16" ? var.dsc_worker_pool_flavor : (local.is_vpc ? "bxf.4x16" : "b3c.4x16")
 
-  # vpc_name is used only in the VPE name template; the actual vpc_id is passed separately.
-  # Using a fixed string keeps the final VPE gateway name within the 63-character limit.
-  brs_vpe_vpc_name = "vpc"
-
-  # --- DSC worker pool zone math ---
-  # Calculate workers per zone based on total replicas.
+  # VPC DSC worker pool zone math — calculates workers per zone based on total replicas.
   num_zones     = local.is_vpc && var.create_dsc_worker_pool ? var.dsc_worker_pool_zones : 0
-  zones_list    = local.is_vpc && var.create_dsc_worker_pool ? [for zone in data.ibm_container_vpc_worker_pool.pool[0].zones : zone] : []
+  zones_list    = local.is_vpc && var.create_dsc_worker_pool ? try([for zone in data.ibm_container_vpc_worker_pool.pool[0].zones : zone], []) : []
   base_workers  = local.num_zones > 0 ? floor(var.dsc_replicas / local.num_zones) : 0
   extra_workers = local.num_zones > 0 ? var.dsc_replicas % local.num_zones : 0
 
-  # Resolved storage class for the DSC PVC — used in both the Helm values and
-  # the diagnostics script so the expression is not repeated.
-  dsc_storage_class = var.dsc_storage_class != null ? var.dsc_storage_class : (local.is_vpc ? "ibmc-vpc-block-metro-5iops-tier" : "ibmc-block-silver")
+  # Classic DSC worker pool zone math — read zone names and VLANs from the
+  # cluster's default pool, then take the first dsc_worker_pool_zones entries.
+  # One pool is created per zone (mirroring VPC); each pool gets its own
+  # size_per_zone so dsc_replicas is distributed exactly with zero over-provisioning:
+  #   pools[0..extra-1] → base + 1 nodes   (remainder zones)
+  #   pools[extra..Z-1] → base nodes        (even zones)
+  # e.g. dsc_replicas=7, zones=3 → pools [3, 2, 2] = 7 total (exact)
+  classic_all_zones     = local.is_classic && var.create_dsc_worker_pool ? try(data.ibm_container_cluster.classic_cluster[0].worker_pools[0].zones, []) : []
+  classic_zones_list    = slice(local.classic_all_zones, 0, min(var.dsc_worker_pool_zones, length(local.classic_all_zones)))
+  classic_num_zones     = length(local.classic_zones_list)
+  classic_base_workers  = local.classic_num_zones > 0 ? floor(var.dsc_replicas / local.classic_num_zones) : 1
+  classic_extra_workers = local.classic_num_zones > 0 ? var.dsc_replicas % local.classic_num_zones : 0
 
-  # --- Protection source tree (object name → ID map) ---
-  # Flatten protection sources up to 3 levels deep to create a map of object names
-  # (namespaces, PVCs, etc.) to IDs — scoped to THIS cluster's registered source only.
-  #
-  # The BRS Terraform provider exposes the kKubernetes source tree as:
-  #
-  #   protection_sources[N]          ← env envelope (no protection_source attr)
-  #     └── nodes[M]                 ← cluster node
-  #           IKS:  protection_source[0].id = cluster source_id  (L1 has it)
-  #           OCP:  NO protection_source attr at this level
-  #           └── nodes[K]           ← namespace / label nodes
-  #                 IKS:  protection_source[0].id = namespace object id
-  #                 OCP:  protection_source[0].id = namespace object id
-  #                       protection_source[0].parent_id = cluster source_id  ← key difference
-  #                 └── nodes[J]     ← PVC nodes
-  #
-  # IKS filter: keep the L1 node whose protection_source[0].id == source_id
-  # OCP filter: keep the L1 node that has at least one L2 child whose
-  #             protection_source[0].parent_id == source_id
-  #
-  # When source_id is not yet known (null) or not found in the tree (source
-  # discovery still in progress), the filter is skipped so all nodes are
-  # included — identical to pre-PR-74 behaviour, which avoids an empty
-  # all_flat_objects and prevents a spurious precondition failure.
+  binaries_path = "/tmp"
+}
 
-  source_id_str = tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
+##############################################################################
+# Locals — BRS Instance
+#
+# The BRS instance is owned by the caller (DA or example) and its resolved
+# attributes are passed in as prerequisite variables.
+##############################################################################
 
-  # IKS: source_id appears as protection_source[0].id on the L1 cluster node.
-  # Collect all such L1 IDs to cheaply detect whether we are in IKS mode.
-  all_known_l1_source_ids = toset(flatten([
-    for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
-    [for node in(env.nodes != null ? env.nodes : []) :
-      tostring(node.protection_source[0].id)
-      if node.protection_source != null && length(node.protection_source) > 0
-    ]
-  ]))
+locals {
+  brs_tenant_id       = var.brs_tenant_id
+  connection_id       = var.brs_connection_id
+  registration_token  = var.brs_registration_token
+  brs_instance_guid   = var.brs_instance_guid
+  brs_instance_region = var.brs_instance_crn != null ? element(split(":", var.brs_instance_crn), 5) : null
 
-  # OCP: source_id appears as protection_source[0].parent_id on L2 namespace nodes.
-  # Collect all such parent_id values so we can detect OCP mode and find the right L1.
-  all_known_l2_parent_ids = toset(flatten([
-    for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
-    [for node in(env.nodes != null ? env.nodes : []) :
-      [for child in(node.nodes != null ? node.nodes : []) :
-        tostring(try(child.protection_source[0].parent_id, ""))
-        if child.protection_source != null && length(child.protection_source) > 0 &&
-        try(child.protection_source[0].parent_id, null) != null
-      ]
-    ]
-  ]))
+  backup_recovery_instance_public_url  = var.brs_instance_public_url
+  backup_recovery_instance_private_url = var.brs_instance_private_url
 
-  # Filter is active only when source_id is non-null and present in either set.
-  filter_by_source_id = (
-    ibm_backup_recovery_source_registration.source_registration.source_id != null &&
-    (
-      contains(local.all_known_l1_source_ids, local.source_id_str) ||
-      contains(local.all_known_l2_parent_ids, local.source_id_str)
-    )
-  )
+  # URL used by Terraform provider resources and scripts to reach the BRS API.
+  backup_recovery_instance_url = var.brs_endpoint_type == "public" ? local.backup_recovery_instance_public_url : local.backup_recovery_instance_private_url
 
-  all_env_nodes = flatten([
-    for env in(try(data.ibm_backup_recovery_protection_sources.sources.protection_sources, []) != null ? data.ibm_backup_recovery_protection_sources.sources.protection_sources : []) :
-    [for node in(env.nodes != null ? env.nodes : []) : node
-      if !local.filter_by_source_id ||
-      # IKS: source_id is the L1 node's own protection_source[0].id
-      (node.protection_source != null &&
-        length(node.protection_source) > 0 &&
-      tostring(node.protection_source[0].id) == local.source_id_str) ||
-      # OCP: source_id appears as parent_id on one of this L1 node's L2 children
-      anytrue([
-        for child in(node.nodes != null ? node.nodes : []) :
-        (child.protection_source != null &&
-          length(child.protection_source) > 0 &&
-        tostring(try(child.protection_source[0].parent_id, "")) == local.source_id_str)
-      ])
-    ]
-  ])
-
-  all_l1_ps = flatten([
-    for node in local.all_env_nodes : [
-      for ps in(node.protection_source != null ? node.protection_source : []) : {
-        id   = ps.id
-        name = ps.name
-      }
-    ]
-  ])
-
-  all_l2_nodes = flatten([
-    for node in local.all_env_nodes :
-    (node.nodes != null ? node.nodes : [])
-  ])
-
-  all_l2_ps = flatten([
-    for node in local.all_l2_nodes : [
-      for ps in(node.protection_source != null ? node.protection_source : []) : {
-        id   = ps.id
-        name = ps.name
-      }
-    ]
-  ])
-
-  all_l3_nodes = flatten([
-    for node in local.all_l2_nodes :
-    (node.nodes != null ? node.nodes : [])
-  ])
-
-  all_l3_ps = flatten([
-    for node in local.all_l3_nodes : [
-      for ps in(node.protection_source != null ? node.protection_source : []) : {
-        id   = ps.id
-        name = ps.name
-      }
-    ]
-  ])
-
-  all_flat_objects  = concat(local.all_l1_ps, local.all_l2_ps, local.all_l3_ps)
-  object_name_to_id = { for obj in local.all_flat_objects : obj.name => obj.id... }
-
-  # --- Protection group ID helpers ---
-  # Convert full PG ID format (clusterid/::timestamp:id:id) to numeric format (timestamp:id:id)
-  # Example: "5n3kwor5cb/::8009179080677672:1753125047518:126734" -> "8009179080677672:1753125047518:126734"
-  numeric_pg_ids = local.deploy_recovery ? {
-    for pg_name, pg_resource in ibm_backup_recovery_protection_group.protection_group :
-    pg_name => split("::", pg_resource.id)[1]
-  } : {}
-
-  # --- Recovery helpers ---
-  # Map of protection group name to latest successful snapshot.
-  latest_snapshots = local.deploy_recovery ? {
-    for pg_name, runs in data.ibm_backup_recovery_protection_group_runs.backup_runs :
-    pg_name => (
-      length(try(runs.runs, [])) > 0 ? (
-        try(runs.runs[0].local_backup_info[0].snapshot_info[0].snapshot_id, try(runs.runs[0].id, null))
-      ) : null
-    )
-  } : {}
-
-  # Determine target cluster details based on recovery mode.
-  # For cross-cluster recovery, the target cluster must be pre-registered with the same BRS instance.
-  target_cluster_id = var.recovery_mode == "cross-cluster" ? var.target_cluster_id : var.cluster_id
+  # Resolved policy IDs passed in from the caller.
+  resolved_policy_ids = var.resolved_policy_ids
 }
 
 resource "terraform_data" "install_dependencies" {
@@ -302,60 +141,13 @@ resource "terraform_data" "install_dependencies" {
 }
 
 ##############################################################################
-# Account identity — used to detect cross-account vs same-account deployments
-##############################################################################
-
-# Derive the target (BRS) account ID from the IAM token issued for ibmcloud_api_key.
-# ibm_iam_auth_token requires only a valid API key — no extra IAM roles needed.
-# The account ID is embedded in the JWT payload under .account.bss.
-data "ibm_iam_auth_token" "target_account" {}
-
-# Derive the source (cluster) account ID from the token issued for ibm.cluster.
-# When ibm.cluster == ibm (same account), this token is identical to target_account.
-data "ibm_iam_auth_token" "source_account" {
-  provider = ibm.cluster
-}
-
-##############################################################################
-# CRN Parser (for existing BRS instance)
-##############################################################################
-
-module "crn_parser" {
-  source  = "terraform-ibm-modules/common-utilities/ibm//modules/crn-parser"
-  version = "1.5.0"
-  crn     = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : ""
-}
-
-##############################################################################
-# Backup Recovery Service Instance
-##############################################################################
-
-module "backup_recovery_instance" {
-  source                    = "terraform-ibm-modules/backup-recovery/ibm"
-  version                   = "1.12.3"
-  region                    = local.brs_region
-  resource_group_id         = var.brs_resource_group_id != null ? var.brs_resource_group_id : var.cluster_resource_group_id
-  ibmcloud_api_key          = var.ibmcloud_api_key
-  instance_name             = var.brs_instance_name
-  service_type              = var.brs_service_type
-  existing_brs_instance_crn = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : null
-  create_new_instance       = var.create_new_brs_instance
-  connection_name           = var.brs_connection_name
-  create_new_connection     = var.brs_create_new_connection
-  resource_tags             = var.resource_tags
-  access_tags               = var.access_tags
-  endpoint_type             = var.brs_endpoint_type
-  connection_env_type       = var.connection_env_type
-  policies                  = var.policies
-}
-
-##############################################################################
 # Cluster Data Sources
 ##############################################################################
 
 data "ibm_container_vpc_cluster" "vpc_cluster" {
-  count    = local.is_vpc ? 1 : 0
-  provider = ibm.cluster
+  # Only query when cluster_prep is running — brs_management-only callers must
+  # supply cluster_endpoint + cluster_crn directly to avoid cross-account 404s.
+  count = local.stage_cluster_infra_prep && local.is_vpc ? 1 : 0
 
   name              = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
@@ -364,8 +156,9 @@ data "ibm_container_vpc_cluster" "vpc_cluster" {
 }
 
 data "ibm_container_cluster" "classic_cluster" {
-  count    = local.is_classic ? 1 : 0
-  provider = ibm.cluster
+  # Only query when cluster_prep is running — brs_management-only callers must
+  # supply cluster_endpoint + cluster_crn directly to avoid cross-account 404s.
+  count = local.stage_cluster_infra_prep && local.is_classic ? 1 : 0
 
   name              = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
@@ -374,7 +167,7 @@ data "ibm_container_cluster" "classic_cluster" {
 }
 
 data "ibm_container_cluster_config" "cluster_config" {
-  provider = ibm.cluster
+  count = local.stage_cluster_infra_prep || local.stage_dsc_helm_deployment ? 1 : 0
 
   cluster_name_id   = var.cluster_id
   resource_group_id = var.cluster_resource_group_id
@@ -391,198 +184,23 @@ data "ibm_container_cluster_config" "cluster_config" {
 }
 
 data "ibm_container_vpc_worker_pool" "pool" {
-  count    = local.is_vpc ? 1 : 0
-  provider = ibm.cluster
+  count = local.stage_cluster_infra_prep && local.is_vpc ? 1 : 0
 
   cluster          = data.ibm_container_vpc_cluster.vpc_cluster[0].id
   worker_pool_name = data.ibm_container_vpc_cluster.vpc_cluster[0].worker_pools[0].name
 }
 
 ##############################################################################
-# VPC + Subnet auto-discovery  (used when create_brs_vpe = true)
-#
-# ibm_container_vpc_cluster does not export vpc_id as a top-level attribute.
-# We flatten all subnet IDs from worker_pools -> zones -> subnets, look each
-# up via ibm_is_subnet (one per subnet, all IDs known at plan time from the
-# worker_pool splat), then use the first result to derive the VPC ID.
-# Users no longer need to supply vpc_id or vpc_subnets when create_brs_vpe = true.
+# Data Source Connector Worker Pools
 ##############################################################################
 
-
-# Look up every unique cluster subnet individually.
-# The IDs come from worker_pools splat and are known at plan time, so the
-# count is static and Terraform can plan correctly without a two-phase apply.
-data "ibm_is_subnet" "cluster_subnet" {
-  count      = local.cluster_subnet_lookup_count
-  provider   = ibm.cluster
-  identifier = local.cluster_subnet_ids[count.index]
-}
-
-
-##############################################################################
-# Security Group Rules for Data Source Connector
-##############################################################################
-
-module "dsc_sg_rule" {
-  count = var.add_dsc_rules_to_cluster_sg && local.is_vpc ? 1 : 0
-
-  source  = "terraform-ibm-modules/security-group/ibm"
-  version = "v2.9.1"
-  providers = {
-    ibm = ibm.cluster
-  }
-  resource_group               = var.cluster_resource_group_id
-  existing_security_group_name = "kube-${var.cluster_id}"
-  use_existing_security_group  = true
-  security_group_rules = [
-    {
-      name      = "allow-outbound-443-from-cdsc-to-brs-dataplane"
-      direction = "outbound"
-      remote    = "0.0.0.0/0"
-      protocol  = "tcp"
-      port_min  = 443
-      port_max  = 443
-    },
-    {
-      name      = "allow-outbound-29991-from-cdsc-to-brs-dataplane"
-      direction = "outbound"
-      remote    = "0.0.0.0/0"
-      protocol  = "tcp"
-      port_min  = 29991
-      port_max  = 29991
-    },
-    {
-      name      = "allow-outbound-${local.cluster_endpoint_port}-from-cdsc-to-cluster-api"
-      direction = "outbound"
-      remote    = "0.0.0.0/0"
-      protocol  = "tcp"
-      port_min  = local.cluster_endpoint_port
-      port_max  = local.cluster_endpoint_port
-    }
-  ]
-}
-
-##############################################################################
-# S2S IAM Authorization Policy (cross-account: source VPC → BRS instance)
-##############################################################################
-
-# When the BRS instance is in a different IBM Cloud account than the cluster VPC,
-# the VPEG target (the BRS CRN) lives in the target account.  The VPC
-# Infrastructure Service in the source account needs a Viewer authorization on
-# the BRS instance before the VPEG can be created.
-#
-# Policy model (created in the TARGET / BRS account):
-#   Subject  : VPC Infrastructure Services / endpoint-gateway  in source account
-#   Resource : backup-recovery instance GUID
-#   Role     : Viewer
-#
-# Only created when the ibm.cluster provider resolves to a different account
-# than the default ibm provider (cross-account detection is automatic via JWT).
-# Same-account VPE deployments do not need an S2S policy.
-module "brs_s2s_auth" {
-  # Only create the S2S IAM authorization policy when:
-  #   1. A VPEG is being created (create_brs_vpe = true), AND
-  #   2. The cluster VPC account differs from the BRS instance account (cross-account)
-  # Same-account VPE deployments do not need an S2S policy — the VPC API can
-  # already resolve the BRS CRN within the same account.
-  count   = local.is_cross_account ? 1 : 0
-  source  = "terraform-ibm-modules/s2s-auth/ibm"
-  version = "2.3.1"
-
-  enable_cbr = false
-
-  service_map = {
-    "brs-vpe-source-to-brs-target" = {
-      # Source: VPC Infrastructure Services / endpoint-gateway in the SOURCE account
-      source_service_name       = "is"
-      source_resource_type      = "endpoint-gateway"
-      source_service_account_id = local.source_account_id
-
-      # Target: the specific BRS instance in this (TARGET) account
-      target_service_name         = "backup-recovery"
-      target_resource_instance_id = local.brs_instance_guid
-
-      roles       = ["Viewer"]
-      description = "Allow VPC endpoint-gateway in account ${local.source_account_id} to target BRS instance ${local.brs_instance_guid}"
-    }
-  }
-
-  depends_on = [module.backup_recovery_instance]
-}
-
-##############################################################################
-# Virtual Private Endpoint Gateway for BRS
-##############################################################################
-
-# VPE Gateway naming: use a short, fixed vpc_name to avoid exceeding IBM's
-# 63-character resource name limit. The vpc_name is only used in the VPE name
-# template (e.g., "<prefix>-<vpc_name>-vpe-gateway"); the actual vpc_id is
-# specified separately and is what matters for API operations.
-
-# The VPE Gateway must be created after the S2S IAM authorization policy
-# exists in the target account.  The `depends_on = [module.brs_s2s_auth]`
-# below enforces that ordering.  The VPC service-resolution layer resolves
-# the cross-account BRS CRN instantly once the S2S policy is in place —
-# no additional sleep is required.
-module "brs_vpe" {
-  count   = var.create_brs_vpe && local.is_vpc ? 1 : 0
-  source  = "terraform-ibm-modules/vpe-gateway/ibm"
-  version = "5.3.5"
-  providers = {
-    ibm = ibm.cluster
-  }
-
-  # Use var.region (the cluster's region, always known at plan time) rather than
-  # local.brs_instance_region (derived from the BRS CRN, unknown until apply).
-  # The VPE is always co-located with the cluster; the BRS instance region only
-  # diverges when using cross-region replication (not supported here).
-  region            = var.region
-  prefix            = var.brs_vpe_name != null ? var.brs_vpe_name : "brs"
-  vpc_name          = local.brs_vpe_vpc_name
-  vpc_id            = local.resolved_vpc_id
-  subnet_zone_list  = local.resolved_vpc_subnets
-  resource_group_id = var.cluster_resource_group_id
-
-  # Attach to the Kubernetes VPEG security group (kube-vpegw-<vpc-id>).
-  # IKS/ROKS automatically creates this SG on every VPC cluster and it is
-  # pre-configured to allow the cluster worker nodes to reach VPE targets.
-  security_group_ids = [data.ibm_is_security_group.kube_vpeg_sg[0].id]
-
-  # vpe_name is set explicitly so the for_each key in the child module is a
-  # static string known at plan time (not derived from vpc_id or CRN).
-  # Without this, the key would be "${prefix}-${vpc_name}-backup-recovery"
-  # where vpc_name comes from the worker-pool data source — unknown at plan.
-  cloud_service_by_crn = [
-    {
-      crn          = module.backup_recovery_instance.brs_instance_crn
-      service_name = "backup-recovery"
-      vpe_name     = var.brs_vpe_name != null ? var.brs_vpe_name : "${lower(var.brs_connection_name)}-vpe"
-    }
-  ]
-
-  depends_on = [module.brs_s2s_auth]
-}
-
-# Fetch the kube-vpegw-<vpc-id> security group that IKS/ROKS creates on every
-# VPC cluster. It is pre-scoped to allow cluster nodes to reach VPE endpoints.
-data "ibm_is_security_group" "kube_vpeg_sg" {
-  count    = var.create_brs_vpe && local.is_vpc ? 1 : 0
-  provider = ibm.cluster
-  name     = "kube-vpegw-${local.resolved_vpc_id}"
-}
-
-##############################################################################
-# Data Source Connector Worker Pools (Single-Zone)
-##############################################################################
-
-
+# VPC clusters — one pool per zone, spread dsc_replicas evenly across zones.
 resource "ibm_container_vpc_worker_pool" "data_source_connector" {
-  count    = local.is_vpc && var.create_dsc_worker_pool ? local.num_zones : 0
-  provider = ibm.cluster
+  count = local.stage_cluster_infra_prep && local.is_vpc && var.create_dsc_worker_pool ? local.num_zones : 0
 
   cluster           = data.ibm_container_vpc_cluster.vpc_cluster[0].id
   worker_pool_name  = "dsc-pool-zone-${count.index + 1}"
-  flavor            = var.dsc_worker_pool_flavor
+  flavor            = local.dsc_worker_pool_flavor
   vpc_id            = data.ibm_container_vpc_worker_pool.pool[0].vpc_id
   worker_count      = count.index < local.extra_workers ? local.base_workers + 1 : local.base_workers
   resource_group_id = var.cluster_resource_group_id
@@ -601,6 +219,111 @@ resource "ibm_container_vpc_worker_pool" "data_source_connector" {
     value  = "data-source-connector"
     effect = "NoSchedule"
   }
+
+  lifecycle {
+    # The IBM IKS API returns the zones block with computed subnet_id/name values
+    # that differ from config after apply, causing a forced replace on every plan.
+    # Ignoring zones prevents this perpetual destroy+recreate cycle.
+    ignore_changes = [zones]
+  }
+}
+
+# Classic clusters — one pool per zone (mirrors VPC), each with its own
+# size_per_zone so dsc_replicas is distributed exactly:
+#   first classic_extra_workers pools → base_workers + 1
+#   remaining pools                  → base_workers
+# Total nodes = dsc_replicas exactly, zero over-provisioning.
+# Each pool has exactly one zone attached via the zone attachment below.
+resource "ibm_container_worker_pool" "data_source_connector" {
+  count = local.stage_cluster_infra_prep && local.is_classic && var.create_dsc_worker_pool ? local.classic_num_zones : 0
+
+  cluster          = data.ibm_container_cluster.classic_cluster[0].id
+  worker_pool_name = "brs-dsc-zone-${count.index + 1}"
+  machine_type     = local.dsc_worker_pool_flavor
+  size_per_zone    = count.index < local.classic_extra_workers ? local.classic_base_workers + 1 : local.classic_base_workers
+
+  labels = {
+    "dedicated" = "data-source-connector"
+  }
+
+  taints {
+    key    = "dedicated"
+    value  = "data-source-connector"
+    effect = "NoSchedule"
+  }
+}
+
+# Classic clusters — attach exactly one zone per pool, reusing the VLANs from
+# the default pool.  Since each pool has a single zone, size_per_zone on pool[i]
+# applies only to zone[i] — no cross-zone bleed.
+resource "ibm_container_worker_pool_zone_attachment" "data_source_connector" {
+  count = local.stage_cluster_infra_prep && local.is_classic && var.create_dsc_worker_pool ? local.classic_num_zones : 0
+
+  cluster         = data.ibm_container_cluster.classic_cluster[0].id
+  worker_pool     = element(split("/", ibm_container_worker_pool.data_source_connector[count.index].id), 1)
+  zone            = local.classic_zones_list[count.index].zone
+  private_vlan_id = local.classic_zones_list[count.index].private_vlan
+  public_vlan_id  = local.classic_zones_list[count.index].public_vlan
+
+  timeouts {
+    create = "90m"
+    update = "90m"
+    delete = "30m"
+  }
+}
+
+##############################################################################
+# Zone-pinned StorageClasses for Classic DSC PVCs
+##############################################################################
+
+# Classic ibmc-block-* storage classes use Immediate volumeBindingMode — the
+# PV is provisioned at PVC-creation time, before the pod is scheduled.  The
+# IBM block provisioner picks a zone from the cluster's own zone list without
+# regard to where the DSC node actually lives, so the pod can land Pending
+# forever with a PVC in zone-A and the only DSC node in zone-B.
+#
+# Fix: create one StorageClass per DSC zone (one per pool) that adds the
+# `zone` parameter recognised by the ibm.io/ibmc-block provisioner.  With
+# zone explicitly set, the provisioner always creates the PV in that zone.
+# The Helm chart's volumeClaimTemplate.storageClass is set to zone-0's SC
+# (ibmc-block-silver-<zone>).  When dsc_replicas > 1 the StatefulSet creates
+# additional PVCs (pod-1, pod-2 …) using the same SC — they all land in zone-0
+# and the pods schedule onto the zone-0 DSC node.  For multi-zone spread with
+# one pod per zone the user should set var.dsc_storage_class explicitly to a
+# custom SC or use WaitForFirstConsumer classes (not available on Classic).
+
+resource "kubernetes_manifest" "dsc_block_sc" {
+  for_each = local.is_classic && var.create_dsc_worker_pool && local.stage_cluster_infra_prep ? {
+    for z in local.classic_zones_list : z.zone => z
+  } : {}
+
+  manifest = {
+    apiVersion = "storage.k8s.io/v1"
+    kind       = "StorageClass"
+    metadata = {
+      name = "ibmc-block-silver-${each.key}"
+      labels = {
+        "app"                           = "ibmcloud-block-storage-plugin"
+        "kubernetes.io/cluster-service" = "true"
+        "managed-by"                    = "terraform-ibm-iks-ocp-backup-recovery"
+      }
+    }
+    provisioner          = "ibm.io/ibmc-block"
+    reclaimPolicy        = "Delete"
+    volumeBindingMode    = "Immediate"
+    allowVolumeExpansion = true
+    parameters = {
+      type         = "Endurance"
+      iopsPerGB    = "4"
+      sizeRange    = "[20-12000]Gi"
+      fsType       = "ext4"
+      billingType  = "hourly"
+      classVersion = "2"
+      zone         = each.key
+    }
+  }
+
+  depends_on = [ibm_container_worker_pool_zone_attachment.data_source_connector]
 }
 
 ##############################################################################
@@ -616,12 +339,20 @@ resource "ibm_container_vpc_worker_pool" "data_source_connector" {
 # until at least one node with the "dedicated=data-source-connector" label is
 # schedulable.  It is a no-op when create_dsc_worker_pool is false.
 resource "terraform_data" "wait_for_dsc_node_ready" {
-  count = local.is_vpc && var.create_dsc_worker_pool ? 1 : 0
+  count = local.stage_cluster_infra_prep && var.create_dsc_worker_pool && (local.is_vpc || local.is_classic) ? 1 : 0
 
-  depends_on = [ibm_container_vpc_worker_pool.data_source_connector]
+  depends_on = [
+    ibm_container_vpc_worker_pool.data_source_connector,
+    ibm_container_worker_pool.data_source_connector,
+    ibm_container_worker_pool_zone_attachment.data_source_connector,
+  ]
 
   input = {
-    kubeconfig_path = data.ibm_container_cluster_config.cluster_config.config_file_path
+    kubeconfig_path = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
+  }
+
+  lifecycle {
+    ignore_changes = [input]
   }
 
   provisioner "local-exec" {
@@ -666,8 +397,13 @@ resource "terraform_data" "wait_for_dsc_node_ready" {
 ##############################################################################
 
 resource "kubernetes_namespace_v1" "dsc_namespace" {
+  count = local.stage_dsc_helm_deployment ? 1 : 0
+
   metadata {
     name = var.dsc_namespace
+    labels = {
+      "velero.io/exclude-from-backup" = "true"
+    }
   }
 
   timeouts {
@@ -692,10 +428,12 @@ resource "kubernetes_namespace_v1" "dsc_namespace" {
 # so post-install changes to var.dsc_storage_class never reach helm upgrade.
 # To change it: terraform destroy, clean up PVCs/PVs, then terraform apply.
 resource "terraform_data" "dsc_immutable_values" {
+  count = local.stage_dsc_helm_deployment ? 1 : 0
+
   input = {
     storage_class   = local.dsc_storage_class
-    namespace       = kubernetes_namespace_v1.dsc_namespace.metadata[0].name
-    kubeconfig_path = data.ibm_container_cluster_config.cluster_config.config_file_path
+    namespace       = kubernetes_namespace_v1.dsc_namespace[0].metadata[0].name
+    kubeconfig_path = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
     dsc_name        = var.dsc_name
   }
 
@@ -719,7 +457,10 @@ resource "terraform_data" "dsc_immutable_values" {
     command = "${path.module}/scripts/purge-stale-dsc-pvc.sh '${self.input.namespace}' '${self.input.dsc_name}' destroy"
   }
 
-  depends_on = [kubernetes_namespace_v1.dsc_namespace]
+  depends_on = [
+    kubernetes_namespace_v1.dsc_namespace,
+    kubernetes_manifest.dsc_block_sc,
+  ]
 }
 ##############################################################################
 # Check for existing BRS agent namespaces (conflict detection)
@@ -731,8 +472,14 @@ resource "terraform_data" "dsc_immutable_values" {
 # fragment backup data across BRS instances and confuse customers.
 # Exit early with a clear explanation of what the customer must do.
 resource "terraform_data" "check_existing_registration" {
+  count = local.stage_dsc_helm_deployment ? 1 : 0
+
   input = {
-    kubeconfig_path = data.ibm_container_cluster_config.cluster_config.config_file_path
+    kubeconfig_path = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
+  }
+
+  lifecycle {
+    ignore_changes = [input]
   }
 
   provisioner "local-exec" {
@@ -757,15 +504,21 @@ resource "terraform_data" "check_existing_registration" {
 # only when no live pod exists — upgrades are safe. Destroy-time PVC cleanup
 # is handled by dsc_immutable_values (destroyed after helm_release).
 resource "terraform_data" "purge_stale_dsc_pvc" {
+  count = local.stage_dsc_helm_deployment ? 1 : 0
+
   triggers_replace = {
-    namespace          = kubernetes_namespace_v1.dsc_namespace.metadata[0].name
+    namespace          = kubernetes_namespace_v1.dsc_namespace[0].metadata[0].name
     registration_token = local.registration_token != null ? local.registration_token : ""
   }
 
   input = {
-    namespace       = kubernetes_namespace_v1.dsc_namespace.metadata[0].name
-    kubeconfig_path = data.ibm_container_cluster_config.cluster_config.config_file_path
+    namespace       = kubernetes_namespace_v1.dsc_namespace[0].metadata[0].name
+    kubeconfig_path = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
     dsc_name        = var.dsc_name
+  }
+
+  lifecycle {
+    ignore_changes = [input]
   }
 
   provisioner "local-exec" {
@@ -787,10 +540,12 @@ resource "terraform_data" "purge_stale_dsc_pvc" {
 ##############################################################################
 
 resource "helm_release" "data_source_connector" {
+  count = local.stage_dsc_helm_deployment ? 1 : 0
+
   name             = var.dsc_name
   chart            = local.dsc_chart
   repository       = local.dsc_chart_location
-  namespace        = kubernetes_namespace_v1.dsc_namespace.metadata[0].name
+  namespace        = kubernetes_namespace_v1.dsc_namespace[0].metadata[0].name
   version          = local.dsc_chart_version
   create_namespace = false
   timeout          = var.dsc_helm_timeout
@@ -818,10 +573,10 @@ resource "helm_release" "data_source_connector" {
           memory = var.dsc_pod_memory_requests
         }
       }
-      nodeSelector = local.is_vpc && var.create_dsc_worker_pool ? {
+      nodeSelector = var.create_dsc_worker_pool ? {
         "dedicated" = "data-source-connector"
       } : {}
-      tolerations = local.is_vpc && var.create_dsc_worker_pool ? [
+      tolerations = var.create_dsc_worker_pool ? [
         {
           key      = "dedicated"
           operator = "Equal"
@@ -831,7 +586,7 @@ resource "helm_release" "data_source_connector" {
       ] : []
       volumeClaimTemplate = {
         # Frozen at first apply — see dsc_immutable_values.
-        storageClass = terraform_data.dsc_immutable_values.input.storage_class
+        storageClass = terraform_data.dsc_immutable_values[0].input.storage_class
       }
     })
   ]
@@ -839,16 +594,11 @@ resource "helm_release" "data_source_connector" {
   depends_on = [
     terraform_data.dsc_immutable_values,
     terraform_data.wait_for_dsc_node_ready,
+    terraform_data.check_existing_registration,
     terraform_data.purge_stale_dsc_pvc,
     ibm_container_vpc_worker_pool.data_source_connector,
+    ibm_container_worker_pool.data_source_connector,
     kubernetes_namespace_v1.dsc_namespace,
-    # Ensure the VPE Gateway is live before the DSC pod starts.
-    # When create_brs_vpe = true, the VPEG is module.brs_vpe[0]; DSC traffic
-    # routes to BRS via the VPEG private endpoint immediately on pod startup.
-    # When create_brs_vpe = false (cross-account, VPEG managed externally),
-    # module.brs_vpe has count = 0 so this dep is a no-op — safe in all configs.
-    module.brs_vpe,
-    terraform_data.check_existing_registration,
   ]
 
   lifecycle {
@@ -868,7 +618,7 @@ resource "helm_release" "data_source_connector" {
     on_failure  = continue
     interpreter = ["/bin/bash", "-c"]
     environment = {
-      KUBECONFIG = data.ibm_container_cluster_config.cluster_config.config_file_path
+      KUBECONFIG = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
     }
     command = "${path.module}/scripts/dsc-helm-diagnostics.sh '${self.namespace}' '${local.dsc_storage_class}'"
   }
@@ -882,6 +632,8 @@ resource "helm_release" "data_source_connector" {
 # updated by the cluster outside of terraform. This prevents terraform from
 # recreating/updating the service account on every apply.
 resource "kubernetes_service_account_v1" "brsagent" {
+  count = local.stage_dsc_helm_deployment ? 1 : 0
+
   metadata {
     name      = "brsagent"
     namespace = var.dsc_namespace
@@ -898,6 +650,8 @@ resource "kubernetes_service_account_v1" "brsagent" {
 }
 
 resource "kubernetes_cluster_role_binding_v1" "brsagent_admin" {
+  count = local.stage_dsc_helm_deployment ? 1 : 0
+
   metadata {
     name = "brsagent-admin"
   }
@@ -908,17 +662,19 @@ resource "kubernetes_cluster_role_binding_v1" "brsagent_admin" {
   }
   subject {
     kind      = "ServiceAccount"
-    name      = kubernetes_service_account_v1.brsagent.metadata[0].name
-    namespace = kubernetes_service_account_v1.brsagent.metadata[0].namespace
+    name      = kubernetes_service_account_v1.brsagent[0].metadata[0].name
+    namespace = kubernetes_service_account_v1.brsagent[0].metadata[0].namespace
   }
 }
 
 resource "kubernetes_secret_v1" "brsagent_token" {
+  count = local.stage_dsc_helm_deployment ? 1 : 0
+
   metadata {
     name      = "brsagent-token"
-    namespace = kubernetes_service_account_v1.brsagent.metadata[0].namespace
+    namespace = kubernetes_service_account_v1.brsagent[0].metadata[0].namespace
     annotations = {
-      "kubernetes.io/service-account.name" = kubernetes_service_account_v1.brsagent.metadata[0].name
+      "kubernetes.io/service-account.name" = kubernetes_service_account_v1.brsagent[0].metadata[0].name
     }
   }
   type                           = "kubernetes.io/service-account-token"
@@ -931,6 +687,7 @@ resource "kubernetes_secret_v1" "brsagent_token" {
 
 # Wait for DSC to stabilize after helm installation before source registration.
 resource "time_sleep" "wait_for_dsc_stabilization" {
+  count      = local.stage_dsc_helm_deployment ? 1 : 0
   depends_on = [helm_release.data_source_connector]
 
   # 10m observed minimum for the DSC gRPC tunnel to BRS to fully establish after
@@ -949,6 +706,8 @@ resource "time_sleep" "wait_for_dsc_stabilization" {
 # deregister. Because terraform destroy always deletes PVCs too, the destroy path
 # here is always safe.
 resource "ibm_backup_recovery_source_registration" "source_registration" {
+  count = local.stage_brs_registration ? 1 : 0
+
   x_ibm_tenant_id = local.brs_tenant_id
   environment     = "kKubernetes"
   connection_id   = local.connection_id
@@ -960,7 +719,7 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
     endpoint                = local.cluster_endpoint
     kubernetes_distribution = var.kube_type == "openshift" ? "kROKS" : "kIKS"
     dynamic "auto_protect_config" {
-      for_each = var.enable_auto_protect && var.auto_protect_policy_name != null ? [1] : []
+      for_each = var.enable_auto_protect && var.auto_protect_policy_name != null && try(local.resolved_policy_ids[var.auto_protect_policy_name], null) != null ? [1] : []
       content {
         is_default_auto_protected = true
         policy_id                 = local.resolved_policy_ids[var.auto_protect_policy_name]
@@ -973,13 +732,12 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
     init_container_image_location              = var.registration_images.init_container
     cohesity_dataprotect_plugin_image_location = var.registration_images.cohesity_dataprotect_plugin
     kubernetes_type                            = "kCluster"
-    client_private_key                         = chomp(kubernetes_secret_v1.brsagent_token.data["token"])
+    client_private_key                         = try(chomp(kubernetes_secret_v1.brsagent_token[0].data["token"]), chomp(var.brsagent_token), "")
   }
 
   depends_on = [
     helm_release.data_source_connector,
     time_sleep.wait_for_dsc_stabilization,
-    module.backup_recovery_instance,
     # BRS removes the brs-backup-agent-* namespace asynchronously after this
     # DELETE, via the DSC tunnel and the brsagent RBAC, so both must outlive it.
     # Depending on the waiter (rather than the reverse) is what destroys it after
@@ -1008,11 +766,12 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
 # the registration resource inverts the destroy edge and runs this poller before
 # the DELETE it is waiting on.
 resource "terraform_data" "brs_source_deregistration_wait" {
+  count = local.stage_brs_registration ? 1 : 0
+
   depends_on = [
     helm_release.data_source_connector,
     kubernetes_cluster_role_binding_v1.brsagent_admin,
     kubernetes_secret_v1.brsagent_token,
-    module.backup_recovery_instance,
   ]
 
   input = {
@@ -1041,6 +800,8 @@ resource "terraform_data" "brs_source_deregistration_wait" {
 # depends on this, so it runs after the DELETE; helm_release and the brsagent RBAC
 # depend on it, so they are torn down only once it returns.
 resource "terraform_data" "wait_before_helm_destroy" {
+  count = local.stage_brs_registration ? 1 : 0
+
   depends_on = [
     helm_release.data_source_connector,
     kubernetes_cluster_role_binding_v1.brsagent_admin,
@@ -1056,7 +817,7 @@ resource "terraform_data" "wait_before_helm_destroy" {
   # into a spurious replacement. An input change is only ever an in-place update
   # that runs no provisioner, so it is side-effect free.
   input = {
-    kubeconfig_path = data.ibm_container_cluster_config.cluster_config.config_file_path
+    kubeconfig_path = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
     dsc_namespace   = var.dsc_namespace
     binaries_path   = local.binaries_path
   }
@@ -1090,6 +851,8 @@ resource "terraform_data" "wait_before_helm_destroy" {
 # timeout (default 30 min).  Terraform will surface the timeout as a clear
 # error rather than a silent precondition failure.
 resource "terraform_data" "wait_for_source_discovery" {
+  count = local.stage_brs_registration ? 1 : 0
+
   depends_on = [
     ibm_backup_recovery_source_registration.source_registration,
     helm_release.data_source_connector,
@@ -1099,13 +862,13 @@ resource "terraform_data" "wait_for_source_discovery" {
   triggers_replace = {
     connection_id = local.connection_id
     dsc_version   = var.dsc_chart_uri
-    source_id     = tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
+    source_id     = try(tostring(ibm_backup_recovery_source_registration.source_registration[0].source_id), "")
   }
 
   input = {
     region          = local.brs_instance_region
     tenant_id       = local.brs_tenant_id
-    registration_id = tostring(ibm_backup_recovery_source_registration.source_registration.source_id)
+    registration_id = try(tostring(ibm_backup_recovery_source_registration.source_registration[0].source_id), "")
     brs_endpoint    = local.backup_recovery_instance_public_url
   }
 
@@ -1120,6 +883,7 @@ resource "terraform_data" "wait_for_source_discovery" {
 }
 
 data "ibm_backup_recovery_protection_sources" "sources" {
+  count           = local.stage_brs_registration || local.stage_protection_groups ? 1 : 0
   x_ibm_tenant_id = local.brs_tenant_id
   environment     = "kKubernetes"
   instance_id     = local.brs_instance_guid
@@ -1130,11 +894,148 @@ data "ibm_backup_recovery_protection_sources" "sources" {
 }
 
 ##############################################################################
+# Locals — Protection Source Tree
+#
+# Flatten the kKubernetes source tree returned by the BRS protection-sources
+# API into a flat name→ID map used to resolve protection group object names
+# (namespaces, PVCs, etc.) to the numeric IDs that the BRS API requires.
+#
+# The tree has three levels inside each environment envelope:
+#
+#   protection_sources[N]          ← env envelope (no protection_source attr)
+#     └── nodes[M]                 ← cluster node
+#           IKS:  protection_source[0].id = cluster source_id
+#           OCP:  NO protection_source attr at this level
+#           └── nodes[K]           ← namespace / label nodes
+#                 IKS:  protection_source[0].id = namespace object id
+#                 OCP:  protection_source[0].id = namespace object id
+#                       protection_source[0].parent_id = cluster source_id
+#                 └── nodes[J]     ← workload nodes (PVCs, pods, etc.)
+#
+# When source_id is not yet known or not found in the tree (source discovery
+# still in progress), the cluster filter is skipped so all nodes are included —
+# this avoids an empty all_flat_objects and prevents a spurious precondition
+# failure while the DSC is still doing its initial discovery pass.
+##############################################################################
+
+locals {
+  # The registered source_id as a string — used for tree-filtering comparisons.
+  source_id_str = try(tostring(ibm_backup_recovery_source_registration.source_registration[0].source_id), "")
+
+  # All top-level environment entries returned by the BRS protection-sources API,
+  # with a null guard so the expression is safe before the data source is populated.
+  raw_envs = try(data.ibm_backup_recovery_protection_sources.sources[0].protection_sources, []) != null ? try(data.ibm_backup_recovery_protection_sources.sources[0].protection_sources, []) : []
+
+  # IKS clusters: the registered source_id equals protection_source[0].id on the
+  # cluster node. Build a set of all such IDs so we can cheaply detect IKS mode.
+  known_cluster_node_ids = toset(flatten([
+    for env in local.raw_envs : [
+      for cluster_node in(env.nodes != null ? env.nodes : []) :
+      tostring(cluster_node.protection_source[0].id)
+      if cluster_node.protection_source != null && length(cluster_node.protection_source) > 0
+    ]
+  ]))
+
+  # OCP clusters: the registered source_id appears as protection_source[0].parent_id
+  # on namespace nodes. Build a set of all such parent IDs so we can detect OCP mode.
+  known_namespace_parent_ids = toset(flatten([
+    for env in local.raw_envs : [
+      for cluster_node in(env.nodes != null ? env.nodes : []) : [
+        for namespace_node in(cluster_node.nodes != null ? cluster_node.nodes : []) :
+        tostring(try(namespace_node.protection_source[0].parent_id, ""))
+        if namespace_node.protection_source != null && length(namespace_node.protection_source) > 0 &&
+        try(namespace_node.protection_source[0].parent_id, null) != null
+      ]
+    ]
+  ]))
+
+  # Whether to scope the tree walk to a single registered cluster.
+  # Skipped when source_id is not yet known or not found in the tree.
+  should_filter_by_registered_cluster = (
+    try(ibm_backup_recovery_source_registration.source_registration[0].source_id, null) != null &&
+    (
+      contains(local.known_cluster_node_ids, local.source_id_str) ||
+      contains(local.known_namespace_parent_ids, local.source_id_str)
+    )
+  )
+
+  # Cluster-level nodes — one per registered cluster within each environment.
+  # When filtering is active, only the node matching the registered cluster is kept.
+  #   IKS: match by cluster_node.protection_source[0].id == source_id
+  #   OCP: match by any namespace child having protection_source[0].parent_id == source_id
+  cluster_nodes = flatten([
+    for env in local.raw_envs : [
+      for cluster_node in(env.nodes != null ? env.nodes : []) : cluster_node
+      if !local.should_filter_by_registered_cluster ||
+      # IKS path — source_id is the cluster node's own object ID
+      (cluster_node.protection_source != null &&
+        length(cluster_node.protection_source) > 0 &&
+      tostring(cluster_node.protection_source[0].id) == local.source_id_str) ||
+      # OCP path — source_id appears as parent_id on one of the cluster's namespace children
+      anytrue([
+        for namespace_node in(cluster_node.nodes != null ? cluster_node.nodes : []) :
+        (namespace_node.protection_source != null &&
+          length(namespace_node.protection_source) > 0 &&
+        tostring(try(namespace_node.protection_source[0].parent_id, "")) == local.source_id_str)
+      ])
+    ]
+  ])
+
+  # protection_source entries on cluster-level nodes (the cluster objects themselves).
+  cluster_protection_sources = flatten([
+    for cluster_node in local.cluster_nodes : [
+      for ps in(cluster_node.protection_source != null ? cluster_node.protection_source : []) : {
+        id   = ps.id
+        name = ps.name
+      }
+    ]
+  ])
+
+  # Namespace-level nodes — direct children of each cluster node.
+  namespace_nodes = flatten([
+    for cluster_node in local.cluster_nodes :
+    (cluster_node.nodes != null ? cluster_node.nodes : [])
+  ])
+
+  # protection_source entries on namespace nodes (namespace / project objects).
+  namespace_protection_sources = flatten([
+    for namespace_node in local.namespace_nodes : [
+      for ps in(namespace_node.protection_source != null ? namespace_node.protection_source : []) : {
+        id   = ps.id
+        name = ps.name
+      }
+    ]
+  ])
+
+  # Workload-level nodes — direct children of each namespace node (PVCs, pods, etc.).
+  workload_nodes = flatten([
+    for namespace_node in local.namespace_nodes :
+    (namespace_node.nodes != null ? namespace_node.nodes : [])
+  ])
+
+  # protection_source entries on workload nodes (individual PVC / workload objects).
+  workload_protection_sources = flatten([
+    for workload_node in local.workload_nodes : [
+      for ps in(workload_node.protection_source != null ? workload_node.protection_source : []) : {
+        id   = ps.id
+        name = ps.name
+      }
+    ]
+  ])
+
+  # Flat list of every discoverable object across all three levels, indexed by name.
+  # The grouping operator (...) keeps duplicate names as a list so the map never
+  # errors when the same name appears at more than one level.
+  all_flat_objects  = concat(local.cluster_protection_sources, local.namespace_protection_sources, local.workload_protection_sources)
+  object_name_to_id = { for obj in local.all_flat_objects : obj.name => obj.id... }
+}
+
+##############################################################################
 # Protection Groups (granular backup control)
 ##############################################################################
 
 resource "ibm_backup_recovery_protection_group" "protection_group" {
-  for_each = { for pg in var.protection_groups : pg.name => pg }
+  for_each = local.stage_protection_groups ? { for pg in var.protection_groups : pg.name => pg } : {}
 
   x_ibm_tenant_id    = local.brs_tenant_id
   name               = each.value.name
@@ -1149,6 +1050,7 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
   endpoint_type      = var.brs_endpoint_type
   instance_id        = local.brs_instance_guid
   region             = local.brs_instance_region
+  delete_snapshots   = each.value.delete_snapshots
 
   kubernetes_params {
     enable_indexing       = each.value.enable_indexing
@@ -1423,10 +1325,12 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
       EOT
     }
 
-    # Ignore changes to include_params within objects when it's returned as empty by the API
-    # This prevents perpetual drift when include_params is not explicitly set in the configuration
+    # Ignore changes to include_params within objects when it's returned as empty by the API.
+    # Also ignore kubernetes_params broadly to prevent perpetual drift caused by the BRS API
+    # returning server-side object IDs and other computed fields that differ from config values.
     ignore_changes = [
-      kubernetes_params[0].objects[0].include_params
+      kubernetes_params[0].objects[0].include_params,
+      kubernetes_params
     ]
   }
 }
@@ -1439,7 +1343,7 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
 # Must depend on the protection group so Terraform destroys this resource first,
 # running the cancel provisioner before the provider attempts to delete the group.
 resource "terraform_data" "cancel_pg_runs" {
-  for_each = { for pg in var.protection_groups : pg.name => pg }
+  for_each = local.stage_protection_groups ? { for pg in var.protection_groups : pg.name => pg } : {}
 
   input = {
     region              = local.brs_instance_region
@@ -1471,12 +1375,11 @@ resource "terraform_data" "cancel_pg_runs" {
 # Adds BRS tags to identify which instance is protecting this cluster.
 # Set add_cluster_tags = false to prevent tag drift when cluster tags are managed externally.
 resource "ibm_resource_tag" "cluster_brs_tag" {
-  count    = var.add_cluster_tags ? 1 : 0
-  provider = ibm.cluster
+  count = local.stage_protection_groups && var.add_cluster_tags ? 1 : 0
 
   resource_id = local.cluster_crn
   tag_type    = "user"
-  tags        = ["brs-region:${local.brs_instance_region}", "brs-guid:${local.brs_instance_guid}", "brs-source-id:${split("::", ibm_backup_recovery_source_registration.source_registration.id)[1]}"]
+  tags        = ["brs-region:${local.brs_instance_region}", "brs-guid:${local.brs_instance_guid}", "brs-source-id:${split("::", ibm_backup_recovery_source_registration.source_registration[0].id)[1]}"]
 }
 
 ##############################################################################
@@ -1488,12 +1391,12 @@ resource "ibm_resource_tag" "cluster_brs_tag" {
 # local-exec provisioner to call a script that deletes the protection group.
 resource "terraform_data" "delete_auto_protect_pg" {
   depends_on = [terraform_data.install_dependencies]
-  count      = var.enable_auto_protect && var.auto_protect_policy_name != null ? 1 : 0
+  count      = local.stage_protection_groups && var.enable_auto_protect && var.auto_protect_policy_name != null ? 1 : 0
 
   input = {
     region              = local.brs_instance_region
     tenant              = local.brs_tenant_id
-    protection_group_id = ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id
+    protection_group_id = try(ibm_backup_recovery_source_registration.source_registration[0].kubernetes_params[0].auto_protect_config[0].protection_group_id, "")
     brs_endpoint        = local.backup_recovery_instance_url
     api_key             = sensitive(var.ibmcloud_api_key)
   }
@@ -1514,12 +1417,42 @@ resource "terraform_data" "delete_auto_protect_pg" {
 
 
 ##############################################################################
+# Locals — Recovery Helpers
+##############################################################################
+
+locals {
+  # Convert full PG ID format (clusterid/::timestamp:id:id) to numeric format
+  # (timestamp:id:id) — required by the protection_group_runs data source.
+  # Example: "5n3kwor5cb/::8009179080677672:1753125047518:126734"
+  #       -> "8009179080677672:1753125047518:126734"
+  numeric_pg_ids = local.deploy_recovery ? {
+    for pg_name, pg_resource in ibm_backup_recovery_protection_group.protection_group :
+    pg_name => split("::", pg_resource.id)[1]
+  } : {}
+
+  # Map of protection group name to the latest successful snapshot ID.
+  # Populated only after wait_for_backup_run confirms a completed run exists.
+  latest_snapshots = local.deploy_recovery ? {
+    for pg_name, runs in data.ibm_backup_recovery_protection_group_runs.backup_runs :
+    pg_name => (
+      length(try(runs.runs, [])) > 0 ? (
+        try(runs.runs[0].local_backup_info[0].snapshot_info[0].snapshot_id, try(runs.runs[0].id, null))
+      ) : null
+    )
+  } : {}
+
+  # Target cluster for recovery operations.
+  # For cross-cluster recovery the target must be pre-registered with the same BRS instance.
+  target_cluster_id = var.recovery_mode == "cross-cluster" ? var.target_cluster_id : var.cluster_id
+}
+
+##############################################################################
 # Immediate Backup Trigger for Recovery Mode
 ##############################################################################
 
 # Small delay to ensure protection group is fully registered before triggering backup
 resource "time_sleep" "wait_for_pg_registration" {
-  count = local.deploy_recovery ? 1 : 0
+  count = local.stage_backup_and_recovery && local.deploy_recovery ? 1 : 0
 
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
@@ -1539,7 +1472,7 @@ resource "time_sleep" "wait_for_pg_registration" {
 # Blindly firing a second kRegular run while a CloudArchiveDirect archival task is in
 # progress causes: "CloudArchiveDirect job has an active archival task for primary target".
 resource "terraform_data" "trigger_backup_run" {
-  for_each = local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
+  for_each = local.stage_backup_and_recovery && local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
 
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
@@ -1578,7 +1511,7 @@ resource "terraform_data" "trigger_backup_run" {
 # Actively poll for backup completion instead of blind waiting
 # This script checks backup status every 30 seconds until completion or timeout
 resource "terraform_data" "wait_for_backup_run" {
-  for_each = local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
+  for_each = local.stage_backup_and_recovery && local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
 
   depends_on = [
     ibm_backup_recovery_protection_group.protection_group,
@@ -1620,7 +1553,7 @@ resource "terraform_data" "wait_for_backup_run" {
 
 # Data source to discover completed backup snapshots after polling confirms they exist
 data "ibm_backup_recovery_protection_group_runs" "backup_runs" {
-  for_each = local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
+  for_each = local.stage_backup_and_recovery && local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
 
   x_ibm_tenant_id        = local.brs_tenant_id
   protection_group_id    = local.numeric_pg_ids[each.key]
@@ -1641,7 +1574,7 @@ data "ibm_backup_recovery_protection_group_runs" "backup_runs" {
 ##############################################################################
 
 resource "ibm_backup_recovery" "recover_snapshot" {
-  for_each = local.deploy_recovery ? { for recovery in var.recoveries : recovery.name => recovery } : {}
+  for_each = local.stage_backup_and_recovery && local.deploy_recovery ? { for recovery in var.recoveries : recovery.name => recovery } : {}
 
   x_ibm_tenant_id      = local.brs_tenant_id
   name                 = each.value.name
@@ -1678,6 +1611,14 @@ resource "ibm_backup_recovery" "recover_snapshot" {
   ]
 
   lifecycle {
+    # BRS recoveries are immutable audit records — the API rejects DELETE.
+    # The provider's CustomizeDiff marks ALL fields immutable; any diff on any
+    # attribute causes "cannot be updated. Field: <x>". ignore_changes = all
+    # prevents post-creation diffs from reaching CustomizeDiff.
+    # If terraform destroy fails on this resource, remove it from state:
+    #   terraform state rm 'module.<mod>.ibm_backup_recovery.recover_snapshot["<name>"]'
+    ignore_changes = all
+
     precondition {
       condition     = length(local.latest_snapshots) > 0
       error_message = <<-EOT

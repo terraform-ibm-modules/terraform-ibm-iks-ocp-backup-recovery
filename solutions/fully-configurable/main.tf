@@ -1,18 +1,18 @@
 locals {
   # --- Environment type detection ---
-  is_vpc     = length(regexall("Vpc$", var.connection_env_type)) > 0
-  is_classic = length(regexall("Classic$", var.connection_env_type)) > 0
+  is_vpc     = length(regexall("Vpc$", var.source_connection_env_type)) > 0
+  is_classic = length(regexall("Classic$", var.source_connection_env_type)) > 0
 
   # --- Recovery mode detection ---
   is_full_recovery = var.deployment_mode == "full_backup_recovery"
 }
 # Retrieve information about an existing VPC cluster
-# Uses ibm.cluster provider — source account in cross-account deployments.
+# Uses ibm.source_cluster provider — source account in cross-account deployments.
 data "ibm_container_vpc_cluster" "vpc_cluster" {
   count             = local.is_vpc ? 1 : 0
-  provider          = ibm.cluster
-  name              = var.cluster_id
-  resource_group_id = var.cluster_resource_group_id
+  provider          = ibm.source_cluster
+  name              = var.source_cluster_id
+  resource_group_id = var.source_cluster_resource_group_id
   wait_till         = var.wait_till
   wait_till_timeout = var.wait_till_timeout
 }
@@ -20,18 +20,18 @@ data "ibm_container_vpc_cluster" "vpc_cluster" {
 # Retrieve information about an existing Classic cluster
 data "ibm_container_cluster" "classic_cluster" {
   count             = local.is_classic ? 1 : 0
-  provider          = ibm.cluster
-  name              = var.cluster_id
-  resource_group_id = var.cluster_resource_group_id
+  provider          = ibm.source_cluster
+  name              = var.source_cluster_id
+  resource_group_id = var.source_cluster_resource_group_id
   wait_till         = var.wait_till
   wait_till_timeout = var.wait_till_timeout
 }
 data "ibm_container_cluster_config" "cluster_config" {
-  provider          = ibm.cluster
-  cluster_name_id   = var.cluster_id
-  resource_group_id = var.cluster_resource_group_id
+  provider          = ibm.source_cluster
+  cluster_name_id   = var.source_cluster_id
+  resource_group_id = var.source_cluster_resource_group_id
   config_dir        = "${path.module}/kubeconfig"
-  endpoint_type     = var.cluster_config_endpoint_type != "default" ? var.cluster_config_endpoint_type : null
+  endpoint_type     = var.source_cluster_config_endpoint_type != "default" ? var.source_cluster_config_endpoint_type : null
   admin             = true
 
   # Wait for cluster to be ready before fetching config
@@ -40,6 +40,55 @@ data "ibm_container_cluster_config" "cluster_config" {
     data.ibm_container_vpc_cluster.vpc_cluster,
     data.ibm_container_cluster.classic_cluster
   ]
+}
+
+##############################################################################
+# VPC Block CSI Driver Addon Upgrade (VPC clusters only, always-on)
+##############################################################################
+
+# Fetch the full list of currently installed addons on the source cluster.
+# Always runs for VPC clusters — vpc_block_csi_driver_version is non-nullable
+# so it always has a value (default "5.2"). Skipped for Classic clusters.
+data "ibm_container_addons" "source_cluster_addons" {
+  count    = local.is_vpc ? 1 : 0
+  provider = ibm.source_cluster
+  cluster  = var.source_cluster_id
+
+  depends_on = [data.ibm_container_vpc_cluster.vpc_cluster]
+}
+
+locals {
+  # Build a map of existing addons keyed by name, then override vpc-block-csi-driver
+  # with the target version.  All other addons are preserved as-is.
+  # When the addon is not yet installed, it is added fresh.
+  existing_addons_map = local.is_vpc ? {
+    for addon in try(data.ibm_container_addons.source_cluster_addons[0].addons, []) :
+    addon.name => addon.version
+  } : {}
+
+  merged_addons = local.is_vpc ? merge(
+    local.existing_addons_map,
+    { "vpc-block-csi-driver" = var.vpc_block_csi_driver_version }
+  ) : {}
+}
+
+# Re-declare all addons with vpc-block-csi-driver pinned to the target version.
+# ibm_container_addons manages the full addon set — all addons from the data
+# source are included so nothing is removed unintentionally.
+resource "ibm_container_addons" "source_cluster_addons" {
+  count    = local.is_vpc ? 1 : 0
+  provider = ibm.source_cluster
+  cluster  = var.source_cluster_id
+
+  dynamic "addons" {
+    for_each = local.merged_addons
+    content {
+      name    = addons.key
+      version = addons.value
+    }
+  }
+
+  depends_on = [data.ibm_container_addons.source_cluster_addons]
 }
 
 module "existing_brs_crn_parser" {
@@ -51,72 +100,291 @@ module "existing_brs_crn_parser" {
 
 locals {
   region = var.existing_brs_instance_crn != null ? module.existing_brs_crn_parser[0].region : var.region
+
+  # Cluster regions — mirror the provider.tf fallback chains so that VPC IS API
+  # calls (subnet lookups, security group, VPE gateway) target the right region.
+  # The VPC and BRS instance can be in different regions (e.g. cluster in br-sao,
+  # BRS in au-syd), so local.region (BRS region) must NOT be used for VPC calls.
+  source_cluster_region_resolved = var.source_cluster_region != null ? var.source_cluster_region : var.region
+  target_cluster_region_resolved = (
+    var.target_cluster_region != null ? var.target_cluster_region : (
+      var.source_cluster_region != null ? var.source_cluster_region : var.region
+    )
+  )
 }
 
-module "protect_cluster" {
+##############################################################################
+# BRS Instance — owned by the DA, not the root module.
+#
+# The DA creates the BRS instance here (using the ibm / BRS-account provider)
+# and passes the resulting values into module.protect_cluster as prerequisites.
+# The root module's internal backup_recovery_instance is skipped when these
+# values are provided (brs_tenant_id != null).
+##############################################################################
+
+module "brs_instance" {
+  source                    = "terraform-ibm-modules/backup-recovery/ibm"
+  version                   = "1.12.3"
+  providers                 = { ibm = ibm } # always the BRS (target) account
+  region                    = local.region
+  resource_group_id         = var.brs_resource_group_id != null ? var.brs_resource_group_id : var.source_cluster_resource_group_id
+  ibmcloud_api_key          = var.ibmcloud_api_key
+  instance_name             = var.brs_instance_name
+  service_type              = var.brs_service_type
+  existing_brs_instance_crn = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : null
+  create_new_instance       = var.create_new_brs_instance
+  connection_name           = var.source_brs_connection_name
+  create_new_connection     = var.source_brs_create_new_connection
+  resource_tags             = var.resource_tags
+  access_tags               = var.access_tags
+  endpoint_type             = var.brs_endpoint_type
+  connection_env_type       = var.source_connection_env_type
+  policies                  = var.policies
+}
+
+# Stage 1: Source Cluster Infrastructure & DSC Helm Deployment (Source Account)
+module "source_cluster_prep" {
   source = "../.."
   providers = {
-    ibm         = ibm         # target (BRS) account — or only account in same-account mode
-    ibm.cluster = ibm.cluster # source (cluster/VPC) account — same as ibm when source_ibmcloud_api_key is null
+    ibm        = ibm.source_cluster
+    kubernetes = kubernetes
+    helm       = helm
   }
-  # --- Cluster ---
-  cluster_id                   = var.cluster_id
-  cluster_resource_group_id    = var.cluster_resource_group_id
-  cluster_config_endpoint_type = var.cluster_config_endpoint_type
-  add_dsc_rules_to_cluster_sg  = var.add_dsc_rules_to_cluster_sg
-  add_cluster_tags             = var.add_cluster_tags
-  kube_type                    = var.kube_type
+
+  execution_stage              = "cluster_prep"
+  cluster_id                   = var.source_cluster_id
+  cluster_resource_group_id    = var.source_cluster_resource_group_id
+  cluster_config_endpoint_type = var.source_cluster_config_endpoint_type
+  kube_type                    = var.source_kube_type
   wait_till                    = var.wait_till
   wait_till_timeout            = var.wait_till_timeout
-  # --- Deployment Mode ---
-  deployment_mode = var.deployment_mode
-  # --- BRS Instance ---
-  ibmcloud_api_key          = var.ibmcloud_api_key
-  brs_endpoint_type         = var.brs_endpoint_type
-  brs_service_type          = var.brs_service_type
-  existing_brs_instance_crn = var.existing_brs_instance_crn
-  brs_instance_name         = var.brs_instance_name
-  brs_resource_group_id     = var.brs_resource_group_id
-  region                    = local.region
-  # --- BRS Connection ---
-  brs_connection_name       = var.brs_connection_name
-  brs_create_new_connection = var.brs_create_new_connection
-  connection_env_type       = var.connection_env_type
-  # --- VPE + S2S (cross-account and same-account private routing) ---
-  create_brs_vpe = var.create_brs_vpe
-  vpc_id         = var.vpc_id
-  vpc_subnets    = var.vpc_subnets
-  brs_vpe_name   = var.brs_vpe_name
-  # --- Data Source Connector (DSC) ---
+  connection_env_type          = var.source_connection_env_type
+  ibmcloud_api_key             = var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key
+
+  # DSC configuration for source cluster
   dsc_chart_uri           = var.dsc_chart_uri
   dsc_name                = var.dsc_name
   dsc_replicas            = var.dsc_replicas
   dsc_namespace           = var.dsc_namespace
   dsc_helm_timeout        = var.dsc_helm_timeout
-  dsc_storage_class       = var.dsc_storage_class
-  create_dsc_worker_pool  = var.create_dsc_worker_pool
+  dsc_storage_class       = var.source_dsc_storage_class
+  create_dsc_worker_pool  = var.source_create_dsc_worker_pool
   dsc_worker_pool_zones   = var.dsc_worker_pool_zones
-  dsc_worker_pool_flavor  = var.dsc_worker_pool_flavor
+  dsc_worker_pool_flavor  = var.source_dsc_worker_pool_flavor
   dsc_pod_cpu_limits      = var.dsc_pod_cpu_limits
   dsc_pod_memory_limits   = var.dsc_pod_memory_limits
   dsc_pod_cpu_requests    = var.dsc_pod_cpu_requests
   dsc_pod_memory_requests = var.dsc_pod_memory_requests
-  # --- Registration Settings ---
+
+  # Auth token passed from BRS connection so DSC Helm deployment can register
+  brs_registration_token = module.brs_instance.registration_token
+
+  # Wait for addon upgrade to complete before DSC Helm install — the DSC PVC
+  # uses ibmc-vpc-block-metro-5iops-tier which requires the CSI driver to be ready.
+  depends_on = [ibm_container_addons.source_cluster_addons]
+}
+
+# Stage 2: Source Cluster BRS Registration, Protection Groups & Operations (BRS Account)
+module "protect_cluster" {
+  source = "../.."
+  providers = {
+    ibm = ibm # target (BRS) account
+  }
+
+  execution_stage              = "brs_management"
+  cluster_id                   = var.source_cluster_id
+  cluster_crn                  = local.is_classic ? try(data.ibm_container_cluster.classic_cluster[0].crn, null) : try(data.ibm_container_vpc_cluster.vpc_cluster[0].crn, null)
+  cluster_endpoint             = local.is_classic ? (var.source_cluster_config_endpoint_type == "private" ? try(data.ibm_container_cluster.classic_cluster[0].private_service_endpoint_url, null) : try(data.ibm_container_cluster.classic_cluster[0].public_service_endpoint_url, null)) : (var.source_cluster_config_endpoint_type == "private" ? try(data.ibm_container_vpc_cluster.vpc_cluster[0].private_service_endpoint_url, null) : try(data.ibm_container_vpc_cluster.vpc_cluster[0].public_service_endpoint_url, null))
+  cluster_resource_group_id    = var.source_cluster_resource_group_id
+  cluster_config_endpoint_type = var.source_cluster_config_endpoint_type
+  add_cluster_tags             = var.add_cluster_tags
+  kube_type                    = var.source_kube_type
+  wait_till                    = var.wait_till
+  wait_till_timeout            = var.wait_till_timeout
+  connection_env_type          = var.source_connection_env_type
+  deployment_mode              = var.deployment_mode
+
+  # BRS prerequisite inputs (DA owns the BRS instance via module.brs_instance)
+  ibmcloud_api_key         = var.ibmcloud_api_key
+  brs_endpoint_type        = var.brs_endpoint_type
+  brs_tenant_id            = module.brs_instance.tenant_id
+  brs_connection_id        = module.brs_instance.connection_id
+  brs_registration_token   = module.brs_instance.registration_token
+  brs_instance_guid        = module.brs_instance.brs_instance_guid
+  brs_instance_crn         = module.brs_instance.brs_instance_crn
+  brs_instance_public_url  = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.public"])
+  brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
+  resolved_policy_ids      = module.brs_instance.resolved_policy_ids
+
+  # brsagent SA token created by module.source_cluster_prep (cluster_prep stage).
+  # The brs_management stage has count=0 for kubernetes_secret_v1.brsagent_token,
+  # so the token must be passed in explicitly from the cluster_prep output.
+  brsagent_token = module.source_cluster_prep.brsagent_token
+
+  # DSC Settings referenced during registration/discovery
+  dsc_chart_uri       = var.dsc_chart_uri
+  dsc_name            = var.dsc_name
+  dsc_namespace       = var.dsc_namespace
   registration_images = var.registration_images
   enable_auto_protect = var.enable_auto_protect
-  # --- Backup Policy ---
+
+  # Backup Policy & Groups
   auto_protect_policy_name = var.auto_protect_policy_name
   protection_groups        = var.protection_groups
-  policies                 = var.policies
-  # --- Resource Tags ---
-  resource_tags = var.resource_tags
-  access_tags   = var.access_tags
-  # --- Recovery Settings ---
+
+  # Recovery Settings
   recovery_mode                    = var.recovery_type
   target_cluster_id                = var.target_cluster_id
   target_cluster_resource_group_id = var.target_cluster_resource_group_id
+
+  depends_on = [
+    module.source_cluster_prep,
+    # Ensure VPE gateway is created before registering the source cluster with BRS
+    # so that DSC↔BRS traffic can route over the IBM private backbone from the start.
+    terraform_data.brs_vpe,
+  ]
 }
 
+##############################################################################
+# Virtual Private Endpoint Gateway for BRS
+##############################################################################
+
+locals {
+  # Cross-account detection: S2S policy needed only when the VPC account
+  # (ibm.source_cluster) differs from the BRS instance account (ibm).
+  tgt_jwt_raw = split(".", data.ibm_iam_auth_token.brs_account.iam_access_token)[1]
+  tgt_jwt_padded = format("%s%s",
+    local.tgt_jwt_raw,
+    substr("====", 0, (4 - (length(local.tgt_jwt_raw) % 4)) % 4)
+  )
+  brs_account_id = jsondecode(
+    base64decode(replace(replace(local.tgt_jwt_padded, "-", "+"), "_", "/"))
+  ).account.bss
+
+  src_jwt_raw = split(".", data.ibm_iam_auth_token.cluster_account.iam_access_token)[1]
+  src_jwt_padded = format("%s%s",
+    local.src_jwt_raw,
+    substr("====", 0, (4 - (length(local.src_jwt_raw) % 4)) % 4)
+  )
+  cluster_account_id = jsondecode(
+    base64decode(replace(replace(local.src_jwt_padded, "-", "+"), "_", "/"))
+  ).account.bss
+
+  is_cross_account = local.cluster_account_id != local.brs_account_id
+
+  brs_vpe_active = var.create_source_cluster_brs_vpe_gateway && local.is_vpc
+
+  brs_vpe_name_resolved = var.source_brs_vpe_name != null ? var.source_brs_vpe_name : "${lower(var.source_brs_connection_name)}-vpe"
+
+  # Subnet auto-discovery from existing cluster worker pools.
+  # When vpc_subnets is supplied explicitly (e.g. new cluster created in the same apply)
+  # the lookup is skipped so the count is always plan-time-static.
+  cluster_subnet_ids = local.brs_vpe_active && local.is_vpc && length(var.source_vpc_subnets) == 0 ? distinct(flatten(
+    data.ibm_container_vpc_cluster.vpc_cluster[*].worker_pools[*].zones[*].subnets[*].id
+  )) : []
+  cluster_subnet_lookup_count = length(local.cluster_subnet_ids) > 0 ? length(local.cluster_subnet_ids) : 0
+
+  resolved_vpc_id = var.source_vpc_id != null ? var.source_vpc_id : (
+    local.cluster_subnet_lookup_count > 0 ? data.ibm_is_subnet.cluster_subnet[0].vpc : null
+  )
+  resolved_vpc_subnets = length(var.source_vpc_subnets) > 0 ? var.source_vpc_subnets : [
+    for s in data.ibm_is_subnet.cluster_subnet : { name = s.name, id = s.id, zone = s.zone }
+  ]
+}
+
+# IAM tokens used for cross-account detection.
+data "ibm_iam_auth_token" "brs_account" {}
+data "ibm_iam_auth_token" "cluster_account" {
+  provider = ibm.source_cluster
+}
+
+# Subnet lookups for VPE auto-discovery (skipped when vpc_subnets supplied).
+data "ibm_is_subnet" "cluster_subnet" {
+  count      = local.cluster_subnet_lookup_count
+  provider   = ibm.source_cluster
+  identifier = local.cluster_subnet_ids[count.index]
+}
+
+# kube-vpegw security group — created automatically by IKS/ROKS for every VPC cluster.
+data "ibm_is_security_group" "kube_vpeg_sg" {
+  count    = local.brs_vpe_active ? 1 : 0
+  provider = ibm.source_cluster
+  name     = "kube-vpegw-${local.resolved_vpc_id}"
+
+  depends_on = [
+    data.ibm_container_vpc_cluster.vpc_cluster,
+  ]
+}
+
+##############################################################################
+# S2S IAM Authorization Policy  (cross-account only)
+# Created in the BRS (target) account so the source-account VPC endpoint-gateway
+# service can resolve the BRS CRN across account boundaries.
+##############################################################################
+
+module "brs_s2s_auth" {
+  count   = local.brs_vpe_active && local.is_cross_account ? 1 : 0
+  source  = "terraform-ibm-modules/s2s-auth/ibm"
+  version = "2.3.1"
+
+  enable_cbr = false
+
+  service_map = {
+    "brs-vpe-source-to-brs-target" = {
+      source_service_name       = "is"
+      source_resource_type      = "endpoint-gateway"
+      source_service_account_id = local.cluster_account_id
+      target_service_name       = "backup-recovery"
+      # Use module.brs_instance directly to avoid a circular dependency:
+      # brs_s2s_auth → brs_vpe → protect_cluster requires that protect_cluster
+      # does NOT feed back into brs_s2s_auth. The value is identical because
+      # module.protect_cluster receives brs_instance_guid from module.brs_instance.
+      target_resource_instance_id = module.brs_instance.brs_instance_guid
+      roles                       = ["Viewer"]
+      description                 = "Allow VPC endpoint-gateway in account ${local.cluster_account_id} to target BRS instance ${module.brs_instance.brs_instance_guid}"
+    }
+  }
+
+  # Depends on source_cluster_prep (not protect_cluster) so that the VPE can be
+  # created before protect_cluster runs source registration.
+  depends_on = [module.source_cluster_prep]
+}
+
+# VPE Gateway for source cluster — idempotent shell-based creation.
+# Uses ensure_vpe.sh so the gateway is never destroyed by terraform destroy.
+
+locals {
+  brs_vpe_subnet_ids = local.brs_vpe_active ? join(",", [for s in local.resolved_vpc_subnets : s.id]) : ""
+}
+
+resource "terraform_data" "brs_vpe" {
+  count = local.brs_vpe_active ? 1 : 0
+
+  triggers_replace = {
+    vpe_name          = local.brs_vpe_name_resolved
+    vpc_id            = local.resolved_vpc_id
+    brs_instance_crn  = module.brs_instance.brs_instance_crn
+    resource_group_id = var.source_cluster_resource_group_id
+    # Use the cluster region (not local.region which is the BRS instance region).
+    # The VPC IS endpoint-gateway API must be called against the VPC's region.
+    region            = local.source_cluster_region_resolved
+    security_group_id = data.ibm_is_security_group.kube_vpeg_sg[0].id
+    subnet_ids        = local.brs_vpe_subnet_ids
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = "${path.module}/../../scripts/ensure_vpe.sh '${self.triggers_replace.vpe_name}' '${self.triggers_replace.vpc_id}' '${self.triggers_replace.brs_instance_crn}' '${self.triggers_replace.resource_group_id}' '${self.triggers_replace.region}' '${self.triggers_replace.security_group_id}' '${self.triggers_replace.subnet_ids}'"
+    environment = {
+      IBMCLOUD_API_KEY = var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key # pragma: allowlist secret
+    }
+  }
+
+  depends_on = [
+    module.brs_s2s_auth,
+    data.ibm_is_security_group.kube_vpeg_sg,
+  ]
+}
 
 ##############################################################################
 # Recovery Configuration (Optional)
@@ -169,7 +437,7 @@ locals {
 
 data "ibm_container_vpc_cluster" "target_cluster" {
   count             = local.deploy_target_cluster ? 1 : 0
-  provider          = ibm.cluster
+  provider          = ibm.target_cluster
   name              = var.target_cluster_id
   resource_group_id = var.target_cluster_resource_group_id
   wait_till         = var.wait_till
@@ -180,7 +448,7 @@ data "ibm_container_cluster_config" "target_cluster_config" {
   depends_on = [data.ibm_container_vpc_cluster.target_cluster]
 
   count             = local.deploy_target_cluster ? 1 : 0
-  provider          = ibm.cluster
+  provider          = ibm.target_cluster
   cluster_name_id   = var.target_cluster_id
   resource_group_id = var.target_cluster_resource_group_id
   config_dir        = "${path.module}/kubeconfig"
@@ -188,38 +456,51 @@ data "ibm_container_cluster_config" "target_cluster_config" {
   admin             = true
 }
 
-# Register target cluster with BRS
-module "target_cluster_registration" {
+# Target cluster BRS connection — reuses the same BRS instance, creates a
+# separate data-source connection for the target cluster.
+module "brs_target_connection" {
+  count   = local.deploy_target_cluster ? 1 : 0
+  source  = "terraform-ibm-modules/backup-recovery/ibm"
+  version = "1.12.3"
+  providers = {
+    ibm = ibm # target (BRS) account
+  }
+
+  region                    = local.region
+  resource_group_id         = var.brs_resource_group_id != null ? var.brs_resource_group_id : var.source_cluster_resource_group_id
+  ibmcloud_api_key          = var.ibmcloud_api_key
+  instance_name             = var.brs_instance_name
+  existing_brs_instance_crn = module.brs_instance.brs_instance_crn
+  create_new_instance       = false
+  connection_name           = var.target_brs_connection_name != null ? var.target_brs_connection_name : "${var.target_cluster_id}-target-connection"
+  create_new_connection     = var.target_brs_create_new_connection
+  resource_tags             = var.resource_tags
+  access_tags               = var.access_tags
+  endpoint_type             = var.brs_endpoint_type
+  connection_env_type       = var.target_connection_env_type != null ? var.target_connection_env_type : var.source_connection_env_type
+  policies                  = []
+}
+
+# Stage 1 (Target): Target Cluster Infrastructure & DSC Helm Deployment (Target Account)
+module "target_cluster_prep" {
   count  = local.deploy_target_cluster ? 1 : 0
   source = "../.."
 
   providers = {
-    ibm         = ibm         # target (BRS) account
-    ibm.cluster = ibm.cluster # source (cluster/VPC) account — same as ibm when source_ibmcloud_api_key is null
-    helm        = helm.target
-    kubernetes  = kubernetes.target
+    ibm        = ibm.target_cluster
+    helm       = helm.target
+    kubernetes = kubernetes.target
   }
 
+  execution_stage              = "cluster_prep"
   cluster_id                   = var.target_cluster_id
   cluster_resource_group_id    = var.target_cluster_resource_group_id
   cluster_config_endpoint_type = var.target_cluster_config_endpoint_type
-  add_dsc_rules_to_cluster_sg  = var.add_dsc_rules_to_cluster_sg
-  kube_type                    = var.kube_type
-  ibmcloud_api_key             = var.ibmcloud_api_key
-
-  # Use same BRS instance as source. The source's BRS instance CRN is only known
-  # after apply when the source creates a new instance, so create_new_instance is
-  # set explicitly to false to keep the module's count/for_each gates from
-  # depending on that unknown value at plan time.
-  existing_brs_instance_crn = module.protect_cluster.brs_instance_crn
-  create_new_brs_instance   = false
-  brs_endpoint_type         = var.brs_endpoint_type
-  region                    = local.region
-
-  # Target connection configuration
-  brs_connection_name       = var.target_brs_connection_name != null ? var.target_brs_connection_name : "${var.target_cluster_id}-target-connection"
-  brs_create_new_connection = var.target_brs_create_new_connection
-  connection_env_type       = var.target_connection_env_type != null ? var.target_connection_env_type : var.connection_env_type
+  kube_type                    = var.target_kube_type != null ? var.target_kube_type : var.source_kube_type
+  wait_till                    = var.wait_till
+  wait_till_timeout            = var.wait_till_timeout
+  connection_env_type          = var.target_connection_env_type != null ? var.target_connection_env_type : var.source_connection_env_type
+  ibmcloud_api_key             = var.target_ibmcloud_api_key != null ? var.target_ibmcloud_api_key : (var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key)
 
   # DSC configuration for target
   dsc_chart_uri          = var.dsc_chart_uri
@@ -229,86 +510,140 @@ module "target_cluster_registration" {
   dsc_helm_timeout       = var.dsc_helm_timeout
   dsc_storage_class      = var.target_dsc_storage_class
   create_dsc_worker_pool = var.target_create_dsc_worker_pool
+  dsc_worker_pool_flavor = var.target_dsc_worker_pool_flavor
 
-  # Registration settings
-  registration_images = var.registration_images
-  enable_auto_protect = false # Don't auto-protect target cluster
-
-  # No policies or protection groups for target (it's just a recovery destination)
-  policies          = []
-  protection_groups = null
-
-  # --- VPE (target cluster's own VPC — needed when target is in a different VPC from source) ---
-  create_brs_vpe = var.target_create_brs_vpe
-  vpc_id         = var.target_vpc_id
-  vpc_subnets    = var.target_vpc_subnets
-  brs_vpe_name   = var.target_brs_vpe_name
-
-  # Tags
-  resource_tags = var.resource_tags
-  access_tags   = var.access_tags
+  # Auth token passed from target BRS connection
+  brs_registration_token = module.brs_target_connection[0].registration_token
 
   depends_on = [
     data.ibm_container_cluster_config.target_cluster_config
   ]
 }
 
-##############################################################################
-# Recovery Storage Class Aliases (target cluster)
+# Stage 2 (Target): Register target cluster with BRS (BRS Account)
+module "target_cluster_registration" {
+  count  = local.deploy_target_cluster ? 1 : 0
+  source = "../.."
+
+  providers = {
+    ibm = ibm # BRS account
+  }
+
+  execution_stage              = "brs_management"
+  cluster_id                   = var.target_cluster_id
+  cluster_crn                  = try(data.ibm_container_vpc_cluster.target_cluster[0].crn, null)
+  cluster_endpoint             = var.target_cluster_config_endpoint_type == "private" ? try(data.ibm_container_vpc_cluster.target_cluster[0].private_service_endpoint_url, null) : try(data.ibm_container_vpc_cluster.target_cluster[0].public_service_endpoint_url, null)
+  cluster_resource_group_id    = var.target_cluster_resource_group_id
+  cluster_config_endpoint_type = var.target_cluster_config_endpoint_type
+  kube_type                    = var.target_kube_type != null ? var.target_kube_type : var.source_kube_type
+  wait_till                    = var.wait_till
+  wait_till_timeout            = var.wait_till_timeout
+  ibmcloud_api_key             = var.ibmcloud_api_key
+
+  # BRS prerequisite inputs — same instance as source, target's own connection
+  brs_endpoint_type        = var.brs_endpoint_type
+  connection_env_type      = var.target_connection_env_type != null ? var.target_connection_env_type : var.source_connection_env_type
+  brs_tenant_id            = module.brs_target_connection[0].tenant_id
+  brs_connection_id        = module.brs_target_connection[0].connection_id
+  brs_registration_token   = module.brs_target_connection[0].registration_token
+  brs_instance_guid        = module.brs_instance.brs_instance_guid
+  brs_instance_crn         = module.brs_instance.brs_instance_crn
+  brs_instance_public_url  = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.public"])
+  brs_instance_private_url = nonsensitive(module.brs_instance.brs_instance.extensions["endpoints.private"])
+  resolved_policy_ids      = null
+
+  # brsagent SA token created by module.target_cluster_prep (cluster_prep stage).
+  # The brs_management stage has count=0 for kubernetes_secret_v1.brsagent_token,
+  # so the token must be passed in explicitly from the cluster_prep output.
+  brsagent_token = module.target_cluster_prep[0].brsagent_token
+
+  # DSC settings referenced during registration
+  dsc_chart_uri       = var.dsc_chart_uri
+  dsc_name            = var.dsc_name
+  dsc_namespace       = var.dsc_namespace
+  registration_images = var.registration_images
+  enable_auto_protect = false # Don't auto-protect target cluster
+
+  # No protection groups for target (it's just a recovery destination)
+  protection_groups = null
+
+  depends_on = [
+    module.target_cluster_prep
+  ]
+}
+
+# VPE Gateway for target cluster (when create_target_cluster_brs_vpe_gateway = true)
+# Routes target cluster's DSC↔BRS traffic over the IBM private backbone.
+# Created here in the DA because the root module no longer manages VPE.
 ##############################################################################
 
-# Velero restores each PVC with the storageClassName it had on the SOURCE
-# cluster. In a Classic -> VPC migration those names (e.g. "ibmc-block-silver")
-# do not and cannot exist on the VPC target, which only has ibmc-vpc-block-*
-# classes. The restored PVC therefore stays Pending, the temporary data-mover
-# pod cannot schedule ("unbound immediate PersistentVolumeClaims"), and BRS
-# fails the recovery with "Timed out while waiting for temporary pod to start."
-#
-# The BRS recovery API exposes no storage-class remapping (kubernetesTargetParams
-# accepts only recoveryTargetConfig and renameRecoveredNamespacesParams), so the
-# mapping has to exist on the cluster. Each entry creates a StorageClass on the
-# target whose NAME matches the source class but which is backed by the VPC block
-# CSI driver, letting the restored PVC bind unchanged.
-#
-# Note this changes the storage characteristics: a Classic "silver" volume is
-# recreated as VPC block on the given profile. Choose the profile accordingly.
-resource "kubernetes_storage_class_v1" "recovery_alias" {
-  provider = kubernetes.target
-  for_each = local.deploy_target_cluster ? var.recovery_storage_class_aliases : {}
+locals {
+  # A VPE is only ever built for a VPC target cluster.
+  target_is_vpc         = length(regexall("Vpc$", coalesce(var.target_connection_env_type, var.source_connection_env_type))) > 0
+  target_brs_vpe_active = var.create_target_cluster_brs_vpe_gateway && local.target_is_vpc && local.deploy_target_cluster
 
-  metadata {
-    name = each.key
-    labels = {
-      "app.kubernetes.io/managed-by" = "terraform-ibm-iks-ocp-backup-recovery"
-    }
-    annotations = {
-      description = "Compatibility alias created by the BRS deployable architecture so PVCs restored from a source cluster using storage class '${each.key}' can bind on this VPC cluster."
+  target_brs_vpe_name_resolved = var.target_brs_vpe_name != null ? var.target_brs_vpe_name : "${lower(var.target_brs_connection_name != null ? var.target_brs_connection_name : "${coalesce(var.target_cluster_id, "unknown")}-target-connection")}-vpe"
+
+  # Subnet auto-discovery for target cluster (same pattern as source).
+  target_cluster_subnet_ids = local.target_brs_vpe_active && length(var.target_vpc_subnets) == 0 ? distinct(flatten(
+    data.ibm_container_vpc_cluster.target_cluster[*].worker_pools[*].zones[*].subnets[*].id
+  )) : []
+  target_cluster_subnet_lookup_count = length(local.target_cluster_subnet_ids)
+
+  target_resolved_vpc_id = var.target_vpc_id != null ? var.target_vpc_id : (
+    local.target_cluster_subnet_lookup_count > 0 ? data.ibm_is_subnet.target_cluster_subnet[0].vpc : null
+  )
+  target_resolved_vpc_subnets = length(var.target_vpc_subnets) > 0 ? var.target_vpc_subnets : [
+    for s in data.ibm_is_subnet.target_cluster_subnet : { name = s.name, id = s.id, zone = s.zone }
+  ]
+}
+
+data "ibm_is_subnet" "target_cluster_subnet" {
+  count      = local.target_cluster_subnet_lookup_count
+  provider   = ibm.target_cluster
+  identifier = local.target_cluster_subnet_ids[count.index]
+}
+
+data "ibm_is_security_group" "target_kube_vpeg_sg" {
+  count    = local.target_brs_vpe_active ? 1 : 0
+  provider = ibm.target_cluster
+  name     = "kube-vpegw-${local.target_resolved_vpc_id}"
+}
+
+# VPE Gateway for target cluster — idempotent shell-based creation.
+# Uses ensure_vpe.sh so the gateway is never destroyed by terraform destroy.
+
+locals {
+  target_brs_vpe_subnet_ids = local.target_brs_vpe_active ? join(",", [for s in local.target_resolved_vpc_subnets : s.id]) : ""
+}
+
+resource "terraform_data" "target_brs_vpe" {
+  count = local.target_brs_vpe_active ? 1 : 0
+
+  triggers_replace = {
+    vpe_name          = local.target_brs_vpe_name_resolved
+    vpc_id            = local.target_resolved_vpc_id
+    brs_instance_crn  = module.protect_cluster.brs_instance_crn
+    resource_group_id = var.target_cluster_resource_group_id
+    # Use the resolved target cluster region (not var.target_cluster_region directly,
+    # which may be null — null would be passed literally to the shell script).
+    region            = local.target_cluster_region_resolved
+    security_group_id = data.ibm_is_security_group.target_kube_vpeg_sg[0].id
+    subnet_ids        = local.target_brs_vpe_subnet_ids
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = "${path.module}/../../scripts/ensure_vpe.sh '${self.triggers_replace.vpe_name}' '${self.triggers_replace.vpc_id}' '${self.triggers_replace.brs_instance_crn}' '${self.triggers_replace.resource_group_id}' '${self.triggers_replace.region}' '${self.triggers_replace.security_group_id}' '${self.triggers_replace.subnet_ids}'"
+    environment = {
+      IBMCLOUD_API_KEY = var.target_ibmcloud_api_key != null ? var.target_ibmcloud_api_key : (var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key) # pragma: allowlist secret
     }
   }
 
-  # Fixed to the VPC block CSI defaults — these mirror the stock
-  # ibmc-vpc-block-* classes. Only the profile varies, via the map value.
-  # Anyone needing different reclaim/binding semantics should create the
-  # StorageClass themselves rather than widen this interface.
-  storage_provisioner    = "vpc.block.csi.ibm.io"
-  reclaim_policy         = "Delete"
-  volume_binding_mode    = "WaitForFirstConsumer"
-  allow_volume_expansion = true
-
-  parameters = {
-    billingType                 = "hourly"
-    classVersion                = "1"
-    "csi.storage.k8s.io/fstype" = "ext4"
-    encrypted                   = "false"
-    encryptionKey               = ""
-    profile                     = each.value
-    region                      = ""
-    resourceGroup               = ""
-    tags                        = ""
-    zone                        = ""
-  }
-
-  depends_on = [data.ibm_container_cluster_config.target_cluster_config]
+  depends_on = [
+    module.target_cluster_registration,
+    data.ibm_is_security_group.target_kube_vpeg_sg,
+  ]
 }
 
 # Wait for target registration to propagate
@@ -332,6 +667,10 @@ resource "time_sleep" "wait_for_target_registration" {
 resource "terraform_data" "wait_for_backup" {
   count = local.is_full_recovery ? 1 : 0
 
+  triggers_replace = {
+    protection_group_id = local.recovery_pg_id
+  }
+
   depends_on = [
     module.protect_cluster,
     time_sleep.wait_for_target_registration
@@ -354,7 +693,11 @@ resource "terraform_data" "wait_for_backup" {
   }
 
   provisioner "local-exec" {
-    command     = "${path.module}/../../scripts/wait_for_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' $BRS_PG_ID '${self.input.timeout_minutes}' '${self.input.poll_interval_seconds}' '${self.input.binaries_path}' > /tmp/backup_snapshot_${self.input.instance_id}.json"
+    # Write snapshot JSON and also write snapshot_id to a file named by
+    # self.id (the terraform_data UUID, stable in state after creation) so
+    # downstream resources can reference it by a path that is unknown at plan
+    # time (self.id is only known after apply), deferring any file() reads.
+    command     = "${path.module}/../../scripts/wait_for_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' $BRS_PG_ID '${self.input.timeout_minutes}' '${self.input.poll_interval_seconds}' '${self.input.binaries_path}' | tee /tmp/backup_snapshot_${self.input.instance_id}.json | jq -r '.snapshot_id' | tee /tmp/snapshot_id_${self.input.instance_id}.txt /tmp/snapshot_id_${self.id}.txt > /dev/null"
     interpreter = ["/bin/bash", "-c"]
     environment = {
       IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
@@ -364,112 +707,209 @@ resource "terraform_data" "wait_for_backup" {
 }
 
 ##############################################################################
-# Same-Cluster Recovery
+# Snapshot info — read after wait_for_backup writes /tmp/snapshot_id_<id>.txt
 ##############################################################################
 
-resource "terraform_data" "same_cluster_recovery" {
-  count = local.is_full_recovery && var.recovery_type == "same-cluster" ? 1 : 0
+# local_file.snapshot_id existed in older state. Silently detach from state
+# without any provider operations (the local provider has no delete API for
+# files that no longer exist on Schematics workers).
+# Stores the snapshot_id in Terraform state without any file() call at plan time.
+#
+# PROBLEM with file() in a resource attribute:
+#   Terraform evaluates ALL resource attribute expressions during plan — even
+#   attributes protected by ignore_changes — to compute the diff. If the path
+#   is known at plan time (e.g. keyed by instance_guid which is always in state)
+#   file() fires immediately and fails on fresh Schematics workers where /tmp
+#   files don't exist yet.
+#
+# SOLUTION — provisioner writes snapshot_id; terraform_data.output carries it:
+#   Step 1 (snapshot_id_writer): a terraform_data whose triggers_replace depends
+#     on wait_for_backup[0].id (unknown on first plan, known after). Its
+#     provisioner reads /tmp/snapshot_id_<wait_for_backup_id>.txt and writes the
+#     content to its own output file keyed by its OWN .id (also unknown on first
+#     plan). No file() call in any attribute expression.
+#   Step 2 (snapshot_id): a terraform_data whose input uses file() keyed by
+#     snapshot_id_writer[0].id — unknown at plan time (first run), so file() is
+#     deferred to apply. After first apply both IDs are in state; subsequent plans
+#     see known IDs but the resource is NOT replaced (triggers_replace only fires
+#     when wait_for_backup is replaced), so the expressions are never re-evaluated
+#     against live state — Terraform just compares against the state value.
+#
+# On new backup runs: wait_for_backup is replaced → snapshot_id_writer is
+#   replaced (triggers_replace) → snapshot_id is replaced (triggers_replace) →
+#   file() runs at apply time when the new /tmp files exist.
 
-  input = {
-    url              = module.protect_cluster.brs_instance_url
-    tenant           = module.protect_cluster.brs_tenant_id
-    endpoint_type    = var.brs_endpoint_type
-    instance_id      = module.protect_cluster.brs_instance_guid
-    source_pg_id     = local.recovery_pg_id
-    target_source_id = split("::", module.protect_cluster.source_registration_id)[1]
-    api_key          = sensitive(var.ibmcloud_api_key)
-    recovery_name    = "recovery-${local.recovery_pg_label}-${formatdate("YYYYMMDD-hhmm", timestamp())}"
-    binaries_path    = "/tmp"
-    namespace_prefix = var.recovery_namespace_prefix
-  }
+# Step 1: write snapshot_id to a file keyed by this resource's own .id (unknown
+# at plan time), so the Step 2 file() path is also unknown at plan time.
+resource "terraform_data" "snapshot_id_writer" {
+  count = local.is_full_recovery ? 1 : 0
+
+  triggers_replace = [terraform_data.wait_for_backup[0].id]
 
   provisioner "local-exec" {
-    # wait_for_backup_run.sh writes snapshot info to this file before this resource is applied.
-    # jq is available in the Schematics environment (used by wait_for_backup_run.sh itself).
-    command = <<-EOT
-      SNAPSHOT_ID=$(jq -r '.snapshot_id' /tmp/backup_snapshot_${self.input.instance_id}.json)
-      ${path.module}/../../scripts/trigger_cross_cluster_recovery.sh \
-        '${self.input.url}' \
-        '${self.input.tenant}' \
-        '${self.input.endpoint_type}' \
-        '${self.input.instance_id}' \
-        "$BRS_PG_ID" \
-        '${self.input.target_source_id}' \
-        "$SNAPSHOT_ID" \
-        '${self.input.recovery_name}' \
-        '${self.input.namespace_prefix}' \
-        '${self.input.binaries_path}'
-    EOT
-    environment = {
-      IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
-      BRS_PG_ID        = self.input.source_pg_id
-    }
+    interpreter = ["/bin/bash", "-c"]
+    command     = "cp /tmp/snapshot_id_${terraform_data.wait_for_backup[0].id}.txt /tmp/snapshot_id_out_${self.id}.txt"
   }
 
   depends_on = [terraform_data.wait_for_backup]
 }
 
+# Step 2: read the file written by Step 1. Path keyed by snapshot_id_writer[0].id
+# — unknown at first plan → file() deferred to apply. After first apply the value
+# is stored in .input and never re-read from disk (triggers_replace = writer means
+# this only re-runs when writer re-runs, i.e. when wait_for_backup is replaced).
+resource "terraform_data" "snapshot_id" {
+  count = local.is_full_recovery ? 1 : 0
+
+  triggers_replace = [terraform_data.snapshot_id_writer[0].id]
+
+  input = try(trimspace(file("/tmp/snapshot_id_out_${terraform_data.snapshot_id_writer[0].id}.txt")), "")
+
+  lifecycle {
+    ignore_changes = [input]
+  }
+
+  depends_on = [terraform_data.snapshot_id_writer]
+}
+
+locals {
+  # snapshot_id is read from Terraform state (.input), never from /tmp.
+  # Always known after first apply. Unknown at first plan → snapshot_data
+  # is null → ibm_backup_recovery is correctly deferred to apply.
+  snapshot_data = (
+    local.is_full_recovery &&
+    length(terraform_data.snapshot_id) > 0 &&
+    terraform_data.snapshot_id[0].output != null
+    ) ? {
+    snapshot_id = tostring(terraform_data.snapshot_id[0].output)
+  } : null
+}
+
 ##############################################################################
-# Cross-Cluster Recovery
+# Recovery (same-cluster and cross-cluster)
+#
+# PROVIDER LIMITATION (ibm-cloud/ibm v2.4.0):
+#   ibm_backup_recovery has a CustomizeDiff that marks ALL fields immutable.
+#   It fires for every plan computation — even with ignore_changes = all and
+#   even for create-before-destroy replacements — any time a config attribute
+#   differs from state at plan time. Because local.recovery_pg_id is
+#   (known after apply) whenever the protection group is being recreated
+#   in the same apply, any replace_triggered_by on ibm_backup_recovery
+#   consistently triggers this error:
+#
+#     "[ERROR] Resource ibm_backup_recovery cannot be updated. Field: kubernetes_params"
+#
+#   The fix: replace ibm_backup_recovery with a script-based approach.
+#   terraform_data.recovery_trigger calls scripts/trigger_recovery.sh
+#   (which POSTs /v2/data-protect/recoveries directly) and writes the
+#   recovery_id to /tmp. terraform_data.recovery_id reads that file and
+#   stores the recovery_id in .output for use by wait_for_recovery_completion.
+#
+#   ibm_backup_recovery.recovery is retained as a zero-count tombstone so
+#   that existing state records are not destroyed (BRS API rejects DELETE
+#   on recovery records — they are immutable audit history). Remove orphaned
+#   state entries manually if needed:
+#     terraform state rm 'ibm_backup_recovery.recovery[0]'
 ##############################################################################
 
-resource "terraform_data" "cross_cluster_recovery" {
-  count = local.is_full_recovery && var.recovery_type == "cross-cluster" ? 1 : 0
+# Step 1 — Trigger the recovery via script and write recovery_id to a file
+# keyed by self.id (unknown at plan time → defers file write to apply).
+# Triggered on every new backup run or new target registration.
+resource "terraform_data" "recovery_trigger" {
+  count = local.is_full_recovery ? 1 : 0
+
+  triggers_replace = {
+    wait_for_backup     = terraform_data.wait_for_backup[0].id
+    target_registration = var.recovery_type == "cross-cluster" ? module.target_cluster_registration[0].source_registration_id : ""
+  }
 
   input = {
-    url              = module.protect_cluster.brs_instance_url
-    tenant           = module.protect_cluster.brs_tenant_id
-    endpoint_type    = var.brs_endpoint_type
-    instance_id      = module.protect_cluster.brs_instance_guid
-    source_pg_id     = local.recovery_pg_id
-    target_source_id = split("::", module.target_cluster_registration[0].source_registration_id)[1]
-    api_key          = sensitive(var.ibmcloud_api_key)
-    recovery_name    = "cross-cluster-recovery-${local.recovery_pg_label}-${formatdate("YYYYMMDD-hhmm", timestamp())}"
-    binaries_path    = "/tmp"
-    namespace_prefix = var.recovery_namespace_prefix
+    url               = module.protect_cluster.brs_instance_url
+    tenant            = module.protect_cluster.brs_tenant_id
+    endpoint_type     = var.brs_endpoint_type
+    instance_id       = module.protect_cluster.brs_instance_guid
+    api_key           = sensitive(var.ibmcloud_api_key)
+    pg_id             = local.recovery_pg_id
+    namespace_prefix  = var.recovery_namespace_prefix
+    target_source_id  = var.recovery_type == "cross-cluster" ? tostring(tonumber(split("::", module.target_cluster_registration[0].source_registration_id)[1])) : ""
+    binaries_path     = "/tmp"
+    recovery_type     = var.recovery_type
+    recovery_pg_label = local.recovery_pg_label
+    # KubernetesLabel schema: {key: <source_class>, value: <target_class>}
+    storage_class_mapping_json = jsonencode([for src, tgt in var.recovery_storage_class_mapping : { key = src, value = tgt }])
   }
 
   provisioner "local-exec" {
-    # wait_for_backup_run.sh writes snapshot info to this file before this resource is applied.
-    # jq is available in the Schematics environment (used by wait_for_backup_run.sh itself).
+    interpreter = ["/bin/bash", "-c"]
+    # Capture only the last line of stdout (the recovery_id) so that
+    # script progress/info lines written to stdout do not corrupt the file.
     command = <<-EOT
-      SNAPSHOT_ID=$(jq -r '.snapshot_id' /tmp/backup_snapshot_${self.input.instance_id}.json)
-      ${path.module}/../../scripts/trigger_cross_cluster_recovery.sh \
+      ${path.module}/../../scripts/trigger_recovery.sh \
         '${self.input.url}' \
         '${self.input.tenant}' \
         '${self.input.endpoint_type}' \
         '${self.input.instance_id}' \
-        "$BRS_PG_ID" \
-        '${self.input.target_source_id}' \
-        "$SNAPSHOT_ID" \
-        '${self.input.recovery_name}' \
+        '${self.input.pg_id}' \
+        "${tostring(terraform_data.snapshot_id[0].output)}" \
+        "${self.input.recovery_type == "cross-cluster" ? "cross-cluster-" : ""}recovery-${self.input.recovery_pg_label}-$(date +%Y%m%d-%H%M)" \
         '${self.input.namespace_prefix}' \
-        '${self.input.binaries_path}'
+        '${self.input.target_source_id}' \
+        '${self.input.binaries_path}' \
+        '${self.input.storage_class_mapping_json}' \
+        | tail -n1 > /tmp/recovery_id_out_${self.id}.txt
     EOT
     environment = {
       IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
-      BRS_PG_ID        = self.input.source_pg_id
     }
   }
 
   depends_on = [
+    terraform_data.snapshot_id,
     terraform_data.wait_for_backup,
     module.target_cluster_registration,
     time_sleep.wait_for_target_registration,
-    # Alias storage classes must exist before the restore creates PVCs that
-    # reference them, otherwise the PVCs stay Pending and the recovery fails.
-    kubernetes_storage_class_v1.recovery_alias
   ]
 }
 
+# Step 2 — Read recovery_id written by recovery_trigger into Terraform state.
+# Uses the snapshot_id pattern: input uses file() keyed by recovery_trigger[0].id
+# which is unknown at plan time on first create → deferred to apply. After first
+# apply the id is known and ignore_changes = [input] prevents re-reads.
+resource "terraform_data" "recovery_id" {
+  count = local.is_full_recovery ? 1 : 0
+
+  triggers_replace = [terraform_data.recovery_trigger[0].id]
+
+  input = try(trimspace(file("/tmp/recovery_id_out_${terraform_data.recovery_trigger[0].id}.txt")), "")
+
+  lifecycle {
+    ignore_changes = [input]
+  }
+
+  depends_on = [terraform_data.recovery_trigger]
+}
+
+# ibm_backup_recovery.recovery existed in older state but cannot be managed
+# going forward — the provider's CustomizeDiff marks kubernetes_params
+# immutable and fires even on a plan with count=0 when the state record
+# still exists.  Using `removed` with destroy=false causes Terraform to
+# silently drop the state entry without calling the provider at all.
+# BRS rejects DELETE on recovery records anyway (immutable audit history).
 ##############################################################################
 # Wait for Recovery Completion
 ##############################################################################
 
-# Poll recovery status and wait for completion before refreshing the protection source
-# Recovery operations are asynchronous - this ensures namespaces are fully restored
+# Poll recovery status and wait for completion before refreshing the protection source.
+# Recovery operations are asynchronous — this ensures namespaces are fully restored.
+# The recovery_id is read from terraform_data.recovery_id[0].output (stored in state
+# after recovery_trigger's provisioner runs).
 resource "terraform_data" "wait_for_recovery_completion" {
   count = local.is_full_recovery ? 1 : 0
+
+  # Re-run whenever a new recovery is triggered (recovery_trigger replaced).
+  triggers_replace = {
+    recovery_trigger_id = terraform_data.recovery_trigger[0].id
+  }
 
   input = {
     url                   = module.protect_cluster.brs_instance_url
@@ -480,17 +920,23 @@ resource "terraform_data" "wait_for_recovery_completion" {
     timeout_minutes       = var.recovery_wait_timeout_minutes
     poll_interval_seconds = var.recovery_poll_interval_seconds
     binaries_path         = "/tmp"
+    recovery_id           = tostring(terraform_data.recovery_id[0].output)
   }
 
   provisioner "local-exec" {
+    # on_failure = continue: recovery runs asynchronously in BRS. If the
+    # Schematics job wall-clock timeout kills this poller before recovery
+    # finishes, the apply still succeeds. The recovery_id is in state and
+    # the BRS UI shows live status.
+    on_failure = continue
+
     command = <<-EOT
-      RECOVERY_ID=$(cat /tmp/recovery_id_${self.input.instance_id}.txt)
       ${path.module}/../../scripts/wait_for_recovery_completion.sh \
         '${self.input.url}' \
         '${self.input.tenant}' \
         '${self.input.endpoint_type}' \
         '${self.input.instance_id}' \
-        "$RECOVERY_ID" \
+        '${self.input.recovery_id}' \
         '${self.input.timeout_minutes}' \
         '${self.input.poll_interval_seconds}' \
         '${self.input.binaries_path}'
@@ -500,17 +946,15 @@ resource "terraform_data" "wait_for_recovery_completion" {
     }
   }
 
-  depends_on = [
-    terraform_data.same_cluster_recovery,
-    terraform_data.cross_cluster_recovery
-  ]
+  depends_on = [terraform_data.recovery_id]
 }
 
 ##############################################################################
 # Refresh Protection Source After Recovery
 ##############################################################################
 
-# Refresh the appropriate cluster after recovery to make recovered namespaces visible in the protection source UI
+# Refresh the appropriate cluster after recovery to make recovered namespaces
+# visible in the protection source UI.
 # - For same-cluster recovery: refresh the source cluster (where recovery happened)
 # - For cross-cluster recovery: refresh the target cluster (where recovery happened)
 resource "ibm_backup_recovery_protection_source_refresh" "post_recovery_refresh" {
@@ -522,7 +966,5 @@ resource "ibm_backup_recovery_protection_source_refresh" "post_recovery_refresh"
   instance_id                          = module.protect_cluster.brs_instance_guid
   region                               = local.region
 
-  depends_on = [
-    terraform_data.wait_for_recovery_completion
-  ]
+  depends_on = [terraform_data.wait_for_recovery_completion]
 }

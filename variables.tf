@@ -1,10 +1,73 @@
 ##############################################################################
+# Execution Stage & Phase Control Variables
+##############################################################################
+
+variable "execution_stage" {
+  description = "Execution stage profile for the module: 'all' (runs everything end-to-end), 'cluster_prep' (runs only cluster discovery, worker pools, SG rules, and Helm DSC deployment), 'brs_management' (runs BRS source registration, protection groups, and backups/recoveries), or 'custom' (uses granular enable_* flags)."
+  type        = string
+  default     = "all"
+
+  validation {
+    condition     = contains(["all", "cluster_prep", "brs_management", "custom"], var.execution_stage)
+    error_message = "Valid values for execution_stage are 'all', 'cluster_prep', 'brs_management', or 'custom'."
+  }
+}
+
+variable "enable_cluster_infra_prep" {
+  description = "When true, fetches cluster data sources, creates DSC worker pools, and sets DSC security group rules. In 'custom' stage, this flag is evaluated directly."
+  type        = bool
+  default     = true
+}
+
+variable "enable_dsc_helm_deployment" {
+  description = "When true, creates the DSC namespace, Kubernetes RBAC/secrets, and deploys the Data Source Connector Helm chart. In 'custom' stage, this flag is evaluated directly."
+  type        = bool
+  default     = true
+}
+
+variable "enable_brs_registration" {
+  description = "When true, registers the cluster as a protection source in the BRS instance and waits for discovery. In 'custom' stage, this flag is evaluated directly."
+  type        = bool
+  default     = true
+}
+
+variable "enable_protection_groups" {
+  description = "When true, creates BRS protection groups, applies cluster BRS tags, and configures backup policies. In 'custom' stage, this flag is evaluated directly."
+  type        = bool
+  default     = true
+}
+
+variable "enable_backup_and_recovery" {
+  description = "When true, triggers on-demand backup runs, polls for completion, and executes recovery snapshots. In 'custom' stage, this flag is evaluated directly."
+  type        = bool
+  default     = true
+}
+
+
+##############################################################################
 # Cluster variables
 ##############################################################################
 
 variable "cluster_id" {
   description = "The ID of the cluster designated for backup and recovery."
   type        = string
+}
+
+variable "cluster_endpoint" {
+  description = "The cluster API endpoint URL (e.g. `https://…:port`). When provided, the `ibm_container_vpc_cluster` / `ibm_container_cluster` data source is not queried for the endpoint. Required when running `execution_stage = \"brs_management\"` with a provider that cannot access the source cluster (e.g. cross-account deployments)."
+  type        = string
+  default     = null
+}
+
+variable "cluster_crn" {
+  description = "The CRN of the cluster. When provided, the `ibm_container_vpc_cluster` / `ibm_container_cluster` data source is not queried for the CRN. Required alongside `cluster_endpoint` when running `execution_stage = \"brs_management\"` with a provider that cannot access the source cluster (e.g. cross-account deployments)."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.cluster_crn == null || can(regex("^crn:v1:", var.cluster_crn))
+    error_message = "'cluster_crn' must be null or a valid CRN beginning with 'crn:v1:'."
+  }
 }
 
 variable "add_cluster_tags" {
@@ -16,12 +79,6 @@ variable "add_cluster_tags" {
 variable "cluster_resource_group_id" {
   description = "Resource group ID the cluster is deployed in."
   type        = string
-}
-
-variable "brs_resource_group_id" {
-  description = "The ID of the resource group where the BRS instance will be created. If this value is null, `cluster_resource_group_id` is used by default. This is suitable when the cluster and the BRS instance are in the same IBM Cloud account. Set this to a resource group in the target account when the BRS instance lives in a different IBM Cloud account from the cluster."
-  type        = string
-  default     = null
 }
 
 variable "cluster_config_endpoint_type" {
@@ -47,7 +104,7 @@ variable "kube_type" {
       "openshift",
       "kubernetes",
     ], var.kube_type)
-    error_message = "Accepted values are: ROKS or IKS."
+    error_message = "Accepted values are: `openshift` or `kubernetes`."
   }
 }
 
@@ -86,12 +143,6 @@ variable "install_required_binaries" {
 ##############################################################################
 # Data Source Connector (DSC)
 ##############################################################################
-
-variable "add_dsc_rules_to_cluster_sg" {
-  description = "Set to `true` to automatically add the security group rules required by the Data Source Connector. This is mandatory when registering the cluster via its public service endpoint. Set to `false` to only register the cluster and create the policy without modifying security groups."
-  type        = bool
-  default     = false
-}
 
 variable "dsc_chart_uri" {
   description = "The full OCI registry URI for the Data Source Connector Helm chart, including the digest."
@@ -146,7 +197,7 @@ variable "dsc_storage_class" {
 }
 
 variable "create_dsc_worker_pool" {
-  description = "Set to `true` to create a dedicated worker pool for the Data Source Connector in VPC clusters. If set to `false`, the connector will be deployed on existing worker nodes."
+  description = "Set to `true` to create a dedicated worker pool for the Data Source Connector. For VPC clusters, one pool per zone is created using `ibm_container_vpc_worker_pool`, distributing `dsc_replicas` nodes across zones. For Classic clusters, a single pool (`ibm_container_worker_pool`) is created with one node per zone; zones are attached via `ibm_container_worker_pool_zone_attachment` using the VLANs of the default pool, up to `dsc_worker_pool_zones` zones. If set to `false`, the connector is deployed on existing worker nodes."
   type        = bool
   default     = true
 }
@@ -163,7 +214,7 @@ variable "dsc_worker_pool_zones" {
 }
 
 variable "dsc_worker_pool_flavor" {
-  description = "The machine flavor for the Data Source Connector worker pool. `bxf.4x16` (4 vCPU, 16 GB RAM) is available in every IBM Cloud VPC zone. Override for a larger flavor (e.g. `bxf.8x32`)."
+  description = "The machine flavor for the Data Source Connector worker pool. Defaults to `bxf.4x16` for VPC clusters and `b3c.4x16` for classic clusters when left at the default. Override with any compatible flavor for the cluster type (e.g. `bxf.8x32` for VPC, `b3c.8x32` for classic)."
   type        = string
   default     = "bxf.4x16"
   nullable    = false
@@ -198,27 +249,83 @@ variable "dsc_pod_memory_requests" {
 }
 
 ##############################################################################
-# Backup Recovery Service Instance
+# BRS prerequisite inputs — required, provided by the caller (DA or example)
+##############################################################################
+
+variable "brs_tenant_id" {
+  description = "Tenant ID of the BRS instance. Provided by the DA or example that owns the BRS instance."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "brs_connection_id" {
+  description = "Connection ID of the BRS data-source connection. Provided by the DA or example that owns the BRS instance."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "brs_registration_token" {
+  description = "Registration token used to register the DSC with the BRS instance. Provided by the DA or example that owns the BRS instance."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "brs_instance_guid" {
+  description = "GUID of the BRS service instance. Provided by the DA or example that owns the BRS instance."
+  type        = string
+  default     = null
+}
+
+variable "brs_instance_crn" {
+  description = "CRN of the BRS service instance. Provided by the DA or example that owns the BRS instance."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.brs_instance_crn == null || can(regex("^crn:v1:", var.brs_instance_crn))
+    error_message = "'brs_instance_crn' must be null or a valid CRN beginning with 'crn:v1:'."
+  }
+}
+
+variable "brs_instance_public_url" {
+  description = "Public endpoint URL of the BRS instance (without scheme). Provided by the DA or example that owns the BRS instance."
+  type        = string
+  default     = null
+}
+
+variable "brs_instance_private_url" {
+  description = "Private endpoint URL of the BRS instance (without scheme). Provided by the DA or example that owns the BRS instance."
+  type        = string
+  default     = null
+}
+
+variable "resolved_policy_ids" {
+  description = "Map of policy name → policy ID resolved by the caller's BRS instance module."
+  type        = map(string)
+  default     = null
+}
+
+variable "brsagent_token" {
+  description = "brsagent service account token. Required when execution_stage = 'brs_management' and the DSC was deployed in a separate module invocation (e.g. cross-account split). Pass the value of the cluster_prep module's brsagent_token output here. When null, the token is read from the kubernetes_secret_v1.brsagent_token resource created within this module invocation."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+##############################################################################
+# IBM Cloud API key (still used by scripts in the root module)
 ##############################################################################
 
 variable "ibmcloud_api_key" {
-  description = "The IBM Cloud api key to generate an IAM token."
+  description = "The IBM Cloud API key used to generate IAM tokens for scripts (cancel_pg_runs, wait-for-deregistration, etc.)."
   type        = string
   sensitive   = true
 }
 
-variable "region" {
-  description = "Region where the Backup & Recovery Service instance needs to be created."
-  type        = string
-  default     = null
-  validation {
-    condition     = (var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "null" && var.existing_brs_instance_crn != "") || var.region != null
-    error_message = "`region` is required when `existing_brs_instance_crn` is not provided."
-  }
-}
-
 variable "brs_endpoint_type" {
-  description = "The endpoint type to use when connecting to the Backup and Recovery service for Terraform provider operations and script calls. Allowed values are 'public' or 'private'. When `create_brs_vpe`=true and this is set to 'private', the DSC pods reach BRS over the Virtual Private Endpoint Gateway (VPE) instead of the IBM Cloud Service Endpoint (CSE) — the BRS endpoint URL is automatically overridden to the VPE DNS hostname inside the cluster VPC."
+  description = "The endpoint type to use when connecting to the Backup and Recovery service for Terraform provider operations and script calls. Allowed values are 'public' or 'private'. When a BRS VPE Gateway is active and this is set to 'private', the DSC pods reach BRS over the Virtual Private Endpoint Gateway (VPE) instead of the IBM Cloud Service Endpoint (CSE) — the BRS endpoint URL is automatically overridden to the VPE DNS hostname inside the cluster VPC."
   type        = string
   default     = "private"
 
@@ -226,67 +333,6 @@ variable "brs_endpoint_type" {
     condition     = contains(["public", "private"], var.brs_endpoint_type)
     error_message = "`brs_endpoint_type` must be 'public' or 'private'."
   }
-}
-
-variable "existing_brs_instance_crn" {
-  description = "CRN of the Backup & Recovery Service instance. Supports both production (`backup-recovery`) and test (`backup-recovery-tests`) service instances."
-  type        = string
-  default     = null
-
-  validation {
-    condition     = var.existing_brs_instance_crn == null || var.existing_brs_instance_crn == "null" || var.existing_brs_instance_crn == "" || can(regex("^crn:v1:[a-z0-9-]+:[a-z0-9-]*:[a-z0-9-]+:[a-z0-9-]*:a/[a-f0-9]+:[a-f0-9-]+::$", var.existing_brs_instance_crn))
-    error_message = "'existing_brs_instance_crn' must be a valid CRN. Examples: crn:v1:bluemix:public:backup-recovery:<region>:a/<account-id>:<instance-guid>:: (production) or crn:v1:bluemix:public:backup-recovery-tests:<region>:a/<account-id>:<instance-guid>:: (test)"
-  }
-}
-
-variable "create_new_brs_instance" {
-  description = "Whether to provision a new Backup & Recovery Service instance. Leave as `null` (default) to infer the behaviour from `existing_brs_instance_crn` (a new instance is created when the CRN is not provided). Set to `false` to reuse an existing instance whose CRN is only known after apply — for example, when this module registers a second cluster against an instance created by a first invocation in the same apply."
-  type        = bool
-  default     = null
-}
-
-variable "brs_service_type" {
-  description = "The IBM Cloud service name for the Backup and Recovery instance. Use the default `backup-recovery` for production. Set to `backup-recovery-tests` to provision or connect against the test-environment service."
-  type        = string
-  default     = "backup-recovery"
-  nullable    = false
-
-  validation {
-    condition     = contains(["backup-recovery", "backup-recovery-tests"], var.brs_service_type)
-    error_message = "`brs_service_type` must be 'backup-recovery' or 'backup-recovery-tests'."
-  }
-}
-
-variable "brs_instance_name" {
-  description = "Name of the Backup & Recovery Service instance. Required only when `existing_brs_instance_crn` is not provided."
-  type        = string
-  default     = null
-
-  validation {
-    condition     = var.brs_instance_name == null || var.brs_instance_name != ""
-    error_message = "'brs_instance_name' must not be an empty string. Either provide a valid name or leave it as null."
-  }
-  validation {
-    condition     = (var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "null" && var.existing_brs_instance_crn != "") || var.brs_instance_name != null
-    error_message = "`brs_instance_name` is required when `existing_brs_instance_crn` is not provided."
-  }
-}
-
-variable "brs_connection_name" {
-  description = "Name of the connection from the Backup & Recovery Service instance to be used for protecting the cluster. If `brs_create_new_connection` is set to `true` (default), this will be the name of the new connection created. If set to `false`, this must be the name of an existing connection."
-  type        = string
-  nullable    = false
-
-  validation {
-    condition     = var.brs_connection_name != ""
-    error_message = "'brs_connection_name' must not be an empty string."
-  }
-}
-
-variable "brs_create_new_connection" {
-  description = "Flag to create a new connection from the Backup & Recovery Service instance to the cluster. When set to `true` (default), a new connection is created with the name specified in `brs_connection_name`. When `false`, it uses an existing connection matching `brs_connection_name`."
-  type        = bool
-  default     = true
 }
 
 variable "connection_env_type" {
@@ -297,40 +343,6 @@ variable "connection_env_type" {
     condition     = contains(["kIksVpc", "kRoksVpc", "kRoksClassic", "kIksClassic"], var.connection_env_type)
     error_message = "`connection_env_type` must be one of 'kIksVpc', 'kRoksVpc', 'kRoksClassic', or 'kIksClassic'."
   }
-}
-
-##############################################################################
-# Virtual Private Endpoint Gateway (VPEG) for BRS
-##############################################################################
-
-variable "create_brs_vpe" {
-  description = "Set to `true` to create a Virtual Private Endpoint Gateway (VPEG) that routes traffic from the cluster VPC to the BRS instance over the IBM private backbone. For existing clusters, `vpc_id` and `vpc_subnets` are auto-discovered from the cluster's worker pools. When creating a new cluster in the same apply, supply `vpc_id` and `vpc_subnets` explicitly (the auto-discovery reads worker pools, which are unknown until after the cluster is applied). For cross-account setups (BRS in a different IBM Cloud account), the required S2S IAM authorization policy is created automatically when the module detects that the `ibm.cluster` provider belongs to a different account than the default `ibm` provider."
-  type        = bool
-  default     = false
-  nullable    = false
-}
-
-variable "vpc_id" {
-  description = "ID of the VPC where the BRS Virtual Private Endpoint Gateway will be created. Optional when create_brs_vpe is true — when omitted the VPC ID is auto-discovered from the cluster's worker-pool subnets. Supply this explicitly only when the auto-discovery would pick the wrong VPC."
-  type        = string
-  default     = null
-}
-
-variable "vpc_subnets" {
-  description = "List of subnets in which to bind reserved IPs for the BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when create_brs_vpe is true — when omitted all subnets in the cluster VPC are discovered automatically. Supply this explicitly to restrict the VPEG to a specific subset of subnets."
-  type = list(object({
-    name = string
-    id   = string
-    zone = string
-  }))
-  default  = []
-  nullable = false
-}
-
-variable "brs_vpe_name" {
-  description = "Override the name of the BRS Virtual Private Endpoint Gateway. If null, the name is auto-generated as '<brs_connection_name>-vpe'."
-  type        = string
-  default     = null
 }
 
 ##############################################################################
@@ -358,18 +370,10 @@ variable "deployment_mode" {
 ##############################################################################
 
 variable "auto_protect_policy_name" {
-  description = "Name of an existing protection policy to use for auto-protect. Required when `enable_auto_protect` is `true` and deployment_mode is 'backup_only' or 'full_backup_recovery'. The policy must already exist in the BRS instance (create it using the `terraform-ibm-backup-recovery` module)."
+  description = "Name of an existing protection policy to use for auto-protect. Defaults to 'Basic', which is the out-of-the-box policy shipped with every BRS instance. The policy must already exist in the BRS instance. Only relevant when `enable_auto_protect` is `true` and `deployment_mode` is 'backup_only' or 'full_backup_recovery'."
   type        = string
-  default     = null
-
-  validation {
-    condition = (
-      var.deployment_mode == "connected_component" ||
-      var.enable_auto_protect == false ||
-      (var.enable_auto_protect == true && var.auto_protect_policy_name != null)
-    )
-    error_message = "auto_protect_policy_name is required when enable_auto_protect is true in 'backup_only' or 'full_backup_recovery' modes."
-  }
+  default     = "Basic"
+  nullable    = false
 }
 
 variable "enable_auto_protect" {
@@ -585,6 +589,7 @@ variable "protection_groups" {
     is_paused          = optional(bool, false)
     abort_in_blackouts = optional(bool, false)
     pause_in_blackouts = optional(bool, false)
+    delete_snapshots   = optional(bool, false) # When true, all snapshots are deleted when the Protection Group is destroyed
   }))
   default  = []
   nullable = false
@@ -615,362 +620,11 @@ variable "registration_images" {
 }
 
 ##############################################################################
-# Resource Tags
-##############################################################################
-
-variable "resource_tags" {
-  description = "Add user resource tags to the Backup Recovery instance to organize, track, and manage costs."
-  type        = list(string)
-  default     = []
-}
-
-variable "access_tags" {
-  description = "Add existing access management tags to the Backup Recovery instance to manage access."
-  type        = list(string)
-  default     = []
-}
-
-##############################################################################
-# BRS Policy Variables
-##############################################################################
-
-variable "policies" {
-  description = "A list of protection policies to create or look up. Set `create_new_policy` to `true` (default) to create a new policy with the specified `schedule` and `retention`. Set `create_new_policy` to `false` to reference an existing policy by `name`."
-  type = list(object({
-    name                      = string
-    create_new_policy         = optional(bool, false)
-    use_default_backup_target = optional(bool, true)
-
-    # --- primary_backup_target advanced details ---
-    primary_backup_target_details = optional(object({
-      target_id = number
-      tier_settings = optional(list(object({
-        cloud_platform = string # AWS, Azure, Google, Oracle
-        aws_tiering = optional(object({
-          tiers = list(object({ tier_type = string, move_after = number, move_after_unit = string }))
-        }))
-        azure_tiering = optional(object({
-          tiers = list(object({ tier_type = string, move_after = number, move_after_unit = string }))
-        }))
-        google_tiering = optional(object({
-          tiers = list(object({ tier_type = string, move_after = number, move_after_unit = string }))
-        }))
-        oracle_tiering = optional(object({
-          tiers = list(object({ tier_type = string, move_after = number, move_after_unit = string }))
-        }))
-      })))
-    }))
-
-    # --- Standard backup schedule and retention ---
-    schedule = optional(object({
-      unit            = string
-      minute_schedule = optional(object({ frequency = number }))
-      hour_schedule   = optional(object({ frequency = number }))
-      day_schedule    = optional(object({ frequency = number }))
-      week_schedule   = optional(object({ day_of_week = list(string) }))
-      month_schedule  = optional(object({ day_of_month = optional(number), day_of_week = optional(list(string)), week_of_month = optional(string) }))
-      year_schedule   = optional(object({ day_of_year = string }))
-    }))
-    retention = optional(object({
-      duration         = number
-      unit             = string
-      data_lock_config = optional(object({ mode = string, unit = string, duration = number, enable_worm_on_external_target = optional(bool, false) }))
-    }))
-
-    # --- Bare Metal Recovery (BMR) ---
-    bmr = optional(object({
-      schedule = optional(object({
-        unit            = string
-        minute_schedule = optional(object({ frequency = number }))
-        hour_schedule   = optional(object({ frequency = number }))
-        day_schedule    = optional(object({ frequency = number }))
-        week_schedule   = optional(object({ day_of_week = list(string) }))
-        month_schedule  = optional(object({ day_of_month = optional(number), day_of_week = optional(list(string)), week_of_month = optional(string) }))
-        year_schedule   = optional(object({ day_of_year = string }))
-      }))
-      retention = object({
-        duration         = number
-        unit             = string
-        data_lock_config = optional(object({ mode = string, unit = string, duration = number, enable_worm_on_external_target = optional(bool, false) }))
-      })
-    }))
-
-    # --- Continuous Data Protection (CDP) ---
-    cdp = optional(object({
-      retention = object({
-        duration         = number
-        unit             = string
-        data_lock_config = optional(object({ mode = string, unit = string, duration = number, enable_worm_on_external_target = optional(bool, false) }))
-      })
-    }))
-
-    # --- Database Log Backup ---
-    log = optional(object({
-      schedule = object({
-        unit            = string
-        minute_schedule = optional(object({ frequency = number }))
-        hour_schedule   = optional(object({ frequency = number }))
-        day_schedule    = optional(object({ frequency = number }))
-        week_schedule   = optional(object({ day_of_week = list(string) }))
-        month_schedule  = optional(object({ day_of_month = optional(number), day_of_week = optional(list(string)), week_of_month = optional(string) }))
-        year_schedule   = optional(object({ day_of_year = string }))
-      })
-      retention = object({
-        duration         = number
-        unit             = string
-        data_lock_config = optional(object({ mode = string, unit = string, duration = number, enable_worm_on_external_target = optional(bool, false) }))
-      })
-    }))
-
-    # --- Storage Array Snapshot ---
-    storage_array_snapshot = optional(object({
-      schedule = object({
-        unit            = string
-        minute_schedule = optional(object({ frequency = number }))
-        hour_schedule   = optional(object({ frequency = number }))
-        day_schedule    = optional(object({ frequency = number }))
-        week_schedule   = optional(object({ day_of_week = list(string) }))
-        month_schedule  = optional(object({ day_of_month = optional(number), day_of_week = optional(list(string)), week_of_month = optional(string) }))
-        year_schedule   = optional(object({ day_of_year = string }))
-      })
-      retention = object({
-        duration         = number
-        unit             = string
-        data_lock_config = optional(object({ mode = string, unit = string, duration = number, enable_worm_on_external_target = optional(bool, false) }))
-      })
-    }))
-
-    # --- Blackout windows ---
-    blackout_window = optional(list(object({
-      day = string
-      start_time = object({
-        hour      = number
-        minute    = number
-        time_zone = optional(string, "America/New_York")
-      })
-      end_time = object({
-        hour      = number
-        minute    = number
-        time_zone = optional(string, "America/New_York")
-      })
-    })))
-
-    # --- Run timeouts (prevent hung backup jobs) ---
-    run_timeouts = optional(list(object({
-      timeout_mins = number
-      backup_type  = optional(string, "kRegular")
-    })))
-
-    # --- Extended retention (keep certain snapshots longer) ---
-    extended_retention = optional(list(object({
-      schedule = object({
-        unit      = string
-        frequency = number
-      })
-      retention = object({
-        duration = number
-        unit     = string
-        data_lock_config = optional(object({
-          mode                           = string
-          unit                           = string
-          duration                       = number
-          enable_worm_on_external_target = optional(bool, false)
-        }))
-      })
-      run_type  = optional(string, "Regular")
-      config_id = optional(string)
-    })))
-
-    # --- Cascaded Targets Config ---
-    cascaded_targets_config = optional(object({
-      source_cluster_id = number
-      remote_targets = list(object({
-        archival_targets = optional(list(object({
-          target_id           = number
-          backup_run_type     = optional(string)
-          config_id           = optional(string)
-          copy_on_run_success = optional(bool)
-          schedule = object({
-            unit      = string
-            frequency = optional(number)
-          })
-          retention = object({
-            duration         = number
-            unit             = string
-            data_lock_config = optional(object({ mode = string, unit = string, duration = number, enable_worm_on_external_target = optional(bool, false) }))
-          })
-          extended_retention = optional(list(object({
-            schedule = object({
-              unit      = string
-              frequency = number
-            })
-            retention = object({
-              duration         = number
-              unit             = string
-              data_lock_config = optional(object({ mode = string, unit = string, duration = number, enable_worm_on_external_target = optional(bool, false) }))
-            })
-            run_type  = optional(string, "Regular")
-            config_id = optional(string)
-          })))
-        })))
-        cloud_spin_targets = optional(list(object({
-          target = object({
-            id = optional(number)
-          })
-          backup_run_type     = optional(string)
-          config_id           = optional(string)
-          copy_on_run_success = optional(bool)
-          schedule = object({
-            unit      = string
-            frequency = optional(number)
-          })
-          retention = object({
-            duration         = number
-            unit             = string
-            data_lock_config = optional(object({ mode = string, unit = string, duration = number, enable_worm_on_external_target = optional(bool, false) }))
-          })
-          extended_retention = optional(list(object({
-            schedule = object({
-              unit      = string
-              frequency = number
-            })
-            retention = object({
-              duration         = number
-              unit             = string
-              data_lock_config = optional(object({ mode = string, unit = string, duration = number, enable_worm_on_external_target = optional(bool, false) }))
-            })
-            run_type  = optional(string, "Regular")
-            config_id = optional(string)
-          })))
-        })))
-        replication_targets = optional(list(object({
-          target_type         = string
-          target_id           = number
-          backup_run_type     = optional(string)
-          config_id           = optional(string)
-          copy_on_run_success = optional(bool)
-          schedule = object({
-            unit      = string
-            frequency = optional(number)
-          })
-          retention = object({
-            duration         = number
-            unit             = string
-            data_lock_config = optional(object({ mode = string, unit = string, duration = number, enable_worm_on_external_target = optional(bool, false) }))
-          })
-          extended_retention = optional(list(object({
-            schedule = object({
-              unit      = string
-              frequency = number
-            })
-            retention = object({
-              duration         = number
-              unit             = string
-              data_lock_config = optional(object({ mode = string, unit = string, duration = number, enable_worm_on_external_target = optional(bool, false) }))
-            })
-            run_type  = optional(string, "Regular")
-            config_id = optional(string)
-          })))
-        })))
-      }))
-    }))
-  }))
-  default = null
-
-  # 1. Structural Validation
-  validation {
-    condition = alltrue([
-      for p in var.policies : (
-        p.create_new_policy == false ||
-        (p.schedule != null && p.retention != null)
-      )
-    ])
-    error_message = "When create_new_policy is true, both schedule and retention are required."
-  }
-
-  # 2. Unit Enumerations (Registry Constraint: "Allowable values: Days, Weeks, Months, Years")
-  validation {
-    condition = alltrue([
-      for p in var.policies : p.retention == null ? true :
-      contains(["Days", "Weeks", "Months", "Years"], p.retention.unit)
-    ])
-    error_message = "Retention unit must be one of: Days, Weeks, Months, Years."
-  }
-
-  # 3. Frequency Minimums (Registry/Cohesity Constraint: Minutes >= 7, Others >= 1)
-  validation {
-    condition = alltrue([
-      for p in var.policies : p.schedule == null ? true : (
-        (p.schedule.minute_schedule == null ? true : p.schedule.minute_schedule.frequency >= 7) &&
-        (p.schedule.hour_schedule == null ? true : p.schedule.hour_schedule.frequency >= 1) &&
-        (p.schedule.day_schedule == null ? true : p.schedule.day_schedule.frequency >= 1)
-      )
-    ])
-    error_message = "Invalid frequency: Minutes must be >= 7. Hours and Days must be >= 1."
-  }
-
-  # 4. Data Lock (WORM) Modes (Registry Constraint: "Compliance" or "Administrative")
-  validation {
-    condition = alltrue([
-      for p in var.policies : (
-        p.retention == null ? true : (
-          p.retention.data_lock_config == null ? true :
-          contains(["Compliance", "Administrative"], p.retention.data_lock_config.mode)
-        )
-      )
-    ])
-    error_message = "Data lock mode must be 'Compliance' or 'Administrative'."
-  }
-
-  # 5. Blackout Window Weekdays (Registry Constraint: Proper case day names)
-  validation {
-    condition = alltrue([
-      for p in var.policies : p.blackout_window == null ? true : alltrue([
-        for bw in p.blackout_window :
-        contains(["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"], bw.day)
-      ])
-    ])
-    error_message = "Blackout window 'day' must be the full weekday name (e.g., 'Monday')."
-  }
-
-  # 6. Run Timeouts Backup Types (Registry Constraint: kRegular, kFull, kLog, kSystem)
-  validation {
-    condition = alltrue([
-      for p in var.policies : p.run_timeouts == null ? true : alltrue([
-        for rt in p.run_timeouts :
-        contains(["kRegular", "kFull", "kLog", "kSystem", "kHydrateCDP", "kStorageArraySnapshot"], rt.backup_type)
-      ])
-    ])
-    error_message = "Invalid backup_type in run_timeouts. Allowed: kRegular, kFull, kLog, kSystem, kHydrateCDP, kStorageArraySnapshot."
-  }
-
-  # 7. Tiering Platform Cross-Check
-  # Ensures user doesn't provide azure_tiering when cloud_platform is "AWS"
-  validation {
-    condition = alltrue([
-      for p in var.policies : (
-        p.primary_backup_target_details == null ? true : (
-          p.primary_backup_target_details.tier_settings == null ? true : alltrue([
-            for ts in p.primary_backup_target_details.tier_settings : (
-              (ts.cloud_platform == "AWS" ? ts.aws_tiering != null : true) &&
-              (ts.cloud_platform == "Azure" ? ts.azure_tiering != null : true) &&
-              (ts.cloud_platform == "Oracle" ? ts.oracle_tiering != null : true) &&
-              (ts.cloud_platform == "Google" ? ts.google_tiering != null : true)
-            )
-          ])
-        )
-      )
-    ])
-    error_message = "The tiering configuration block must match the selected cloud_platform (e.g., provide 'aws_tiering' for 'AWS')."
-  }
-}
-
-##############################################################################
 # Recovery Variables
 ##############################################################################
 
 variable "recovery_mode" {
-  description = "Recovery mode: 'same-cluster' to restore within the same cluster, or 'cross-cluster' to restore to a different target cluster. This is used when recovery is enabled by the calling module."
+  description = "Recovery mode: 'same-cluster' to restore within the same cluster, or 'cross-cluster' to restore to a different target cluster. Requires `deployment_mode = 'full_backup_recovery'` to take effect."
   type        = string
   default     = "same-cluster"
 
