@@ -304,6 +304,16 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// the upgrade plan shows it as [delete, create]. The worker pool is
 			// immediately recreated so this is a safe one-time replacement.
 			"module.protect_cluster.ibm_container_vpc_worker_pool.data_source_connector[0]",
+			// token_rotation_trigger is nested inside backup_recovery_instance submodule
+			// as of backup-recovery v1.12.4. The triggers_replace.rotation timestamp
+			// shifts on re-plan because rotation_hours was added in v1.12.4, changing
+			// the computed next-rotation time. This is a one-time upgrade-plan artefact.
+			"module.protect_cluster.module.backup_recovery_instance.terraform_data.token_rotation_trigger[0]",
+			// purge_stale_dsc_pvc triggers_replace includes registration_token which is
+			// unknown after apply and produces a different hash on every re-plan. The
+			// resource is already in IgnoreUpdates but the upgrade plan shows it as
+			// [delete create] rather than [update], so it must also be exempted here.
+			"module.protect_cluster.terraform_data.purge_stale_dsc_pvc",
 		},
 	}
 	options.IgnoreAdds = testhelper.Exemptions{
@@ -370,6 +380,12 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 			// connection_id + cluster_endpoint, which is an in-place input update on
 			// upgrade; no provisioner runs on update.
 			"module.protect_cluster.terraform_data.brs_source_deregistration_wait",
+			// token_rotation moved into backup_recovery_instance submodule as of
+			// backup-recovery v1.12.4 and gained rotation_hours=20, shifting the
+			// computed rotation_rfc3339 on every re-plan. This is an in-place update
+			// (no replacement of the BRS instance or policy) and is expected churn
+			// from the new rotation schedule introduced in v1.12.4.
+			"module.protect_cluster.module.backup_recovery_instance.time_rotating.token_rotation[0]",
 		},
 	}
 
