@@ -332,7 +332,7 @@ module "crn_parser" {
 
 module "backup_recovery_instance" {
   source                    = "terraform-ibm-modules/backup-recovery/ibm"
-  version                   = "1.12.3"
+  version                   = "1.12.4"
   region                    = local.brs_region
   resource_group_id         = var.brs_resource_group_id != null ? var.brs_resource_group_id : var.cluster_resource_group_id
   ibmcloud_api_key          = var.ibmcloud_api_key
@@ -955,6 +955,7 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
   endpoint_type   = var.brs_endpoint_type
   instance_id     = local.brs_instance_guid
   region          = local.brs_instance_region
+  service_name    = var.brs_service_type
 
   kubernetes_params {
     endpoint                = local.cluster_endpoint
@@ -988,15 +989,6 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
     terraform_data.wait_before_helm_destroy,
   ]
 
-  # service_name is an undocumented, provider-computed attribute. The provider
-  # applies a default ("backup-recovery") at plan time but stores null in state,
-  # so every re-plan shows a null -> "backup-recovery" diff. Because the field is
-  # ForceNew, that spurious diff forces a full replacement on each apply (and
-  # fails the post-apply consistency check). Ignore it so registration stays
-  # stable.
-  lifecycle {
-    ignore_changes = [service_name]
-  }
 }
 
 # Poll until BRS confirms the source registration is gone, before the data source
@@ -1125,6 +1117,7 @@ data "ibm_backup_recovery_protection_sources" "sources" {
   instance_id     = local.brs_instance_guid
   region          = local.brs_instance_region
   endpoint_type   = var.brs_endpoint_type
+  service_name    = var.brs_service_type
 
   depends_on = [terraform_data.wait_for_source_discovery]
 }
@@ -1148,6 +1141,7 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
   qos_policy         = each.value.qos_policy
   endpoint_type      = var.brs_endpoint_type
   instance_id        = local.brs_instance_guid
+  service_name       = var.brs_service_type
   region             = local.brs_instance_region
 
   kubernetes_params {
@@ -1627,6 +1621,7 @@ data "ibm_backup_recovery_protection_group_runs" "backup_runs" {
   endpoint_type          = var.brs_endpoint_type
   instance_id            = local.brs_instance_guid
   region                 = local.brs_instance_region
+  service_name           = var.brs_service_type
   include_object_details = true
   archival_run_status    = ["Succeeded", "SucceededWithWarning"]
 
@@ -1649,6 +1644,7 @@ resource "ibm_backup_recovery" "recover_snapshot" {
   endpoint_type        = var.brs_endpoint_type
   instance_id          = local.brs_instance_guid
   region               = local.brs_instance_region
+  service_name         = var.brs_service_type
 
   # Kubernetes-specific recovery parameters
   dynamic "kubernetes_params" {
