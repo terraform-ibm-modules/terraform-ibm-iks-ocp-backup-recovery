@@ -213,6 +213,7 @@ module "target_cluster_registration" {
   # depending on that unknown value at plan time.
   existing_brs_instance_crn = module.protect_cluster.brs_instance_crn
   create_new_brs_instance   = false
+  brs_service_type          = var.brs_service_type
   brs_endpoint_type         = var.brs_endpoint_type
   region                    = local.region
 
@@ -521,6 +522,7 @@ resource "ibm_backup_recovery_protection_source_refresh" "post_recovery_refresh"
   endpoint_type                        = var.brs_endpoint_type
   instance_id                          = module.protect_cluster.brs_instance_guid
   region                               = local.region
+  service_name                         = var.brs_service_type
 
   depends_on = [
     terraform_data.wait_for_recovery_completion
