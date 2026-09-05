@@ -322,7 +322,7 @@ data "ibm_iam_auth_token" "source_account" {
 
 module "crn_parser" {
   source  = "terraform-ibm-modules/common-utilities/ibm//modules/crn-parser"
-  version = "1.5.0"
+  version = "1.9.0"
   crn     = var.existing_brs_instance_crn != null && var.existing_brs_instance_crn != "" ? var.existing_brs_instance_crn : ""
 }
 
@@ -427,7 +427,7 @@ module "dsc_sg_rule" {
   count = var.add_dsc_rules_to_cluster_sg && local.is_vpc ? 1 : 0
 
   source  = "terraform-ibm-modules/security-group/ibm"
-  version = "v2.9.1"
+  version = "v2.11.0"
   providers = {
     ibm = ibm.cluster
   }
@@ -487,7 +487,7 @@ module "brs_s2s_auth" {
   # already resolve the BRS CRN within the same account.
   count   = local.is_cross_account ? 1 : 0
   source  = "terraform-ibm-modules/s2s-auth/ibm"
-  version = "2.3.1"
+  version = "2.3.3"
 
   enable_cbr = false
 
@@ -527,7 +527,7 @@ module "brs_s2s_auth" {
 module "brs_vpe" {
   count   = var.create_brs_vpe && local.is_vpc ? 1 : 0
   source  = "terraform-ibm-modules/vpe-gateway/ibm"
-  version = "5.3.5"
+  version = "5.4.0"
   providers = {
     ibm = ibm.cluster
   }
