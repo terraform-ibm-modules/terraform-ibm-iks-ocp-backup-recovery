@@ -289,6 +289,10 @@ resource "ibm_container_addons" "existing_source_cluster_addons_upgrade" {
       version = addons.value
     }
   }
+
+  lifecycle {
+    ignore_changes = [addons]
+  }
 }
 
 resource "ibm_container_addons" "existing_target_cluster_addons_upgrade" {
@@ -302,6 +306,10 @@ resource "ibm_container_addons" "existing_target_cluster_addons_upgrade" {
       name    = addons.key
       version = addons.value
     }
+  }
+
+  lifecycle {
+    ignore_changes = [addons]
   }
 }
 

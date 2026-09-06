@@ -335,6 +335,18 @@ variable "brs_endpoint_type" {
   }
 }
 
+variable "brs_service_type" {
+  description = "The IBM Cloud service name for the Backup and Recovery instance. Use the default `backup-recovery` for production. Set to `backup-recovery-tests` to provision or connect against the test-environment service."
+  type        = string
+  default     = "backup-recovery"
+  nullable    = false
+
+  validation {
+    condition     = contains(["backup-recovery", "backup-recovery-tests"], var.brs_service_type)
+    error_message = "`brs_service_type` must be 'backup-recovery' or 'backup-recovery-tests'."
+  }
+}
+
 variable "connection_env_type" {
   description = "Connection environment type to determine the required parameters for creating a new connection. Must be consistent with `kube_type` (use `kIks*` for `kubernetes`, `kRoks*` for `openshift`). Allowed values are 'kIksVpc', 'kRoksVpc', 'kRoksClassic', and 'kIksClassic'."
   type        = string

@@ -582,7 +582,8 @@ locals {
   target_is_vpc         = length(regexall("Vpc$", coalesce(var.target_connection_env_type, var.source_connection_env_type))) > 0
   target_brs_vpe_active = var.create_target_cluster_brs_vpe_gateway && local.target_is_vpc && local.deploy_target_cluster
 
-  target_brs_vpe_name_resolved = var.target_brs_vpe_name != null ? var.target_brs_vpe_name : "${lower(var.target_brs_connection_name != null ? var.target_brs_connection_name : "${coalesce(var.target_cluster_id, "unknown")}-target-connection")}-vpe"
+  target_brs_connection_name_resolved = var.target_brs_connection_name != null ? var.target_brs_connection_name : "${coalesce(var.target_cluster_id, "unknown")}-target-connection"
+  target_brs_vpe_name_resolved        = var.target_brs_vpe_name != null ? var.target_brs_vpe_name : "${lower(local.target_brs_connection_name_resolved)}-vpe"
 
   # Subnet auto-discovery for target cluster (same pattern as source).
   target_cluster_subnet_ids = local.target_brs_vpe_active && length(var.target_vpc_subnets) == 0 ? distinct(flatten(
@@ -623,7 +624,7 @@ resource "terraform_data" "target_brs_vpe" {
   triggers_replace = {
     vpe_name          = local.target_brs_vpe_name_resolved
     vpc_id            = local.target_resolved_vpc_id
-    brs_instance_crn  = module.protect_cluster.brs_instance_crn
+    brs_instance_crn  = module.brs_instance.brs_instance_crn
     resource_group_id = var.target_cluster_resource_group_id
     # Use the resolved target cluster region (not var.target_cluster_region directly,
     # which may be null — null would be passed literally to the shell script).
@@ -965,6 +966,7 @@ resource "ibm_backup_recovery_protection_source_refresh" "post_recovery_refresh"
   endpoint_type                        = var.brs_endpoint_type
   instance_id                          = module.protect_cluster.brs_instance_guid
   region                               = local.region
+  service_name                         = var.brs_service_type
 
   depends_on = [terraform_data.wait_for_recovery_completion]
 }

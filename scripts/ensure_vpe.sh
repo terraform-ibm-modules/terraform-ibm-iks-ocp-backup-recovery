@@ -17,10 +17,10 @@
 # IBMCLOUD_API_KEY must be set as an environment variable.
 #
 # Outputs to stdout (one per line, for capture):
-#   VPE_ID
 #   <reserved_ip_id_zone1>
 #   <reserved_ip_id_zone2>
 #   ...
+#   VPE_ID
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

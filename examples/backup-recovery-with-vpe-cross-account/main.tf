@@ -230,6 +230,10 @@ resource "ibm_container_addons" "existing_cluster_addons_upgrade" {
       version = addons.value
     }
   }
+
+  lifecycle {
+    ignore_changes = [addons]
+  }
 }
 
 ##############################################################################

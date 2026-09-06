@@ -348,11 +348,7 @@ resource "terraform_data" "wait_for_dsc_node_ready" {
   ]
 
   input = {
-    kubeconfig_path = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
-  }
-
-  lifecycle {
-    ignore_changes = [input]
+    kubeconfig_path = data.ibm_container_cluster_config.cluster_config[0].config_file_path
   }
 
   provisioner "local-exec" {
@@ -433,7 +429,7 @@ resource "terraform_data" "dsc_immutable_values" {
   input = {
     storage_class   = local.dsc_storage_class
     namespace       = kubernetes_namespace_v1.dsc_namespace[0].metadata[0].name
-    kubeconfig_path = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
+    kubeconfig_path = data.ibm_container_cluster_config.cluster_config[0].config_file_path
     dsc_name        = var.dsc_name
   }
 
@@ -475,11 +471,7 @@ resource "terraform_data" "check_existing_registration" {
   count = local.stage_dsc_helm_deployment ? 1 : 0
 
   input = {
-    kubeconfig_path = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
-  }
-
-  lifecycle {
-    ignore_changes = [input]
+    kubeconfig_path = data.ibm_container_cluster_config.cluster_config[0].config_file_path
   }
 
   provisioner "local-exec" {
@@ -513,12 +505,8 @@ resource "terraform_data" "purge_stale_dsc_pvc" {
 
   input = {
     namespace       = kubernetes_namespace_v1.dsc_namespace[0].metadata[0].name
-    kubeconfig_path = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
+    kubeconfig_path = data.ibm_container_cluster_config.cluster_config[0].config_file_path
     dsc_name        = var.dsc_name
-  }
-
-  lifecycle {
-    ignore_changes = [input]
   }
 
   provisioner "local-exec" {
@@ -618,7 +606,7 @@ resource "helm_release" "data_source_connector" {
     on_failure  = continue
     interpreter = ["/bin/bash", "-c"]
     environment = {
-      KUBECONFIG = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
+      KUBECONFIG = data.ibm_container_cluster_config.cluster_config[0].config_file_path
     }
     command = "${path.module}/scripts/dsc-helm-diagnostics.sh '${self.namespace}' '${local.dsc_storage_class}'"
   }
@@ -714,6 +702,7 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
   endpoint_type   = var.brs_endpoint_type
   instance_id     = local.brs_instance_guid
   region          = local.brs_instance_region
+  service_name    = var.brs_service_type
 
   kubernetes_params {
     endpoint                = local.cluster_endpoint
@@ -746,15 +735,6 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
     terraform_data.wait_before_helm_destroy,
   ]
 
-  # service_name is an undocumented, provider-computed attribute. The provider
-  # applies a default ("backup-recovery") at plan time but stores null in state,
-  # so every re-plan shows a null -> "backup-recovery" diff. Because the field is
-  # ForceNew, that spurious diff forces a full replacement on each apply (and
-  # fails the post-apply consistency check). Ignore it so registration stays
-  # stable.
-  lifecycle {
-    ignore_changes = [service_name]
-  }
 }
 
 # Poll until BRS confirms the source registration is gone, before the data source
@@ -889,6 +869,7 @@ data "ibm_backup_recovery_protection_sources" "sources" {
   instance_id     = local.brs_instance_guid
   region          = local.brs_instance_region
   endpoint_type   = var.brs_endpoint_type
+  service_name    = var.brs_service_type
 
   depends_on = [terraform_data.wait_for_source_discovery]
 }
@@ -1049,6 +1030,7 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
   qos_policy         = each.value.qos_policy
   endpoint_type      = var.brs_endpoint_type
   instance_id        = local.brs_instance_guid
+  service_name       = var.brs_service_type
   region             = local.brs_instance_region
   delete_snapshots   = each.value.delete_snapshots
 
@@ -1560,6 +1542,7 @@ data "ibm_backup_recovery_protection_group_runs" "backup_runs" {
   endpoint_type          = var.brs_endpoint_type
   instance_id            = local.brs_instance_guid
   region                 = local.brs_instance_region
+  service_name           = var.brs_service_type
   include_object_details = true
   archival_run_status    = ["Succeeded", "SucceededWithWarning"]
 
@@ -1582,6 +1565,7 @@ resource "ibm_backup_recovery" "recover_snapshot" {
   endpoint_type        = var.brs_endpoint_type
   instance_id          = local.brs_instance_guid
   region               = local.brs_instance_region
+  service_name         = var.brs_service_type
 
   # Kubernetes-specific recovery parameters
   dynamic "kubernetes_params" {
