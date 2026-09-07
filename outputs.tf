@@ -4,12 +4,13 @@
 
 output "source_registration_id" {
   description = "ID of the registered Kubernetes source."
-  value       = try(ibm_backup_recovery_source_registration.source_registration.id, null)
+  value       = try(ibm_backup_recovery_source_registration.source_registration[0].id, null)
+  sensitive   = true
 }
 
 output "brs_instance_crn" {
   description = "CRN of the Backup & Recovery Service instance"
-  value       = module.backup_recovery_instance.brs_instance_crn
+  value       = var.brs_instance_crn
 }
 
 output "brs_instance_guid" {
@@ -20,16 +21,19 @@ output "brs_instance_guid" {
 output "brs_tenant_id" {
   description = "Tenant ID of the Backup & Recovery Service instance"
   value       = local.brs_tenant_id
+  sensitive   = true
 }
 
 output "connection_id" {
   description = "ID of the data source connection to the Backup & Recovery Service instance"
   value       = local.connection_id
+  sensitive   = true
 }
 
 output "protection_group_ids" {
   description = "Map of protection group names to their IDs. Empty if protection groups are not deployed."
   value       = { for k, v in ibm_backup_recovery_protection_group.protection_group : k => v.id }
+  sensitive   = true
 }
 
 output "auto_protect_pg_id" {
@@ -37,17 +41,17 @@ output "auto_protect_pg_id" {
   # Two paths to the same ID — the top-level attribute (provider typo: "proetction")
   # is more reliable at plan time; the nested path is the canonical reference.
   # coalesce picks whichever is non-null first.
-  # TODO: once IBM provider fixes the typo (auto_proetction -> auto_protection), switch to
-  # the corrected attribute name. Track at: https://github.com/IBM-Cloud/terraform-provider-ibm
+  # TODO: once IBM provider fixes the typo (auto_proetction -> auto_protection),
+  # replace auto_proetction_group_id with auto_protection_group_id below.
   value = try(coalesce(
-    ibm_backup_recovery_source_registration.source_registration.auto_proetction_group_id,
-    ibm_backup_recovery_source_registration.source_registration.kubernetes_params[0].auto_protect_config[0].protection_group_id,
+    ibm_backup_recovery_source_registration.source_registration[0].auto_proetction_group_id,
+    ibm_backup_recovery_source_registration.source_registration[0].kubernetes_params[0].auto_protect_config[0].protection_group_id,
   ), null)
 }
 
 output "protection_sources" {
   description = "List of protection sources."
-  value       = data.ibm_backup_recovery_protection_sources.sources
+  value       = try(data.ibm_backup_recovery_protection_sources.sources[0], null)
 }
 
 output "recovery_ids" {
@@ -91,20 +95,16 @@ output "backup_runs_summary" {
 
 output "brs_instance_url" {
   description = "Endpoint URL for the BRS instance, derived from the IBM Cloud resource extensions. Correct for both staging and production environments."
-  value       = "https://${local.backup_recovery_instance_url}"
+  value       = local.backup_recovery_instance_url != null ? "https://${local.backup_recovery_instance_url}" : null
 }
 
 output "brs_tags" {
   description = "BRS tags that should be added to the cluster to prevent tag drift. Include these in your cluster's tags input."
-  value       = ["brs-region:${local.brs_instance_region}", "brs-guid:${local.brs_instance_guid}"]
+  value       = local.brs_instance_region != null && local.brs_instance_guid != null ? ["brs-region:${local.brs_instance_region}", "brs-guid:${local.brs_instance_guid}"] : []
 }
 
-output "brs_vpe_ips" {
-  description = "Map of VPEG name to reserved IP list. Populated only when create_brs_vpe = true; empty map otherwise. Each entry contains the private IPs bound to each subnet zone."
-  value       = var.create_brs_vpe && local.is_vpc ? module.brs_vpe[0].vpe_ips : {}
-}
-
-output "s2s_auth_policies" {
-  description = "S2S IAM authorization policies created in this account. Populated only for cross-account VPE deployments (when ibm.cluster and ibm provider resolve to different accounts); empty map otherwise."
-  value       = local.is_cross_account ? module.brs_s2s_auth[0].auth_policies : {}
+output "brsagent_token" {
+  description = "The brsagent service account token. Pass this to a second module invocation with execution_stage='brs_management' as var.brsagent_token so the source registration can authenticate with the cluster using the correct SA token."
+  value       = try(kubernetes_secret_v1.brsagent_token[0].data["token"], null)
+  sensitive   = true
 }

@@ -22,7 +22,7 @@ set -euo pipefail
 #   IBMCLOUD_API_KEY     — IBM Cloud API key
 #
 # Optional env var:
-#   VERBOSE              — set to 1 to print every raw CLI response to stderr
+#   VERBOSE              — set to 0 to suppress raw CLI responses (default: 1 — on)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/common_utils.sh
@@ -56,7 +56,7 @@ API_PG_ID="${PROTECTION_GROUP_ID#*::}"
 # ---------------------------------------------------------------------------
 # Verbose logging
 # ---------------------------------------------------------------------------
-VERBOSE="${VERBOSE:-0}"
+VERBOSE="${VERBOSE:-1}"
 
 vlog() {
   [[ "${VERBOSE}" == "1" ]] || return 0
@@ -74,8 +74,7 @@ ibmcloud_login() {
   api_endpoint=$(get_ibmcloud_api_endpoint "${BRS_ENDPOINT}")
   echo "Logging in to IBM Cloud (region: ${REGION}, endpoint: ${api_endpoint})..." >&2
   local login_out
-  login_out=$(ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${api_endpoint}" -r "${REGION}" -q 2>&1) || true  # pragma: allowlist secret
-  echo "${login_out}" | grep -v "^$" >&2 || true
+  login_out=$(ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${api_endpoint}" -r "${REGION}" -q 2>&1) || true  # pragma: allowlist secret  echo "${login_out}" | grep -v "^$" >&2 || true
   vlog "ibmcloud login" "${login_out}"
 
   # Set the BRS service URL so all backup-recovery CLI commands reach the
@@ -170,6 +169,10 @@ pg_active_backup_runs() {
     --include-object-details=false \
     --output json -q 2>&1) \
     || out='{"runs":[]}'
+  # Guard: CLI may return empty, whitespace-only, or non-JSON output on a valid
+  # 200 with no matching runs. Strip all whitespace before checking for '{' so
+  # that a response consisting only of spaces/newlines is also caught.
+  out="${out//[$' \t\n\r']/}"
   [[ "${out}" == *"{"* ]] || out='{"runs":[]}'
   vlog "protection-group-run list (backup)" "${out}"
   echo "${out}"
@@ -185,6 +188,10 @@ pg_active_archival_runs() {
     --include-object-details=false \
     --output json -q 2>&1) \
     || out='{"runs":[]}'
+  # Guard: CLI may return empty, whitespace-only, or non-JSON output on a valid
+  # 200 with no matching runs. Strip all whitespace before checking for '{' so
+  # that a response consisting only of spaces/newlines is also caught.
+  out="${out//[$' \t\n\r']/}"
   [[ "${out}" == *"{"* ]] || out='{"runs":[]}'
   vlog "protection-group-run list (archival)" "${out}"
   echo "${out}"

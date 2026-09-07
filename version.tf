@@ -3,9 +3,8 @@ terraform {
 
   required_providers {
     ibm = {
-      source                = "IBM-Cloud/ibm"
-      version               = ">= 2.2.2, < 3.0.0"
-      configuration_aliases = [ibm.cluster]
+      source  = "IBM-Cloud/ibm"
+      version = ">= 2.2.2, < 3.0.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"

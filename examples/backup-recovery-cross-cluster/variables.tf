@@ -3,7 +3,7 @@
 ##############################################################################
 
 variable "ibmcloud_api_key" {
-  description = "IBM Cloud API key. Used for both the BRS instance (ibm provider) and the cluster resources (ibm.cluster provider = ibm — same account)."
+  description = "IBM Cloud API key. Used for both the BRS instance and the cluster resources (same account)."
   type        = string
   sensitive   = true
 }

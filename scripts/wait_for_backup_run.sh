@@ -35,6 +35,21 @@ BINARIES_PATH=${8:-/tmp}
 
 export PATH="${PATH}:${BINARIES_PATH}"
 
+# ---------------------------------------------------------------------------
+# Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
+# Set VERBOSE=0 once the script is known-good to reduce Terraform output noise.
+# ---------------------------------------------------------------------------
+VERBOSE="${VERBOSE:-1}"
+
+# vlog LABEL JSON — print label + pretty-printed JSON to stderr when verbose.
+vlog() {
+  [[ "${VERBOSE}" == "1" ]] || return 0
+  local label="$1"
+  local body="$2"
+  echo "[VERBOSE] ${label}:" >&2
+  echo "${body}" | jq '.' 2>/dev/null >&2 || echo "${body}" >&2
+}
+
 call_api() {
   local method=$1
   local path=$2
@@ -53,8 +68,19 @@ call_api() {
   local body
   body=$(echo "$response" | sed '$d')
 
+  vlog "${method} ${path} → HTTP ${http_code}" "${body}"
+
   if [[ "$http_code" -eq 404 ]]; then
     echo "__HTTP_404__"
+    return 0
+  fi
+
+  # HTTP 000 means curl could not connect at all (DNS failure, network not ready,
+  # BRS endpoint not yet reachable). Treat it as a retryable transient error so
+  # the polling loop keeps trying rather than failing immediately.
+  if [[ "$http_code" -eq 0 ]]; then
+    echo "API Error: Received HTTP 000 (curl connection failure) from $path — will retry" >&2
+    echo "__HTTP_000__"
     return 0
   fi
 
@@ -194,7 +220,9 @@ main() {
 
     echo "API call completed, response length: ${#run_response} chars" | tee -a "$debug_file" >&2
 
-    if [[ "$run_response" != "__HTTP_404__" ]]; then
+    if [[ "$run_response" == "__HTTP_000__" ]]; then
+      echo "BRS endpoint unreachable (HTTP 000), waiting ${POLL_INTERVAL_SECONDS}s before retry..." | tee -a "$debug_file" >&2
+    elif [[ "$run_response" != "__HTTP_404__" ]]; then
       # Debug: Write full response to file
       echo "=== Poll at $(date) ===" | tee -a "$debug_file" >&2
       echo "$run_response" | jq '.' >> "$debug_file" 2>&1
