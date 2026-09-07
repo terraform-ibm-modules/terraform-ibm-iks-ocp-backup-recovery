@@ -351,6 +351,14 @@ resource "terraform_data" "wait_for_dsc_node_ready" {
     kubeconfig_path = data.ibm_container_cluster_config.cluster_config[0].config_file_path
   }
 
+  # kubeconfig_path is stored in input so it is available to the provisioner
+  # environment at apply time. Schematics runs each job in a fresh temp dir,
+  # so the path changes between jobs (tfws-XXXXX) — ignore_changes prevents
+  # a spurious in-place update on every idempotency plan.
+  lifecycle {
+    ignore_changes = [input]
+  }
+
   provisioner "local-exec" {
     # Wait up to 15 minutes for at least one DSC node to become Ready.
     # --selector matches the label applied to every dsc-pool-zone-* worker pool.
@@ -474,6 +482,11 @@ resource "terraform_data" "check_existing_registration" {
     kubeconfig_path = data.ibm_container_cluster_config.cluster_config[0].config_file_path
   }
 
+  # See wait_for_dsc_node_ready: same Schematics temp-dir drift reason.
+  lifecycle {
+    ignore_changes = [input]
+  }
+
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
     environment = {
@@ -507,6 +520,11 @@ resource "terraform_data" "purge_stale_dsc_pvc" {
     namespace       = kubernetes_namespace_v1.dsc_namespace[0].metadata[0].name
     kubeconfig_path = data.ibm_container_cluster_config.cluster_config[0].config_file_path
     dsc_name        = var.dsc_name
+  }
+
+  # See wait_for_dsc_node_ready: same Schematics temp-dir drift reason.
+  lifecycle {
+    ignore_changes = [input]
   }
 
   provisioner "local-exec" {
