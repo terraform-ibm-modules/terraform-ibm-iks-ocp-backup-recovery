@@ -520,5 +520,5 @@ func TestRunCrossClusterExistingConnection(t *testing.T) {
 
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
-	assert.NotNil(t, output, "Expected some output")
+	assert.NotNil(t, output, "Expected some output ")
 }
