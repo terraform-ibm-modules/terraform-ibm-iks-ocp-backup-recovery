@@ -1062,7 +1062,10 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
     exclude_label_ids     = each.value.exclude_label_ids != null ? each.value.exclude_label_ids : []
 
     dynamic "objects" {
-      for_each = each.value.objects != null ? each.value.objects : []
+      for_each = [
+        for o in(each.value.objects != null ? each.value.objects : []) :
+        o if o.id != null || try(local.object_name_to_id[o.name][0], null) != null
+      ]
       content {
         id                          = objects.value.id != null ? objects.value.id : try(local.object_name_to_id[objects.value.name][0], null)
         backup_only_pvc             = objects.value.backup_only_pvc
