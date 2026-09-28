@@ -21,11 +21,11 @@ set -euo pipefail
 #   IBMCLOUD_API_KEY     — IBM Cloud API key used to log in
 #
 # Optional env var:
-#   VERBOSE              — set to 1 to print every raw API response to stderr.
-#                          Off (0) by default to keep Terraform output clean.
-#                          Enable when diagnosing whether failures originate
-#                          in server responses or in this script's logic.
-#                          Example: VERBOSE=1 terraform destroy
+#   VERBOSE              — set to 0 to suppress raw API responses (default: 1 — on).
+#                          On by default to expose all server responses during
+#                          active development. Set to 0 once the script is
+#                          known-good to reduce Terraform output noise.
+#                          Example: VERBOSE=0 terraform destroy
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/common_utils.sh
@@ -33,9 +33,9 @@ source "${SCRIPT_DIR}/common_utils.sh"
 
 # ---------------------------------------------------------------------------
 # Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
-# Toggle off once the script is known-good to reduce Terraform output noise.
+# Set VERBOSE=0 once the script is known-good to reduce Terraform output noise.
 # ---------------------------------------------------------------------------
-VERBOSE="${VERBOSE:-0}"
+VERBOSE="${VERBOSE:-1}"
 
 # vlog LABEL JSON — print label + pretty-printed JSON to stderr when verbose.
 vlog() {
@@ -74,8 +74,7 @@ ibmcloud_login() {
   api_endpoint=$(get_ibmcloud_api_endpoint "${BRS_ENDPOINT}")
   echo "Logging in to IBM Cloud (region: ${REGION}, endpoint: ${api_endpoint})..." >&2
   local login_out
-  login_out=$(ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${api_endpoint}" -r "${REGION}" -q 2>&1) || true
-  echo "${login_out}" | grep -v "^$" >&2 || true
+  login_out=$(ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${api_endpoint}" -r "${REGION}" -q 2>&1) || true  echo "${login_out}" | grep -v "^$" >&2 || true
   vlog "ibmcloud login" "${login_out}"
 
   # Set the BRS service URL so all backup-recovery CLI commands reach the
@@ -184,7 +183,10 @@ pg_active_backup_runs() {
     --include-object-details=false \
     --output json -q 2>&1) \
     || out='{"runs":[]}'
-  # Guard: CLI may return empty string (not JSON) on a valid 200 with no runs.
+  # Guard: CLI may return empty, whitespace-only, or non-JSON output on a valid
+  # 200 with no matching runs. Strip all whitespace before checking for '{' so
+  # that a response consisting only of spaces/newlines is also caught.
+  out="${out//[$' \t\n\r']/}"
   [[ "${out}" == *"{"* ]] || out='{"runs":[]}'
   vlog "protection-group-run list (backup)" "${out}"
   echo "${out}"
@@ -202,7 +204,10 @@ pg_active_archival_runs() {
     --include-object-details=false \
     --output json -q 2>&1) \
     || out='{"runs":[]}'
-  # Guard: CLI may return empty string (not JSON) on a valid 200 with no runs.
+  # Guard: CLI may return empty, whitespace-only, or non-JSON output on a valid
+  # 200 with no matching runs. Strip all whitespace before checking for '{' so
+  # that a response consisting only of spaces/newlines is also caught.
+  out="${out//[$' \t\n\r']/}"
   [[ "${out}" == *"{"* ]] || out='{"runs":[]}'
   vlog "protection-group-run list (archival)" "${out}"
   echo "${out}"
@@ -236,10 +241,11 @@ check_and_cancel() {
   archival_data=$(pg_active_archival_runs)
 
   # Collect the union of all active run IDs across both responses.
+  # Use (.runs // []) to guard against "runs": null in the server response.
   local all_run_ids
   all_run_ids=$(
     { echo "$backup_data"; echo "$archival_data"; } \
-      | jq -rs '[.[].runs[].id // empty] | unique | .[]'
+      | jq -rs '[.[].runs // [] | .[].id // empty] | unique | .[]'
   )
 
   [[ -z "$all_run_ids" ]] && { echo "0"; return 0; }

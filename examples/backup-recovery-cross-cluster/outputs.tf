@@ -24,22 +24,26 @@ output "brs_instance_guid" {
 
 output "brs_instance_url" {
   description = "Public API endpoint URL for the BRS instance."
-  value       = "https://${module.source_backup_recovery.brs_instance_guid}.${var.region}.backup-recovery.cloud.ibm.com"
+  value       = "https://${module.source_backup_recovery.brs_instance_guid}.${local.brs_region}.backup-recovery.cloud.ibm.com"
 }
 
 output "brs_private_hostname" {
   description = "BRS private hostname that should resolve to the VPEG reserved IP inside each cluster VPC. Run 'getent hosts <value>' from inside a DSC pod to verify VPE routing."
-  value       = "${module.source_backup_recovery.brs_instance_guid}.private.${var.region}.backup-recovery.cloud.ibm.com"
+  value       = "${module.source_backup_recovery.brs_instance_guid}.private.${local.brs_region}.backup-recovery.cloud.ibm.com"
 }
 
 output "source_vpe_ips" {
-  description = "Map of VPEG name → list of reserved IP objects bound to each subnet in the source VPC."
-  value       = module.source_backup_recovery.brs_vpe_ips
+  description = "Map of VPEG name → list of reserved IP addresses bound to each subnet in the source VPC."
+  value = {
+    (local.source_vpe_name) = ibm_is_virtual_endpoint_gateway.source_vpe.ips[*].address
+  }
 }
 
 output "target_vpe_ips" {
-  description = "Map of VPEG name → list of reserved IP objects bound to each subnet in the target VPC."
-  value       = module.target_backup_recovery.brs_vpe_ips
+  description = "Map of VPEG name → list of reserved IP addresses bound to each subnet in the target VPC."
+  value = {
+    (local.target_vpe_name) = ibm_is_virtual_endpoint_gateway.target_vpe.ips[*].address
+  }
 }
 
 output "source_connection_id" {
@@ -57,16 +61,19 @@ output "target_connection_id" {
 output "source_registration_id" {
   description = "Source registration ID for the source cluster."
   value       = module.source_backup_recovery.source_registration_id
+  sensitive   = true
 }
 
 output "target_registration_id" {
   description = "Source registration ID for the target cluster."
   value       = module.target_backup_recovery.source_registration_id
+  sensitive   = true
 }
 
 output "source_protection_group_ids" {
   description = "Map of protection group names to their IDs on the source cluster."
   value       = module.source_backup_recovery.protection_group_ids
+  sensitive   = true
 }
 
 output "source_workload_namespace" {
@@ -104,11 +111,11 @@ output "recovery_command_example" {
   value = var.enable_recovery ? format(
     "%s '%s' '%s' 'public' '%s' '%s' '%s' 'latest' '$IBMCLOUD_API_KEY' 'manual-recovery' '/tmp'",
     "${path.module}/../../scripts/trigger_cross_cluster_recovery.sh",
-    "https://${module.source_backup_recovery.brs_instance_guid}.${var.region}.backup-recovery.cloud.ibm.com",
+    "https://${module.source_backup_recovery.brs_instance_guid}.${local.brs_region}.backup-recovery.cloud.ibm.com",
     module.source_backup_recovery.brs_tenant_id,
     module.source_backup_recovery.brs_instance_guid,
     split("::", module.source_backup_recovery.protection_group_ids["${var.prefix}-source-pg"])[1],
     split("::", module.target_backup_recovery.source_registration_id)[1]
   ) : "Recovery disabled"
-  sensitive = false
+  sensitive = true
 }
