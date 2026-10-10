@@ -300,7 +300,7 @@ You need the following permissions to run this module:
 ### Requirements
 
 | Name | Version |
-|------|---------|
+| ---- | ------- |
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.9.0 |
 | <a name="requirement_helm"></a> [helm](#requirement\_helm) | >=3.1.0, <4.0.0 |
 | <a name="requirement_ibm"></a> [ibm](#requirement\_ibm) | >= 2.2.2, < 3.0.0 |
@@ -310,17 +310,17 @@ You need the following permissions to run this module:
 ### Modules
 
 | Name | Source | Version |
-|------|--------|---------|
+| ---- | ------ | ------- |
 | <a name="module_backup_recovery_instance"></a> [backup\_recovery\_instance](#module\_backup\_recovery\_instance) | terraform-ibm-modules/backup-recovery/ibm | 1.12.4 |
-| <a name="module_brs_s2s_auth"></a> [brs\_s2s\_auth](#module\_brs\_s2s\_auth) | terraform-ibm-modules/s2s-auth/ibm | 2.3.1 |
-| <a name="module_brs_vpe"></a> [brs\_vpe](#module\_brs\_vpe) | terraform-ibm-modules/vpe-gateway/ibm | 5.3.5 |
-| <a name="module_crn_parser"></a> [crn\_parser](#module\_crn\_parser) | terraform-ibm-modules/common-utilities/ibm//modules/crn-parser | 1.5.0 |
-| <a name="module_dsc_sg_rule"></a> [dsc\_sg\_rule](#module\_dsc\_sg\_rule) | terraform-ibm-modules/security-group/ibm | v2.9.1 |
+| <a name="module_brs_s2s_auth"></a> [brs\_s2s\_auth](#module\_brs\_s2s\_auth) | terraform-ibm-modules/s2s-auth/ibm | 2.3.7 |
+| <a name="module_brs_vpe"></a> [brs\_vpe](#module\_brs\_vpe) | terraform-ibm-modules/vpe-gateway/ibm | 5.5.1 |
+| <a name="module_crn_parser"></a> [crn\_parser](#module\_crn\_parser) | terraform-ibm-modules/common-utilities/ibm//modules/crn-parser | 1.9.0 |
+| <a name="module_dsc_sg_rule"></a> [dsc\_sg\_rule](#module\_dsc\_sg\_rule) | terraform-ibm-modules/security-group/ibm | v2.11.0 |
 
 ### Resources
 
 | Name | Type |
-|------|------|
+| ---- | ---- |
 | [helm_release.data_source_connector](https://registry.terraform.io/providers/hashicorp/helm/latest/docs/resources/release) | resource |
 | [ibm_backup_recovery.recover_snapshot](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery) | resource |
 | [ibm_backup_recovery_protection_group.protection_group](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery_protection_group) | resource |
@@ -359,7 +359,7 @@ You need the following permissions to run this module:
 ### Inputs
 
 | Name | Description | Type | Default | Required |
-|------|-------------|------|---------|:--------:|
+| ---- | ----------- | ---- | ------- | :------: |
 | <a name="input_access_tags"></a> [access\_tags](#input\_access\_tags) | Add existing access management tags to the Backup Recovery instance to manage access. | `list(string)` | `[]` | no |
 | <a name="input_add_cluster_tags"></a> [add\_cluster\_tags](#input\_add\_cluster\_tags) | Whether to add BRS tags to the cluster. Set to false if you manage cluster tags externally to avoid drift. When false, you should manually add the tags 'brs-region:<region>' and 'brs-guid:<guid>' to your cluster. | `bool` | `true` | no |
 | <a name="input_add_dsc_rules_to_cluster_sg"></a> [add\_dsc\_rules\_to\_cluster\_sg](#input\_add\_dsc\_rules\_to\_cluster\_sg) | Set to `true` to automatically add the security group rules required by the Data Source Connector. This is mandatory when registering the cluster via its public service endpoint. Set to `false` to only register the cluster and create the policy without modifying security groups. | `bool` | `false` | no |
@@ -415,7 +415,7 @@ You need the following permissions to run this module:
 ### Outputs
 
 | Name | Description |
-|------|-------------|
+| ---- | ----------- |
 | <a name="output_auto_protect_pg_id"></a> [auto\_protect\_pg\_id](#output\_auto\_protect\_pg\_id) | ID of the auto-protect protection group created by BRS when enable\_auto\_protect=true. Null when auto-protect is not enabled or the registration has not yet propagated. |
 | <a name="output_backup_runs_summary"></a> [backup\_runs\_summary](#output\_backup\_runs\_summary) | Summary of backup runs per protection group. Shows run count and latest run status. Empty if recovery is not enabled by the calling module. |
 | <a name="output_brs_instance_crn"></a> [brs\_instance\_crn](#output\_brs\_instance\_crn) | CRN of the Backup & Recovery Service instance |
