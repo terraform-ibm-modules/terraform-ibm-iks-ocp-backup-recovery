@@ -450,7 +450,6 @@ variable "registration_images" {
     velero_aws_plugin           = "icr.io/ext/brs/oadp-velero-plugin-for-aws:1.6.0@sha256:e571cb3297759e31afcdfebe11c4b9f2c3f2fcc1192bc8f1fd51b8121b57c875"
     velero_openshift_plugin     = "icr.io/ext/brs/oadp-velero-plugin-for-openshift:1.6.0@sha256:a5a4320ba41c391941089b591aabfa1faa7531294d36643d507b34884014f2a5"
     cohesity_dataprotect_plugin = "icr.io/ext/brs/cohesity-dataprotect-plugin:7.3.13@sha256:54120e029541071e25c5cd816eaea6cadfc54f0a522b939265e041ea4cd71803"
-    // kubernetes-update-indexer = "icr.io/ext/brs/kubernetes-update-indexer:latest@sha256:62b5da9ff499b8cabf9d7a9d68df1bf14174714a0f9559916e096c0100988682"
   }
   description = "The images required for backup and recovery registration."
   nullable    = false
