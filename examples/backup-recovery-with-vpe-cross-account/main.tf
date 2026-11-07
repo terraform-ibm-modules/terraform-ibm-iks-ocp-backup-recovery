@@ -63,7 +63,7 @@ locals {
 # Source-account resource group (cluster, VPC, VPEG).
 module "source_resource_group" {
   source  = "terraform-ibm-modules/resource-group/ibm"
-  version = "1.6.0"
+  version = "1.6.1"
   providers = {
     ibm = ibm.source
   }
@@ -74,7 +74,7 @@ module "source_resource_group" {
 # Target-account resource group (BRS instance).
 module "target_resource_group" {
   source  = "terraform-ibm-modules/resource-group/ibm"
-  version = "1.6.0"
+  version = "1.6.1"
   # uses default ibm provider (target account)
   resource_group_name          = var.target_resource_group == null ? "${var.prefix}-target-rg" : null
   existing_resource_group_name = var.target_resource_group
