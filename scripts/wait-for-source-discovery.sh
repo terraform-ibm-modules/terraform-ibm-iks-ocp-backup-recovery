@@ -104,14 +104,26 @@ while (( elapsed < TIMEOUT_S )); do
   ')
 
   echo "[${elapsed}s] authStatus=${auth}  lag=${lag}ms" >&2
+  # Check if child nodes (namespaces) are already indexed under this source
+  child_count=$(ibmcloud backup-recovery protection-source list \
+    --xibm-tenant-id "${TENANT}" \
+    --environments "kKubernetes" \
+    --id "${REGISTRATION_ID}" \
+    --output json -q 2>&1 | jq '
+    [ .protectionSources[]?
+      | .nodes[]?
+    ] | length
+  ' 2>/dev/null || echo "0")
 
-  if [[ "${auth}" == "Finished" ]] && (( lag >= MIN_REFRESH_LAG_MS )); then
-    echo "=== wait-for-source-discovery.sh: registration refresh complete (lag=${lag}ms, elapsed=${elapsed}s) ===" >&2
-    break
+  echo "[${elapsed}s] authStatus=${auth}  lag=${lag}ms  child_nodes=${child_count}" >&2
+
+  if [[ "${auth}" == "Finished" ]] && { (( lag >= MIN_REFRESH_LAG_MS )) || (( child_count > 0 )); }; then
+    echo "=== wait-for-source-discovery.sh: registration refresh complete (lag=${lag}ms, child_nodes=${child_count}, elapsed=${elapsed}s) ===" >&2
+    exit 0
   fi
 
-  if (( lag < MIN_REFRESH_LAG_MS )); then
-    echo "[${elapsed}s] refresh lag ${lag}ms < ${MIN_REFRESH_LAG_MS}ms — waiting for initial Velero discovery pass…" >&2
+  if (( lag < MIN_REFRESH_LAG_MS && child_count == 0 )); then
+    echo "[${elapsed}s] refresh lag ${lag}ms < ${MIN_REFRESH_LAG_MS}ms and no child nodes yet — waiting for initial Velero discovery pass…" >&2
   else
     echo "[${elapsed}s] authStatus not Finished yet (${auth}) — waiting…" >&2
   fi
