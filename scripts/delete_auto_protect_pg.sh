@@ -74,7 +74,7 @@ ibmcloud_login() {
   api_endpoint=$(get_ibmcloud_api_endpoint "${BRS_ENDPOINT}")
   echo "Logging in to IBM Cloud (region: ${REGION}, endpoint: ${api_endpoint})..." >&2
   local login_out
-  login_out=$(ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${api_endpoint}" -r "${REGION}" -q 2>&1) || true  # pragma: allowlist secret  echo "${login_out}" | grep -v "^$" >&2 || true
+  login_out=$(ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${api_endpoint}" -r "${REGION}" -q 2>&1) || true  # pragma: allowlist secret
   vlog "ibmcloud login" "${login_out}"
 
   # Set the BRS service URL so all backup-recovery CLI commands reach the

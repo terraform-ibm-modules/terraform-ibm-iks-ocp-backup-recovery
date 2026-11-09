@@ -15,18 +15,18 @@ output "brs_instance_crn" {
 
 output "brs_instance_guid" {
   description = "GUID of the Backup & Recovery Service instance"
-  value       = local.brs_instance_guid
+  value       = var.brs_instance_guid
 }
 
 output "brs_tenant_id" {
   description = "Tenant ID of the Backup & Recovery Service instance"
-  value       = local.brs_tenant_id
+  value       = var.brs_tenant_id
   sensitive   = true
 }
 
 output "connection_id" {
   description = "ID of the data source connection to the Backup & Recovery Service instance"
-  value       = local.connection_id
+  value       = var.brs_connection_id
   sensitive   = true
 }
 
@@ -100,7 +100,7 @@ output "brs_instance_url" {
 
 output "brs_tags" {
   description = "BRS tags that should be added to the cluster to prevent tag drift. Include these in your cluster's tags input."
-  value       = local.brs_instance_region != null && local.brs_instance_guid != null ? ["brs-region:${local.brs_instance_region}", "brs-guid:${local.brs_instance_guid}"] : []
+  value       = local.brs_instance_region != null && var.brs_instance_guid != null ? ["brs-region:${local.brs_instance_region}", "brs-guid:${var.brs_instance_guid}"] : []
 }
 
 output "brsagent_token" {

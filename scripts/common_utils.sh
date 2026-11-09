@@ -50,8 +50,6 @@ get_iam_token() {
     --data-urlencode 'grant_type=urn:ibm:params:oauth:grant-type:apikey' \
     --data-urlencode "apikey=${api_key}")  # pragma: allowlist secret
 
-  vlog "POST IAM token exchange (${iam_endpoint})" "${response}"
-
   if echo "$response" | jq -e 'has("errorMessage")' > /dev/null; then
     echo "IAM Error: $(echo "$response" | jq -r '.errorMessage')" >&2
     exit 1

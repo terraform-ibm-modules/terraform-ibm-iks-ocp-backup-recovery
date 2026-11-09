@@ -107,20 +107,10 @@ locals {
 ##############################################################################
 
 locals {
-  brs_tenant_id       = var.brs_tenant_id
-  connection_id       = var.brs_connection_id
-  registration_token  = var.brs_registration_token
-  brs_instance_guid   = var.brs_instance_guid
   brs_instance_region = var.brs_instance_crn != null ? element(split(":", var.brs_instance_crn), 5) : null
 
-  backup_recovery_instance_public_url  = var.brs_instance_public_url
-  backup_recovery_instance_private_url = var.brs_instance_private_url
-
   # URL used by Terraform provider resources and scripts to reach the BRS API.
-  backup_recovery_instance_url = var.brs_endpoint_type == "public" ? local.backup_recovery_instance_public_url : local.backup_recovery_instance_private_url
-
-  # Resolved policy IDs passed in from the caller.
-  resolved_policy_ids = var.resolved_policy_ids
+  backup_recovery_instance_url = var.brs_endpoint_type == "public" ? var.brs_instance_public_url : var.brs_instance_private_url
 }
 
 resource "terraform_data" "install_dependencies" {
@@ -422,6 +412,11 @@ resource "kubernetes_namespace_v1" "dsc_namespace" {
   }
 }
 
+moved {
+  from = kubernetes_namespace_v1.dsc_namespace
+  to   = kubernetes_namespace_v1.dsc_namespace[0]
+}
+
 ##############################################################################
 # Freeze immutable Helm values at first install
 ##############################################################################
@@ -466,6 +461,11 @@ resource "terraform_data" "dsc_immutable_values" {
     kubernetes_manifest.dsc_block_sc,
   ]
 }
+
+moved {
+  from = terraform_data.dsc_immutable_values
+  to   = terraform_data.dsc_immutable_values[0]
+}
 ##############################################################################
 # Check for existing BRS agent namespaces (conflict detection)
 ##############################################################################
@@ -498,6 +498,11 @@ resource "terraform_data" "check_existing_registration" {
   depends_on = [data.ibm_container_cluster_config.cluster_config]
 }
 
+moved {
+  from = terraform_data.check_existing_registration
+  to   = terraform_data.check_existing_registration[0]
+}
+
 
 
 ##############################################################################
@@ -513,7 +518,7 @@ resource "terraform_data" "purge_stale_dsc_pvc" {
 
   triggers_replace = {
     namespace          = kubernetes_namespace_v1.dsc_namespace[0].metadata[0].name
-    registration_token = local.registration_token != null ? local.registration_token : ""
+    registration_token = var.brs_registration_token != null ? var.brs_registration_token : ""
   }
 
   input = {
@@ -541,6 +546,11 @@ resource "terraform_data" "purge_stale_dsc_pvc" {
   ]
 }
 
+moved {
+  from = terraform_data.purge_stale_dsc_pvc
+  to   = terraform_data.purge_stale_dsc_pvc[0]
+}
+
 ##############################################################################
 # Data Source Connector Helm Release
 ##############################################################################
@@ -562,7 +572,7 @@ resource "helm_release" "data_source_connector" {
   values = [
     yamlencode({
       secrets = {
-        registrationToken = local.registration_token != null ? local.registration_token : ""
+        registrationToken = var.brs_registration_token != null ? var.brs_registration_token : ""
       }
       # image.tag is intentionally omitted — the chart uses its AppVersion as the
       # default tag, which is pinned to the chart version in dsc_chart_uri.
@@ -630,6 +640,11 @@ resource "helm_release" "data_source_connector" {
   }
 }
 
+moved {
+  from = helm_release.data_source_connector
+  to   = helm_release.data_source_connector[0]
+}
+
 ##############################################################################
 # BRS Agent Service Account & RBAC
 ##############################################################################
@@ -655,6 +670,11 @@ resource "kubernetes_service_account_v1" "brsagent" {
   depends_on = [kubernetes_namespace_v1.dsc_namespace]
 }
 
+moved {
+  from = kubernetes_service_account_v1.brsagent
+  to   = kubernetes_service_account_v1.brsagent[0]
+}
+
 resource "kubernetes_cluster_role_binding_v1" "brsagent_admin" {
   count = local.stage_dsc_helm_deployment ? 1 : 0
 
@@ -673,6 +693,11 @@ resource "kubernetes_cluster_role_binding_v1" "brsagent_admin" {
   }
 }
 
+moved {
+  from = kubernetes_cluster_role_binding_v1.brsagent_admin
+  to   = kubernetes_cluster_role_binding_v1.brsagent_admin[0]
+}
+
 resource "kubernetes_secret_v1" "brsagent_token" {
   count = local.stage_dsc_helm_deployment ? 1 : 0
 
@@ -685,6 +710,11 @@ resource "kubernetes_secret_v1" "brsagent_token" {
   }
   type                           = "kubernetes.io/service-account-token"
   wait_for_service_account_token = true
+}
+
+moved {
+  from = kubernetes_secret_v1.brsagent_token
+  to   = kubernetes_secret_v1.brsagent_token[0]
 }
 
 ##############################################################################
@@ -705,6 +735,11 @@ resource "time_sleep" "wait_for_dsc_stabilization" {
   create_duration = "10m"
 }
 
+moved {
+  from = time_sleep.wait_for_dsc_stabilization
+  to   = time_sleep.wait_for_dsc_stabilization[0]
+}
+
 # On destroy this sends DELETE to BRS, permanently removing the connector identity.
 # Correct for a full terraform destroy (PVCs also deleted).
 # NOT correct for a temporary scale-down (kubectl scale ... --replicas=0): pods
@@ -714,11 +749,11 @@ resource "time_sleep" "wait_for_dsc_stabilization" {
 resource "ibm_backup_recovery_source_registration" "source_registration" {
   count = local.stage_brs_registration ? 1 : 0
 
-  x_ibm_tenant_id = local.brs_tenant_id
+  x_ibm_tenant_id = var.brs_tenant_id
   environment     = "kKubernetes"
-  connection_id   = local.connection_id
+  connection_id   = var.brs_connection_id
   endpoint_type   = var.brs_endpoint_type
-  instance_id     = local.brs_instance_guid
+  instance_id     = var.brs_instance_guid
   region          = local.brs_instance_region
   service_name    = var.brs_service_type
 
@@ -726,10 +761,10 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
     endpoint                = local.cluster_endpoint
     kubernetes_distribution = var.kube_type == "openshift" ? "kROKS" : "kIKS"
     dynamic "auto_protect_config" {
-      for_each = var.enable_auto_protect && var.auto_protect_policy_name != null && try(local.resolved_policy_ids[var.auto_protect_policy_name], null) != null ? [1] : []
+      for_each = var.enable_auto_protect && var.auto_protect_policy_name != null && try(var.resolved_policy_ids[var.auto_protect_policy_name], null) != null ? [1] : []
       content {
         is_default_auto_protected = true
-        policy_id                 = local.resolved_policy_ids[var.auto_protect_policy_name]
+        policy_id                 = var.resolved_policy_ids[var.auto_protect_policy_name]
       }
     }
     data_mover_image_location                  = var.registration_images.data_mover
@@ -755,6 +790,11 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
 
 }
 
+moved {
+  from = ibm_backup_recovery_source_registration.source_registration
+  to   = ibm_backup_recovery_source_registration.source_registration[0]
+}
+
 # Poll until BRS confirms the source registration is gone, before the data source
 # connection is deleted — deleting a connection a source still references fails
 # with "can't be deleted as it is being used by the source". Runs after the DELETE
@@ -774,9 +814,9 @@ resource "terraform_data" "brs_source_deregistration_wait" {
 
   input = {
     region           = local.brs_instance_region
-    tenant_id        = local.brs_tenant_id
-    brs_endpoint     = local.backup_recovery_instance_public_url
-    connection_id    = tostring(local.connection_id)
+    tenant_id        = var.brs_tenant_id
+    brs_endpoint     = var.brs_instance_public_url
+    connection_id    = tostring(var.brs_connection_id)
     cluster_endpoint = local.cluster_endpoint
     ibmcloud_api_key = sensitive(var.ibmcloud_api_key) # pragma: allowlist secret
   }
@@ -791,6 +831,11 @@ resource "terraform_data" "brs_source_deregistration_wait" {
       IBMCLOUD_API_KEY = self.input.ibmcloud_api_key # pragma: allowlist secret
     }
   }
+}
+
+moved {
+  from = terraform_data.brs_source_deregistration_wait
+  to   = terraform_data.brs_source_deregistration_wait[0]
 }
 
 # Destroy-time gate: keeps the DSC pod and the brsagent SA/CRB/token alive until
@@ -838,6 +883,11 @@ resource "terraform_data" "wait_before_helm_destroy" {
   }
 }
 
+moved {
+  from = terraform_data.wait_before_helm_destroy
+  to   = terraform_data.wait_before_helm_destroy[0]
+}
+
 # Poll the BRS protection-sources API until the DSC initial discovery pass is
 # complete — i.e., until the registered cluster appears as a source node with
 # at least one child object (namespace or PVC).  This replaces the old blind
@@ -858,16 +908,16 @@ resource "terraform_data" "wait_for_source_discovery" {
   ]
 
   triggers_replace = {
-    connection_id = local.connection_id
+    connection_id = var.brs_connection_id
     dsc_version   = var.dsc_chart_uri
     source_id     = try(tostring(ibm_backup_recovery_source_registration.source_registration[0].source_id), "")
   }
 
   input = {
     region          = local.brs_instance_region
-    tenant_id       = local.brs_tenant_id
+    tenant_id       = var.brs_tenant_id
     registration_id = try(tostring(ibm_backup_recovery_source_registration.source_registration[0].source_id), "")
-    brs_endpoint    = local.backup_recovery_instance_public_url
+    brs_endpoint    = var.brs_instance_public_url
   }
 
   provisioner "local-exec" {
@@ -880,11 +930,16 @@ resource "terraform_data" "wait_for_source_discovery" {
   }
 }
 
+moved {
+  from = terraform_data.wait_for_source_discovery
+  to   = terraform_data.wait_for_source_discovery[0]
+}
+
 data "ibm_backup_recovery_protection_sources" "sources" {
   count           = local.stage_brs_registration || local.stage_protection_groups ? 1 : 0
-  x_ibm_tenant_id = local.brs_tenant_id
+  x_ibm_tenant_id = var.brs_tenant_id
   environment     = "kKubernetes"
-  instance_id     = local.brs_instance_guid
+  instance_id     = var.brs_instance_guid
   region          = local.brs_instance_region
   endpoint_type   = var.brs_endpoint_type
   service_name    = var.brs_service_type
@@ -1036,10 +1091,10 @@ locals {
 resource "ibm_backup_recovery_protection_group" "protection_group" {
   for_each = local.stage_protection_groups ? { for pg in var.protection_groups : pg.name => pg } : {}
 
-  x_ibm_tenant_id    = local.brs_tenant_id
+  x_ibm_tenant_id    = var.brs_tenant_id
   name               = each.value.name
   environment        = "kKubernetes"
-  policy_id          = local.resolved_policy_ids[each.value.policy_name]
+  policy_id          = var.resolved_policy_ids[each.value.policy_name]
   description        = each.value.description
   is_paused          = each.value.is_paused
   abort_in_blackouts = each.value.abort_in_blackouts
@@ -1047,7 +1102,7 @@ resource "ibm_backup_recovery_protection_group" "protection_group" {
   priority           = each.value.priority
   qos_policy         = each.value.qos_policy
   endpoint_type      = var.brs_endpoint_type
-  instance_id        = local.brs_instance_guid
+  instance_id        = var.brs_instance_guid
   service_name       = var.brs_service_type
   region             = local.brs_instance_region
   delete_snapshots   = each.value.delete_snapshots
@@ -1350,7 +1405,7 @@ resource "terraform_data" "cancel_pg_runs" {
 
   input = {
     region              = local.brs_instance_region
-    tenant              = local.brs_tenant_id
+    tenant              = var.brs_tenant_id
     brs_endpoint        = local.backup_recovery_instance_url
     protection_group_id = ibm_backup_recovery_protection_group.protection_group[each.key].id
   }
@@ -1382,7 +1437,7 @@ resource "ibm_resource_tag" "cluster_brs_tag" {
 
   resource_id = local.cluster_crn
   tag_type    = "user"
-  tags        = ["brs-region:${local.brs_instance_region}", "brs-guid:${local.brs_instance_guid}", "brs-source-id:${split("::", ibm_backup_recovery_source_registration.source_registration[0].id)[1]}"]
+  tags        = ["brs-region:${local.brs_instance_region}", "brs-guid:${var.brs_instance_guid}", "brs-source-id:${split("::", ibm_backup_recovery_source_registration.source_registration[0].id)[1]}"]
 }
 
 ##############################################################################
@@ -1398,7 +1453,7 @@ resource "terraform_data" "delete_auto_protect_pg" {
 
   input = {
     region              = local.brs_instance_region
-    tenant              = local.brs_tenant_id
+    tenant              = var.brs_tenant_id
     protection_group_id = try(ibm_backup_recovery_source_registration.source_registration[0].kubernetes_params[0].auto_protect_config[0].protection_group_id, "")
     brs_endpoint        = local.backup_recovery_instance_url
     api_key             = sensitive(var.ibmcloud_api_key)
@@ -1486,9 +1541,9 @@ resource "terraform_data" "trigger_backup_run" {
 
   input = {
     url                 = "https://${local.backup_recovery_instance_url}"
-    tenant              = local.brs_tenant_id
+    tenant              = var.brs_tenant_id
     endpoint_type       = var.brs_endpoint_type
-    instance_id         = local.brs_instance_guid
+    instance_id         = var.brs_instance_guid
     protection_group_id = ibm_backup_recovery_protection_group.protection_group[each.key].id
     api_key             = sensitive(var.ibmcloud_api_key)
     binaries_path       = local.binaries_path
@@ -1525,9 +1580,9 @@ resource "terraform_data" "wait_for_backup_run" {
 
   input = {
     url                   = "https://${local.backup_recovery_instance_url}"
-    tenant                = local.brs_tenant_id
+    tenant                = var.brs_tenant_id
     endpoint_type         = var.brs_endpoint_type
-    instance_id           = local.brs_instance_guid
+    instance_id           = var.brs_instance_guid
     protection_group_id   = ibm_backup_recovery_protection_group.protection_group[each.key].id
     api_key               = sensitive(var.ibmcloud_api_key)
     timeout_minutes       = var.backup_run_poll_timeout_minutes
@@ -1558,10 +1613,10 @@ resource "terraform_data" "wait_for_backup_run" {
 data "ibm_backup_recovery_protection_group_runs" "backup_runs" {
   for_each = local.stage_backup_and_recovery && local.deploy_recovery ? { for pg in var.protection_groups : pg.name => pg } : {}
 
-  x_ibm_tenant_id        = local.brs_tenant_id
+  x_ibm_tenant_id        = var.brs_tenant_id
   protection_group_id    = local.numeric_pg_ids[each.key]
   endpoint_type          = var.brs_endpoint_type
-  instance_id            = local.brs_instance_guid
+  instance_id            = var.brs_instance_guid
   region                 = local.brs_instance_region
   service_name           = var.brs_service_type
   include_object_details = true
@@ -1580,11 +1635,11 @@ data "ibm_backup_recovery_protection_group_runs" "backup_runs" {
 resource "ibm_backup_recovery" "recover_snapshot" {
   for_each = local.stage_backup_and_recovery && local.deploy_recovery ? { for recovery in var.recoveries : recovery.name => recovery } : {}
 
-  x_ibm_tenant_id      = local.brs_tenant_id
+  x_ibm_tenant_id      = var.brs_tenant_id
   name                 = each.value.name
   snapshot_environment = each.value.snapshot_environment
   endpoint_type        = var.brs_endpoint_type
-  instance_id          = local.brs_instance_guid
+  instance_id          = var.brs_instance_guid
   region               = local.brs_instance_region
   service_name         = var.brs_service_type
 

@@ -44,21 +44,30 @@ locals {
   cluster_endpoint = var.cluster_name_id != null ? data.ibm_container_vpc_cluster.vpc_cluster_data[0].public_service_endpoint_url : ibm_container_vpc_cluster.vpc_cluster[0].public_service_endpoint_url
   cluster_crn      = var.cluster_name_id != null ? data.ibm_container_vpc_cluster.vpc_cluster_data[0].crn : ibm_container_vpc_cluster.vpc_cluster[0].crn
 
-  # vpc_id / vpc_subnets: used by module.brs_vpe and data.ibm_is_security_group.kube_vpeg_sg.
-  # For a NEW cluster (cluster_name_id = null) these come from the ibm_is_vpc /
-  # ibm_is_subnet resources created earlier in this file — always known at plan time.
-  # NOTE: the existing-cluster path (cluster_name_id != null) is not supported for
-  # automated VPEG creation in this example because ibm_container_vpc_cluster does
-  # not expose vpc_id as a top-level attribute; supply vpc_id / vpc_subnets explicitly
-  # via variables if you need to bring your own cluster.
-  vpc_id = ibm_is_vpc.vpc[0].id
-  vpc_subnets = [
+  # vpc_id / vpc_subnets: used by ibm_is_virtual_endpoint_gateway.brs_vpe and
+  # data.ibm_is_security_group.kube_vpeg_sg.
+  # NEW cluster (cluster_name_id = null): taken from the ibm_is_vpc / ibm_is_subnet
+  # resources created earlier in this file.
+  # EXISTING cluster (cluster_name_id != null): auto-discovered from the subnets
+  # attached to the cluster's worker pools (see data.ibm_is_subnet.cluster_subnet).
+  vpc_id = var.cluster_name_id == null ? ibm_is_vpc.vpc[0].id : data.ibm_is_subnet.cluster_subnet[0].vpc
+  vpc_subnets = var.cluster_name_id == null ? [
     {
       name = ibm_is_subnet.subnet_zone_1[0].name
       id   = ibm_is_subnet.subnet_zone_1[0].id
       zone = ibm_is_subnet.subnet_zone_1[0].zone
     }
-  ]
+    ] : [for s in data.ibm_is_subnet.cluster_subnet : {
+      name = s.name
+      id   = s.id
+      zone = s.zone
+  }]
+
+  # All subnet IDs attached to the existing cluster's worker pools, de-duplicated
+  # (a single-zone cluster lists the same subnet once per worker pool).
+  cluster_subnet_ids = var.cluster_name_id != null ? distinct(flatten(
+    data.ibm_container_vpc_cluster.vpc_cluster_data[0].worker_pools[*].zones[*].subnets[*].id
+  )) : []
 }
 
 ##############################################################################
@@ -195,6 +204,14 @@ data "ibm_container_vpc_cluster" "vpc_cluster_data" {
 
   name              = var.cluster_name_id
   resource_group_id = module.source_resource_group.resource_group_id
+}
+
+# Existing cluster: look up the subnets used by its worker pools to derive the
+# VPC ID and subnet list needed for the BRS VPE gateway.
+data "ibm_is_subnet" "cluster_subnet" {
+  count      = length(local.cluster_subnet_ids)
+  provider   = ibm.source
+  identifier = local.cluster_subnet_ids[count.index]
 }
 
 # For existing clusters: fetch current addons then upgrade vpc-block-csi-driver
@@ -418,7 +435,7 @@ module "brs_s2s_auth" {
 
 locals {
   brs_vpe_name    = "${var.prefix}-brs-connection-vpe"
-  brs_vpe_subnets = { for s in local.vpc_subnets : s.zone => s }
+  brs_vpe_subnets = { for s in local.vpc_subnets : s.zone => s... }
 }
 
 data "ibm_is_security_group" "kube_vpeg_sg" {
@@ -433,7 +450,7 @@ data "ibm_is_security_group" "kube_vpeg_sg" {
 }
 
 locals {
-  brs_vpe_subnets_list = values(local.brs_vpe_subnets)
+  brs_vpe_subnets_list = [for v in values(local.brs_vpe_subnets) : v[0]]
 }
 
 resource "ibm_is_subnet_reserved_ip" "brs_vpe" {
