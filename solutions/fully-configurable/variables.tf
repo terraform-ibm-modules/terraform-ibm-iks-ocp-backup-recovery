@@ -73,6 +73,13 @@ variable "vpc_block_csi_driver_version" {
   nullable    = false
 }
 
+variable "manage_vpc_block_csi_addon" {
+  description = "Whether the DA manages the `vpc-block-csi-driver` addon on the source VPC cluster. When true (default), the DA installs or upgrades it to `vpc_block_csi_driver_version`. Set to false if addons are managed outside this DA (for example GitOps or cluster automation). The CSI driver must already be installed when this is false, because the DSC needs it for PVC provisioning. Only applies to VPC clusters."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
 variable "add_cluster_tags" {
   description = "Whether to add BRS tags to the cluster. Set to false if you manage cluster tags externally to avoid drift. When false, you should manually add the tags 'brs-region:<region>' and 'brs-guid:<guid>' to your cluster."
   type        = bool

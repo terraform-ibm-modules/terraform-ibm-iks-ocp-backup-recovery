@@ -475,6 +475,10 @@
               "display_name": "VPC Block CSI Driver Version"
             },
             {
+              "key": "manage_vpc_block_csi_addon",
+              "display_name": "Manage VPC Block CSI Addon"
+            },
+            {
               "key": "registration_images",
               "display_name": "Registration Images",
               "custom_config": {

@@ -50,7 +50,7 @@ data "ibm_container_cluster_config" "cluster_config" {
 # Always runs for VPC clusters — vpc_block_csi_driver_version is non-nullable
 # so it always has a value (default "5.2"). Skipped for Classic clusters.
 data "ibm_container_addons" "source_cluster_addons" {
-  count    = local.is_vpc ? 1 : 0
+  count    = local.is_vpc && var.manage_vpc_block_csi_addon ? 1 : 0
   provider = ibm.source_cluster
   cluster  = var.source_cluster_id
 
@@ -61,12 +61,12 @@ locals {
   # Build a map of existing addons keyed by name, then override vpc-block-csi-driver
   # with the target version.  All other addons are preserved as-is.
   # When the addon is not yet installed, it is added fresh.
-  existing_addons_map = local.is_vpc ? {
+  existing_addons_map = local.is_vpc && var.manage_vpc_block_csi_addon ? {
     for addon in try(data.ibm_container_addons.source_cluster_addons[0].addons, []) :
     addon.name => addon.version
   } : {}
 
-  merged_addons = local.is_vpc ? merge(
+  merged_addons = local.is_vpc && var.manage_vpc_block_csi_addon ? merge(
     local.existing_addons_map,
     { "vpc-block-csi-driver" = var.vpc_block_csi_driver_version }
   ) : {}
@@ -76,7 +76,7 @@ locals {
 # ibm_container_addons manages the full addon set — all addons from the data
 # source are included so nothing is removed unintentionally.
 resource "ibm_container_addons" "source_cluster_addons" {
-  count    = local.is_vpc ? 1 : 0
+  count    = local.is_vpc && var.manage_vpc_block_csi_addon ? 1 : 0
   provider = ibm.source_cluster
   cluster  = var.source_cluster_id
 
