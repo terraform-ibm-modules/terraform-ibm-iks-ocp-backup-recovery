@@ -55,6 +55,34 @@ variable "cluster_config_endpoint_type" {
 }
 
 ##############################################################################
+# BRS VPE
+##############################################################################
+
+variable "create_source_cluster_brs_vpe_gateway" {
+  type        = bool
+  description = "Set to true to create the BRS VPE Gateway."
+  default     = true
+  nullable    = false
+}
+
+variable "vpc_id" {
+  type        = string
+  description = "VPC ID for the BRS VPE Gateway. Required only when cluster_name_id is set (existing cluster) and create_source_cluster_brs_vpe_gateway is true."
+  default     = null
+}
+
+variable "vpc_subnets" {
+  type = list(object({
+    name = string
+    id   = string
+    zone = string
+  }))
+  description = "Subnet list for the BRS VPE Gateway. Required only when cluster_name_id is set (existing cluster) and create_source_cluster_brs_vpe_gateway is true."
+  default     = []
+  nullable    = false
+}
+
+##############################################################################
 # BRS instance
 ##############################################################################
 

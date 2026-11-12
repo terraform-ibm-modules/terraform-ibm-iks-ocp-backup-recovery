@@ -74,6 +74,7 @@ go.work
 **/pipeline-logs
 **/*.code-workspace
 **/logs
+**/*.log
 
 # Local KB / scratch files — not for commit
 ibmcloud-backup-recovery-cli-reference.html
@@ -83,3 +84,4 @@ cleanup-test-resources.sh
 .env
 terraform.tfvars
 solutions/fully-configurable/scenarios
+scripts/run-examples.sh

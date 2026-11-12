@@ -15,16 +15,23 @@ variable "source_ibmcloud_api_key" {
   default     = null
 }
 
+variable "target_ibmcloud_api_key" {
+  type        = string
+  description = "IBM Cloud API key for the target cluster account. When null, falls back to `source_ibmcloud_api_key`, then `ibmcloud_api_key`. Set only when the target cluster lives in a third IBM account — different from both the BRS account and the source-cluster account."
+  sensitive   = true
+  default     = null
+}
+
 variable "iaas_classic_username" {
   type        = string
-  description = "IBM Cloud Classic Infrastructure username. Required only when `connection_env_type` is `kIksClassic` or `kRoksClassic`. Find it under Manage > Access (IAM) > Users > your user > VPN password > Username."
+  description = "IBM Cloud Classic Infrastructure username. Required only when `source_connection_env_type` is `kIksClassic` or `kRoksClassic`. Find it under Manage > Access (IAM) > Users > your user > VPN password > Username."
   sensitive   = true
   default     = null
 }
 
 variable "iaas_classic_api_key" {
   type        = string
-  description = "IBM Cloud Classic Infrastructure API key. Required only when `connection_env_type` is `kIksClassic` or `kRoksClassic`. Generate it under Manage > Access (IAM) > Users > your user > API keys > Classic infrastructure API key."
+  description = "IBM Cloud Classic Infrastructure API key. Required only when `source_connection_env_type` is `kIksClassic` or `kRoksClassic`. Generate it under Manage > Access (IAM) > Users > your user > API keys > Classic infrastructure API key."
   sensitive   = true
   default     = null
 }
@@ -43,12 +50,12 @@ variable "provider_visibility" {
 # Cluster variables
 ##############################################################################
 
-variable "cluster_id" {
+variable "source_cluster_id" {
   type        = string
   description = "The ID of the cluster to deploy the agents in."
 }
 
-variable "cluster_resource_group_id" {
+variable "source_cluster_resource_group_id" {
   type        = string
   description = "The resource group ID of the cluster."
 }
@@ -59,20 +66,34 @@ variable "brs_resource_group_id" {
   default     = null
 }
 
+variable "vpc_block_csi_driver_version" {
+  description = "Target version for the `vpc-block-csi-driver` addon on the source cluster. The DA fetches all currently installed addons and upgrades (or installs) `vpc-block-csi-driver` to this version while preserving all other addons. Only applies to VPC clusters — ignored for Classic."
+  type        = string
+  default     = "5.2"
+  nullable    = false
+}
+
+variable "manage_vpc_block_csi_addon" {
+  description = "Whether the DA manages the `vpc-block-csi-driver` addon on the source VPC cluster. When true (default), the DA installs or upgrades it to `vpc_block_csi_driver_version`. Set to false if addons are managed outside this DA (for example GitOps or cluster automation). The CSI driver must already be installed when this is false, because the DSC needs it for PVC provisioning. Only applies to VPC clusters."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
 variable "add_cluster_tags" {
   description = "Whether to add BRS tags to the cluster. Set to false if you manage cluster tags externally to avoid drift. When false, you should manually add the tags 'brs-region:<region>' and 'brs-guid:<guid>' to your cluster."
   type        = bool
   default     = true
 }
 
-variable "cluster_config_endpoint_type" {
+variable "source_cluster_config_endpoint_type" {
   description = "The type of endpoint to use for the cluster config access: `default`, `private`, `vpe`, or `link`. The `default` value uses the default endpoint of the cluster."
   type        = string
   default     = "private"
   nullable    = false # use default if null is passed in
   validation {
     error_message = "Invalid endpoint type. Valid values are `default`, `private`, `vpe`, or `link`."
-    condition     = contains(["default", "private", "vpe", "link"], var.cluster_config_endpoint_type)
+    condition     = contains(["default", "private", "vpe", "link"], var.source_cluster_config_endpoint_type)
   }
 }
 
@@ -111,29 +132,21 @@ variable "deployment_mode" {
 # Backup Related
 ##############################################################
 variable "auto_protect_policy_name" {
-  description = "Name of the existing protection policy to use for auto-protect. Required when enable_auto_protect is true and deployment_mode is 'backup_only' or 'full_backup_recovery'."
+  description = "Name of the existing protection policy to use for auto-protect. Defaults to 'Basic', which is the out-of-the-box policy shipped with every BRS instance. Only relevant when `enable_auto_protect` is true and `deployment_mode` is 'backup_only' or 'full_backup_recovery'."
   type        = string
-  default     = null
-
-  validation {
-    condition = (
-      var.deployment_mode == "connected_component" ||
-      var.enable_auto_protect == false ||
-      (var.enable_auto_protect == true && var.auto_protect_policy_name != null)
-    )
-    error_message = "`auto_protect_policy_name` is required when `enable_auto_protect` is true in 'backup_only' or 'full_backup_recovery' modes."
-  }
+  default     = "Basic"
+  nullable    = false
 }
 
 variable "dsc_chart_uri" {
   description = "The full OCI registry URI for the Data Source Connector Helm chart, including the digest."
   type        = string
-  default     = "oci://icr.io/brs-charts/brs-ds-connector-chart:7.3.12-release-20260713-2e7241a2@sha256:b6a39948f5d1b6f765d0e73ebd2dd9c700ba0d5d5a120969efdfce2f75e8467e"
+  default     = "oci://icr.io/brs-charts/brs-ds-connector-chart:7.3.13-release-20261002-46146703@sha256:7add3258775c29182333794222ffac4b0d77f6bd176c3e4c042f53f6332cfae"
   nullable    = false
 }
 
 variable "enable_auto_protect" {
-  description = "Flag to enable auto-protect for the cluster."
+  description = "Enable auto-protect during the initial cluster registration. This must be set to `true` on the first run; toggling it from `false` to `true` later is not supported by the underlying API and will not retroactively create the protection group."
   type        = bool
   default     = true
   nullable    = false
@@ -320,6 +333,7 @@ variable "protection_groups" {
     is_paused          = optional(bool, false)
     abort_in_blackouts = optional(bool, false)
     pause_in_blackouts = optional(bool, false)
+    delete_snapshots   = optional(bool, false) # When true, all snapshots are deleted when the Protection Group is destroyed
   }))
   default  = null
   nullable = true
@@ -359,20 +373,27 @@ variable "dsc_helm_timeout" {
   nullable    = false
 }
 
-variable "dsc_storage_class" {
+variable "source_dsc_storage_class" {
   type        = string
   description = "Storage class to use for the Data Source Connector persistent volume. By default, it uses 'ibmc-vpc-block-metro-5iops-tier' for VPC clusters and 'ibmc-block-silver' for Classic clusters."
   default     = null
 }
 
-variable "create_dsc_worker_pool" {
-  description = "Set to `true` to create a dedicated worker pool for the Data Source Connector in VPC clusters. If set to `false`, the connector will be deployed on existing worker nodes."
+variable "source_create_dsc_worker_pool" {
+  description = "Set to `true` to create a dedicated worker pool for the Data Source Connector. For VPC clusters, one pool per zone is created, distributing `dsc_replicas` nodes across zones. For Classic clusters, a single pool is created with one node per zone; zones are attached using the VLANs of the default pool, up to `dsc_worker_pool_zones` zones. If set to `false`, the connector is deployed on existing worker nodes."
   type        = bool
   default     = true
 }
 
-variable "dsc_worker_pool_flavor" {
-  description = "The machine flavor for the Data Source Connector worker pool. `bxf.4x16` (4 vCPU, 16 GB RAM) is available in every IBM Cloud VPC zone. Override for a larger flavor (e.g. `bxf.8x32`)."
+variable "source_dsc_worker_pool_flavor" {
+  description = "The machine flavor for the source cluster Data Source Connector worker pool. Defaults to `bxf.4x16` for VPC clusters and `b3c.4x16` for classic clusters when left at the default. Override with any compatible flavor for the cluster type (e.g. `bxf.8x32` for VPC, `b3c.8x32` for classic)."
+  type        = string
+  default     = "bxf.4x16"
+  nullable    = false
+}
+
+variable "target_dsc_worker_pool_flavor" {
+  description = "The machine flavor for the target cluster Data Source Connector worker pool. Defaults to `bxf.4x16` for VPC clusters and `b3c.4x16` for classic clusters when left at the default. Override with any compatible flavor for the cluster type (e.g. `bxf.8x32` for VPC, `b3c.8x32` for classic)."
   type        = string
   default     = "bxf.4x16"
   nullable    = false
@@ -406,9 +427,9 @@ variable "dsc_pod_memory_requests" {
   nullable    = false
 }
 
-variable "brs_connection_name" {
+variable "source_brs_connection_name" {
   type        = string
-  description = "Name of the connection from the Backup & Recovery Service instance to be used for protecting the cluster. If `brs_create_new_connection` is set to `true` (default), this will be the name of the new connection created. If set to `false`, this must be the name of an existing connection."
+  description = "Name of the connection from the Backup & Recovery Service instance to be used for protecting the cluster. If `source_brs_create_new_connection` is set to `true` (default), this will be the name of the new connection created. If set to `false`, this must be the name of an existing connection."
   nullable    = false
 }
 
@@ -418,20 +439,14 @@ variable "existing_brs_instance_crn" {
   default     = null
 }
 
-variable "add_dsc_rules_to_cluster_sg" {
-  type        = bool
-  description = "Set to `true` to automatically add the security group rules required by the Data Source Connector. This is mandatory when registering the cluster via its public service endpoint. Set to `false` to only register the cluster and create the policy without modifying security groups."
-  default     = false
-}
-
 variable "brs_endpoint_type" {
   type        = string
-  description = "The endpoint type to use when connecting to the Backup and Recovery service for creating a data source connection. Allowed values are 'public' or 'private'."
+  description = "The endpoint type to use when connecting to the Backup and Recovery service for Terraform provider operations and script calls. Allowed values are 'public' or 'private'."
   default     = "private"
 
   validation {
     condition     = contains(["public", "private"], var.brs_endpoint_type)
-    error_message = "`endpoint_type` must be 'public' or 'private'."
+    error_message = "`brs_endpoint_type` must be 'public' or 'private'."
   }
 }
 
@@ -445,24 +460,24 @@ variable "registration_images" {
     init_container              = optional(string, null)
   })
   default = {
-    data_mover                  = "icr.io/ext/brs/cohesity-datamover:7.3.12@sha256:0a0e87ddce1165398390656e6ff9465815a105a79c427030f284bffbc2b7d987"
-    velero                      = "icr.io/ext/brs/oadp-velero:1.5.5@sha256:386ef8dff743339a40b3b82a1fcdc9bda56c0d31a0b544acae59058d522db8d7"
-    velero_aws_plugin           = "icr.io/ext/brs/oadp-velero-plugin-for-aws:1.5.5@sha256:93a7f4c514546a1d771186b8e60722d3b1632190ebc02f4a8e75e8fe0f867ced"
-    velero_openshift_plugin     = "icr.io/ext/brs/oadp-velero-plugin-for-openshift:1.5.5@sha256:130894d2eca06a0e5eb49b969c03c99ed0d5a9d0cac83126e360442d438c9f2d"
-    cohesity_dataprotect_plugin = "icr.io/ext/brs/cohesity-dataprotect-plugin:7.3.12@sha256:7c68cf893694f1057c700cfe223fdd86ae455889295f9f353c22d9d443170182"
+    data_mover                  = "icr.io/ext/brs/cohesity-datamover:7.3.13@sha256:1010ce08a8b60e614bf1775285229116b45211530da7e6a8bb59eb8e88431044"
+    velero                      = "icr.io/ext/brs/oadp-velero:1.6.0@sha256:b6d60599283f7711dbd85030ddb543100d19ab3673fb7b146e39642aecc1ecac"
+    velero_aws_plugin           = "icr.io/ext/brs/oadp-velero-plugin-for-aws:1.6.0@sha256:e571cb3297759e31afcdfebe11c4b9f2c3f2fcc1192bc8f1fd51b8121b57c875"
+    velero_openshift_plugin     = "icr.io/ext/brs/oadp-velero-plugin-for-openshift:1.6.0@sha256:a5a4320ba41c391941089b591aabfa1faa7531294d36643d507b34884014f2a5"
+    cohesity_dataprotect_plugin = "icr.io/ext/brs/cohesity-dataprotect-plugin:7.3.13@sha256:54120e029541071e25c5cd816eaea6cadfc54f0a522b939265e041ea4cd71803"
   }
   description = "The images required for backup and recovery registration."
   nullable    = false
 }
 
-variable "kube_type" {
+variable "source_kube_type" {
   type        = string
   description = "Type of Kubernetes cluster. Allowed values are 'kubernetes' or 'openshift'."
   default     = "kubernetes"
 
   validation {
-    condition     = contains(["kubernetes", "openshift"], var.kube_type)
-    error_message = "`kube_type` must be 'kubernetes' or 'openshift'."
+    condition     = contains(["kubernetes", "openshift"], var.source_kube_type)
+    error_message = "`source_kube_type` must be 'kubernetes' or 'openshift'."
   }
 }
 
@@ -489,28 +504,34 @@ variable "brs_instance_name" {
   }
 }
 
-variable "brs_create_new_connection" {
+variable "create_new_brs_instance" {
+  description = "Whether to provision a new Backup & Recovery Service instance. Leave as `null` (default) to infer the behaviour from `existing_brs_instance_crn` — a new instance is created when the CRN is not provided. Set to `false` to reuse an existing instance whose CRN is only known after apply."
   type        = bool
-  description = "Flag to create a new connection from the Backup & Recovery Service instance to the cluster. When set to `true` (default), a new connection is created with the name specified in `brs_connection_name`. When `false`, it uses an existing connection matching `brs_connection_name`."
+  default     = null
+}
+
+variable "source_brs_create_new_connection" {
+  type        = bool
+  description = "Flag to create a new connection from the Backup & Recovery Service instance to the cluster. When set to `true` (default), a new connection is created with the name specified in `source_brs_connection_name`. When `false`, it uses an existing connection matching `source_brs_connection_name`."
   default     = true
   nullable    = false
 }
 
-variable "create_brs_vpe" {
-  description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) that routes traffic from the cluster VPC to the BRS instance over the IBM private backbone. For existing clusters, vpc_id and vpc_subnets are auto-discovered from the cluster's worker pools. When creating a new cluster in the same apply, supply vpc_id and vpc_subnets explicitly. Set to false only if you are managing the VPEG externally or do not require private connectivity."
+variable "create_source_cluster_brs_vpe_gateway" {
+  description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) that routes traffic from the cluster VPC to the BRS instance over the IBM private backbone. For existing clusters, source_vpc_id and source_vpc_subnets are auto-discovered from the cluster's worker pools. When creating a new cluster in the same apply, supply source_vpc_id and source_vpc_subnets explicitly. Set to false only if you are managing the VPEG externally or do not require private connectivity."
   type        = bool
   default     = true
   nullable    = false
 }
 
-variable "vpc_id" {
-  description = "ID of the VPC where the BRS Virtual Private Endpoint Gateway will be created. Optional when create_brs_vpe is true — when omitted the VPC ID is auto-discovered from the cluster's worker-pool subnets. Supply this explicitly only when the auto-discovery would pick the wrong VPC."
+variable "source_vpc_id" {
+  description = "ID of the VPC where the BRS Virtual Private Endpoint Gateway will be created. Optional when create_source_cluster_brs_vpe_gateway is true — when omitted the VPC ID is auto-discovered from the cluster's worker-pool subnets. Supply this explicitly only when the auto-discovery would pick the wrong VPC."
   type        = string
   default     = null
 }
 
-variable "vpc_subnets" {
-  description = "List of subnets in which to bind reserved IPs for the BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when create_brs_vpe is true — when omitted all subnets in the cluster VPC are discovered automatically."
+variable "source_vpc_subnets" {
+  description = "List of subnets in which to bind reserved IPs for the BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when create_source_cluster_brs_vpe_gateway is true — when omitted all subnets in the cluster VPC are discovered automatically."
   type = list(object({
     name = string
     id   = string
@@ -520,8 +541,8 @@ variable "vpc_subnets" {
   nullable = false
 }
 
-variable "brs_vpe_name" {
-  description = "Override the name of the BRS Virtual Private Endpoint Gateway. If null, the name is auto-generated as '<brs_connection_name>-vpe'."
+variable "source_brs_vpe_name" {
+  description = "Override the name of the BRS Virtual Private Endpoint Gateway. If null, the name is auto-generated as '<source_brs_connection_name>-vpe'."
   type        = string
   default     = null
 }
@@ -548,9 +569,15 @@ variable "region" {
   }
 }
 
-variable "cluster_region" {
+variable "source_cluster_region" {
   type        = string
-  description = "IBM Cloud region for the cluster provider, which serves BOTH the source and target clusters. Only region-scoped VPC (`is`) calls depend on it: subnet lookups, the `kube-vpegw-*` security group, and the VPE gateway. Cluster lookups themselves use the global containers API and are unaffected, so a Classic cluster never constrains this value. Set it to the region of the VPC cluster whose VPC resources this deployment manages — for a Classic source to VPC target migration that is the TARGET cluster's region; for a VPC source with `create_brs_vpe` or `add_dsc_rules_to_cluster_sg` enabled it is the SOURCE cluster's region. When null (default) it falls back to `region` (the Backup & Recovery instance region), which is correct whenever that cluster and the BRS instance share a region. LIMITATION: if the source and target are BOTH VPC clusters in DIFFERENT regions, one provider cannot serve both and that topology is unsupported."
+  description = "IBM Cloud region for the source cluster provider (`ibm.source_cluster`). Only region-scoped VPC (`is`) calls depend on it: subnet lookups, the `kube-vpegw-*` security group, and the source VPE gateway. Cluster lookups use the global containers API and are unaffected. When null, falls back to `region` (the BRS instance region), which is correct when the source cluster and BRS instance share a region."
+  default     = null
+}
+
+variable "target_cluster_region" {
+  type        = string
+  description = "IBM Cloud region of the target cluster's VPC. Used as the `region` for the `ibm.target_cluster` provider so all target VPC API calls (subnet lookups, security group, VPE gateway) use the correct region. When null, falls back to `source_cluster_region`, then `region`. Set this explicitly only when the target cluster is in a different region from the source cluster."
   default     = null
 }
 
@@ -566,13 +593,13 @@ variable "access_tags" {
   default     = []
 }
 
-variable "connection_env_type" {
+variable "source_connection_env_type" {
   type        = string
-  description = "Type of environment for the connection. Must be consistent with `kube_type` (use `kIks*` for `kubernetes`, `kRoks*` for `openshift`). Allowed values are 'kIksVpc', 'kIksClassic', 'kRoksVpc', 'kRoksClassic'."
+  description = "Type of environment for the connection. Must be consistent with `source_kube_type` (use `kIks*` for `kubernetes`, `kRoks*` for `openshift`). Allowed values are 'kIksVpc', 'kIksClassic', 'kRoksVpc', 'kRoksClassic'."
 
   validation {
-    condition     = contains(["kIksVpc", "kIksClassic", "kRoksVpc", "kRoksClassic"], var.connection_env_type)
-    error_message = "`connection_env_type` must be 'kIksVpc', 'kIksClassic', 'kRoksVpc', or 'kRoksClassic'."
+    condition     = contains(["kIksVpc", "kIksClassic", "kRoksVpc", "kRoksClassic"], var.source_connection_env_type)
+    error_message = "`source_connection_env_type` must be 'kIksVpc', 'kIksClassic', 'kRoksVpc', or 'kRoksClassic'."
   }
 }
 
@@ -1021,12 +1048,23 @@ variable "target_cluster_config_endpoint_type" {
 
 variable "target_connection_env_type" {
   type        = string
-  description = "Connection environment type for the target cluster. Must be consistent with the target cluster's infrastructure type. Allowed values are 'kIksVpc', 'kIksClassic', 'kRoksVpc', 'kRoksClassic'. When null (default), falls back to `connection_env_type`. Set this explicitly for Classic→VPC cross-cluster recovery where the source is Classic and the target is VPC."
+  description = "Connection environment type for the target cluster. Must be consistent with the target cluster's infrastructure type. Allowed values are 'kIksVpc', 'kIksClassic', 'kRoksVpc', 'kRoksClassic'. When null (default), falls back to `source_connection_env_type`. Set this explicitly for Classic→VPC cross-cluster recovery where the source is Classic and the target is VPC."
   default     = null
 }
 
+variable "target_kube_type" {
+  type        = string
+  description = "Type of the target Kubernetes cluster. Allowed values are 'kubernetes' (IKS) or 'openshift' (ROKS). When null (default), falls back to `source_kube_type`. Set this explicitly when the source and target clusters are of different types — for example, when backing up from an IKS cluster and recovering to a ROKS cluster, or vice-versa."
+  default     = null
+
+  validation {
+    condition     = var.target_kube_type == null || contains(["kubernetes", "openshift"], var.target_kube_type)
+    error_message = "`target_kube_type` must be 'kubernetes' or 'openshift'."
+  }
+}
+
 variable "target_brs_connection_name" {
-  description = "Name for the BRS connection to the target cluster in cross-cluster recovery or connected component setup. If null, defaults to '{cluster_id}-target-connection'."
+  description = "Name for the BRS connection to the target cluster in cross-cluster recovery or connected component setup. If null, defaults to '{source_cluster_id}-target-connection'."
   type        = string
   default     = null
 }
@@ -1051,21 +1089,21 @@ variable "target_create_dsc_worker_pool" {
   nullable    = false
 }
 
-variable "target_create_brs_vpe" {
-  description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) in the target cluster's VPC, routing its DSC traffic to the BRS instance over the IBM private backbone. Required when the target cluster is in a different VPC from the source cluster and private connectivity is needed. Mirrors create_brs_vpe but applies to the target cluster registration."
+variable "create_target_cluster_brs_vpe_gateway" {
+  description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) in the target cluster's VPC, routing its DSC traffic to the BRS instance over the IBM private backbone. Required when the target cluster is in a different VPC from the source cluster and private connectivity is needed. Mirrors create_source_cluster_brs_vpe_gateway but applies to the target cluster registration."
   type        = bool
   default     = false
   nullable    = false
 }
 
 variable "target_vpc_id" {
-  description = "ID of the VPC where the target cluster's BRS Virtual Private Endpoint Gateway will be created. Optional when target_create_brs_vpe is true — when omitted the VPC ID is auto-discovered from the target cluster's worker-pool subnets. Supply explicitly only when auto-discovery would pick the wrong VPC."
+  description = "ID of the VPC where the target cluster's BRS Virtual Private Endpoint Gateway will be created. Optional when create_target_cluster_brs_vpe_gateway is true — when omitted the VPC ID is auto-discovered from the target cluster's worker-pool subnets. Supply explicitly only when auto-discovery would pick the wrong VPC."
   type        = string
   default     = null
 }
 
 variable "target_vpc_subnets" {
-  description = "List of subnets in which to bind reserved IPs for the target cluster's BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when target_create_brs_vpe is true — when omitted all subnets in the target cluster VPC are discovered automatically."
+  description = "List of subnets in which to bind reserved IPs for the target cluster's BRS VPE Gateway. Each entry must have 'name', 'id', and 'zone'. Optional when create_target_cluster_brs_vpe_gateway is true — when omitted all subnets in the target cluster VPC are discovered automatically."
   type = list(object({
     name = string
     id   = string
@@ -1081,17 +1119,19 @@ variable "target_brs_vpe_name" {
   default     = null
 }
 
-variable "recovery_storage_class_aliases" {
-  description = "Storage class aliases to create on the TARGET cluster so PVCs restored from the source cluster can bind. Required for Classic to VPC migrations: Velero restores each PVC with the storage class name it had on the source (e.g. 'ibmc-block-silver'), which cannot exist on a VPC cluster, leaving the PVC Pending and failing the recovery with 'Timed out while waiting for temporary pod to start'. Map each SOURCE storage class name to the VPC block profile that should back it, e.g. { \"ibmc-block-silver\" = \"5iops-tier\" }. Leave empty (default) for same-environment recoveries where the storage class already exists on the target. Note the restored volume takes on the VPC profile's characteristics, which differ from the original Classic tier."
-  type        = map(string)
-  default     = {}
-  nullable    = false
 
-  validation {
-    condition = alltrue([
-      for profile in values(var.recovery_storage_class_aliases) :
-      contains(["general-purpose", "5iops-tier", "10iops-tier", "custom"], profile)
-    ])
-    error_message = "Each value must be a VPC block storage profile: 'general-purpose', '5iops-tier', '10iops-tier', or 'custom'."
+variable "recovery_storage_class_mapping" {
+  description = "Maps source storage class names to target storage class names during cross-cluster recovery. Required when recovering from a Classic IKS/ROKS cluster to a VPC IKS/ROKS cluster, because Classic storage classes (e.g. ibmc-block-silver) do not exist on VPC clusters. Both key and value must be exact storage class names as they appear in Kubernetes. The default covers every Classic IKS/ROKS block storage class mapped to its nearest VPC block equivalent using metro classes (WaitForFirstConsumer binding, correct for multi-zone VPC clusters). Override or extend this map if your source PVCs use different storage classes, or if your target cluster requires non-metro classes (Immediate binding). File storage classes (ibmc-file-*) cannot be mapped to VPC block — omit them and reconfigure those PVCs manually after recovery. Leave empty only when the source and target clusters share identical storage class names."
+  type        = map(string)
+  nullable    = false
+  default = {
+    "ibmc-block-bronze"        = "ibmc-vpc-block-metro-general-purpose"
+    "ibmc-block-silver"        = "ibmc-vpc-block-metro-5iops-tier"
+    "ibmc-block-gold"          = "ibmc-vpc-block-metro-10iops-tier"
+    "ibmc-block-custom"        = "ibmc-vpc-block-metro-custom"
+    "ibmc-block-retain-bronze" = "ibmc-vpc-block-metro-retain-general-purpose"
+    "ibmc-block-retain-silver" = "ibmc-vpc-block-metro-retain-5iops-tier"
+    "ibmc-block-retain-gold"   = "ibmc-vpc-block-metro-retain-10iops-tier"
+    "ibmc-block-retain-custom" = "ibmc-vpc-block-metro-retain-custom"
   }
 }

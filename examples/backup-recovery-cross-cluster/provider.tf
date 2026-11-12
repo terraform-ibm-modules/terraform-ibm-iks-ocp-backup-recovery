@@ -2,8 +2,7 @@
 # Provider configuration — VPE cross-cluster example (same IBM Cloud account)
 #
 # Both clusters live in the same account, so a single IBM Cloud API key is used.
-# The root module requires an explicit ibm.cluster provider alias that points to
-# the cluster account.  For same-account deployments ibm.cluster = ibm (same key).
+# The root module uses the default ibm provider for IBM Cloud resources.
 #
 # Two separate kubernetes/helm provider aliases are declared — one per cluster —
 # so the root module invocations can deploy the DSC Helm chart to each cluster
@@ -31,6 +30,12 @@ provider "kubernetes" {
 provider "helm" {
   alias = "source"
 
+  # burst_limit = 0 disables the client-side Kubernetes API rate limiter.
+  # Without this, helm ≥ 3.x performs an OpenAPI schema download on every
+  # install; on freshly-created clusters the API server can time out under
+  # the concurrent load from two parallel providers.
+  burst_limit = 0
+
   kubernetes = {
     host                   = data.ibm_container_cluster_config.source_cluster_config.host
     client_certificate     = data.ibm_container_cluster_config.source_cluster_config.admin_certificate
@@ -53,6 +58,8 @@ provider "kubernetes" {
 
 provider "helm" {
   alias = "target"
+
+  burst_limit = 0
 
   kubernetes = {
     host                   = data.ibm_container_cluster_config.target_cluster_config.host

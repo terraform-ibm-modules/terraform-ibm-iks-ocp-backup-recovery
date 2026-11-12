@@ -24,7 +24,7 @@ resource "kubernetes_namespace_v1" "brs_testing" {
     }
   }
 
-  depends_on = [data.ibm_container_cluster_config.cluster_config]
+  depends_on = [time_sleep.wait_operators]
 }
 
 # ── Headless Service (required by StatefulSet) ─────────────────────────────

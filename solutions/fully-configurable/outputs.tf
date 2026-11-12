@@ -2,26 +2,27 @@
 # Outputs
 ##############################################################################
 
-# BRS Instance Outputs
+# BRS Instance Outputs — sourced directly from module.brs_instance (DA owns it)
 output "brs_instance_guid" {
   description = "GUID of the Backup & Recovery Service instance"
-  value       = module.protect_cluster.brs_instance_guid
+  value       = module.brs_instance.brs_instance_guid
 }
 
 output "brs_instance_crn" {
   description = "CRN of the Backup & Recovery Service instance"
-  value       = module.protect_cluster.brs_instance_crn
+  value       = module.brs_instance.brs_instance_crn
 }
 
 output "brs_tenant_id" {
   description = "Tenant ID for the Backup & Recovery Service instance"
-  value       = module.protect_cluster.brs_tenant_id
+  value       = module.brs_instance.tenant_id
 }
 
 # Source Cluster Outputs
 output "source_registration_id" {
   description = "Registration ID of the source cluster in BRS"
   value       = module.protect_cluster.source_registration_id
+  sensitive   = true
 }
 
 output "source_connection_id" {
@@ -34,6 +35,7 @@ output "source_connection_id" {
 output "protection_group_ids" {
   description = "Map of protection group names to their IDs"
   value       = module.protect_cluster.protection_group_ids
+  sensitive   = true
 }
 
 # Note: protection_policy_ids, dsc_namespace, and dsc_release_name are internal to the module
@@ -55,7 +57,7 @@ output "recovery_protection_group_name" {
 
 output "recovery_snapshot_id" {
   description = "Snapshot ID used for recovery"
-  value       = null
+  value       = local.is_full_recovery ? local.snapshot_data.snapshot_id : null
   sensitive   = true
 }
 
@@ -68,6 +70,7 @@ output "recovery_namespace_prefix" {
 output "target_cluster_registration_id" {
   description = "Registration ID of the target cluster (cross-cluster recovery only)"
   value       = local.is_full_recovery && var.recovery_type == "cross-cluster" ? module.target_cluster_registration[0].source_registration_id : null
+  sensitive   = true
 }
 
 output "target_cluster_connection_id" {
@@ -83,4 +86,9 @@ output "recovery_status" {
     "Same-cluster recovery enabled. Namespaces will be restored with prefix '${var.recovery_namespace_prefix}' to the source cluster." :
     "Cross-cluster recovery enabled. Namespaces will be restored with prefix '${var.recovery_namespace_prefix}' to target cluster '${var.target_cluster_id}'."
   ) : "Recovery is disabled. Set 'deployment_mode = \"full_backup_recovery\"' to enable automatic recovery testing."
+}
+
+output "brs_vpe_ips" {
+  description = "Map of VPE gateway name to reserved IP addresses. Populated only when create_source_cluster_brs_vpe_gateway = true; empty map otherwise. Note: VPE is created via fire-and-forget script and IPs are not tracked in Terraform state."
+  value       = local.brs_vpe_active ? { (local.brs_vpe_name_resolved) = [] } : {}
 }

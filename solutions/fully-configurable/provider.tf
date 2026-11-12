@@ -1,39 +1,56 @@
 ########################################################################################################################
 # Provider config
 #
-# Two deployment modes are supported:
+# Three deployment modes are supported:
 #
 #   Same-account (source_ibmcloud_api_key = null, the default)
-#     The default ibm provider and ibm.cluster both use ibmcloud_api_key.
-#     BRS instance, S2S auth policy, cluster, VPC, and VPEG all live in the
-#     same account.
+#     All three ibm providers share ibmcloud_api_key. BRS instance, source cluster,
+#     and target cluster all live in the same account and region.
 #
 #   Cross-account (source_ibmcloud_api_key set)
-#     ibm          → target account (ibmcloud_api_key)
-#                    BRS instance, connection, S2S IAM authorization policy.
-#     ibm.cluster  → source account (source_ibmcloud_api_key)
-#                    Cluster, VPC, VPEG, DSC worker pool, Helm chart.
+#     ibm                → BRS account  (ibmcloud_api_key)
+#                          BRS instance, connection, S2S IAM authorization policy.
+#     ibm.source_cluster → source account (source_ibmcloud_api_key)
+#                          Source cluster, source VPC/subnet/SG/VPE, DSC Helm chart.
+#     ibm.target_cluster → same as ibm.source_cluster when target_ibmcloud_api_key is null.
 #
-# The kubernetes and helm providers always point at the source-account cluster
-# kubeconfig so the DSC Helm chart is deployed into the correct cluster.
+#   Three-account (source_ibmcloud_api_key and target_ibmcloud_api_key both set)
+#     ibm                → BRS account          (ibmcloud_api_key)
+#     ibm.source_cluster → source cluster account (source_ibmcloud_api_key / source_cluster_region)
+#     ibm.target_cluster → target cluster account (target_ibmcloud_api_key / target_cluster_region)
+#
+# The kubernetes and helm providers always point at the respective cluster kubeconfig.
 ########################################################################################################################
 
 # Default provider — target (BRS) account, or only account in same-account mode.
 provider "ibm" {
   ibmcloud_api_key = var.ibmcloud_api_key
   visibility       = var.provider_visibility
+  region           = var.region
 }
 
-# Cluster provider alias — source (cluster/VPC) account.
-# When source_ibmcloud_api_key is null (same-account), this falls back to
-# ibmcloud_api_key so the alias is always valid regardless of deployment mode.
+# Source-cluster provider alias — source cluster account and region.
+# When source_ibmcloud_api_key is null (same-account), falls back to ibmcloud_api_key.
+# Carries Classic Infrastructure credentials for kIksClassic / kRoksClassic source clusters.
 provider "ibm" {
-  alias                 = "cluster"
+  alias                 = "source_cluster"
   ibmcloud_api_key      = var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key
   iaas_classic_username = var.iaas_classic_username
   iaas_classic_api_key  = var.iaas_classic_api_key
-  region                = var.cluster_region != null ? var.cluster_region : var.region
+  region                = var.source_cluster_region != null ? var.source_cluster_region : var.region
   visibility            = var.provider_visibility
+}
+
+# Target-cluster provider alias — target cluster account and region.
+# When target_ibmcloud_api_key is null, falls back to source_ibmcloud_api_key → ibmcloud_api_key.
+# When target_cluster_region is null, falls back to source_cluster_region → region.
+# In same-region same-account deployments this alias is identical to ibm.source_cluster.
+# No Classic Infrastructure credentials — Classic target clusters are not supported.
+provider "ibm" {
+  alias            = "target_cluster"
+  ibmcloud_api_key = var.target_ibmcloud_api_key != null ? var.target_ibmcloud_api_key : (var.source_ibmcloud_api_key != null ? var.source_ibmcloud_api_key : var.ibmcloud_api_key)
+  region           = var.target_cluster_region != null ? var.target_cluster_region : (var.source_cluster_region != null ? var.source_cluster_region : var.region)
+  visibility       = var.provider_visibility
 }
 
 provider "kubernetes" {
