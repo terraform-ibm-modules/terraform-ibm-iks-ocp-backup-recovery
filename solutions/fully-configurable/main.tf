@@ -694,11 +694,7 @@ resource "terraform_data" "wait_for_backup" {
   }
 
   provisioner "local-exec" {
-    # Write snapshot JSON and also write snapshot_id to a file named by
-    # self.id (the terraform_data UUID, stable in state after creation) so
-    # downstream resources can reference it by a path that is unknown at plan
-    # time (self.id is only known after apply), deferring any file() reads.
-    command     = "${path.module}/../../scripts/wait_for_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' $BRS_PG_ID '${self.input.timeout_minutes}' '${self.input.poll_interval_seconds}' '${self.input.binaries_path}' | tee /tmp/backup_snapshot_${self.input.instance_id}.json | jq -r '.snapshot_id' | tee /tmp/snapshot_id_${self.input.instance_id}.txt /tmp/snapshot_id_${self.id}.txt > /dev/null"
+    command     = "${path.module}/../../scripts/wait_for_backup_run.sh '${self.input.url}' '${self.input.tenant}' '${self.input.endpoint_type}' '${self.input.instance_id}' $BRS_PG_ID '${self.input.timeout_minutes}' '${self.input.poll_interval_seconds}' '${self.input.binaries_path}' > /dev/null"
     interpreter = ["/bin/bash", "-c"]
     environment = {
       IBMCLOUD_API_KEY = self.input.api_key # pragma: allowlist secret
@@ -707,82 +703,53 @@ resource "terraform_data" "wait_for_backup" {
   }
 }
 
-##############################################################################
-# Snapshot info — read after wait_for_backup writes /tmp/snapshot_id_<id>.txt
-##############################################################################
-
-# local_file.snapshot_id existed in older state. Silently detach from state
-# without any provider operations (the local provider has no delete API for
-# files that no longer exist on Schematics workers).
-# Stores the snapshot_id in Terraform state without any file() call at plan time.
-#
-# PROBLEM with file() in a resource attribute:
-#   Terraform evaluates ALL resource attribute expressions during plan — even
-#   attributes protected by ignore_changes — to compute the diff. If the path
-#   is known at plan time (e.g. keyed by instance_guid which is always in state)
-#   file() fires immediately and fails on fresh Schematics workers where /tmp
-#   files don't exist yet.
-#
-# SOLUTION — provisioner writes snapshot_id; terraform_data.output carries it:
-#   Step 1 (snapshot_id_writer): a terraform_data whose triggers_replace depends
-#     on wait_for_backup[0].id (unknown on first plan, known after). Its
-#     provisioner reads /tmp/snapshot_id_<wait_for_backup_id>.txt and writes the
-#     content to its own output file keyed by its OWN .id (also unknown on first
-#     plan). No file() call in any attribute expression.
-#   Step 2 (snapshot_id): a terraform_data whose input uses file() keyed by
-#     snapshot_id_writer[0].id — unknown at plan time (first run), so file() is
-#     deferred to apply. After first apply both IDs are in state; subsequent plans
-#     see known IDs but the resource is NOT replaced (triggers_replace only fires
-#     when wait_for_backup is replaced), so the expressions are never re-evaluated
-#     against live state — Terraform just compares against the state value.
-#
-# On new backup runs: wait_for_backup is replaced → snapshot_id_writer is
-#   replaced (triggers_replace) → snapshot_id is replaced (triggers_replace) →
-#   file() runs at apply time when the new /tmp files exist.
-
-# Step 1: write snapshot_id to a file keyed by this resource's own .id (unknown
-# at plan time), so the Step 2 file() path is also unknown at plan time.
-resource "terraform_data" "snapshot_id_writer" {
+# Give BRS time to index the snapshot after the backup run completes.
+resource "time_sleep" "wait_for_snapshot_visibility" {
   count = local.is_full_recovery ? 1 : 0
 
-  triggers_replace = [terraform_data.wait_for_backup[0].id]
-
-  provisioner "local-exec" {
-    interpreter = ["/bin/bash", "-c"]
-    command     = "cp /tmp/snapshot_id_${terraform_data.wait_for_backup[0].id}.txt /tmp/snapshot_id_out_${self.id}.txt"
-  }
-
-  depends_on = [terraform_data.wait_for_backup]
+  depends_on      = [terraform_data.wait_for_backup]
+  create_duration = "60s"
 }
 
-# Step 2: read the file written by Step 1. Path keyed by snapshot_id_writer[0].id
-# — unknown at first plan → file() deferred to apply. After first apply the value
-# is stored in .input and never re-read from disk (triggers_replace = writer means
-# this only re-runs when writer re-runs, i.e. when wait_for_backup is replaced).
-resource "terraform_data" "snapshot_id" {
+# Cluster-level object ID for the snapshot lookup. Same IKS/OCP match rule as
+# the root module's cluster_nodes local: IKS uses the cluster node's own
+# protection_source[0].id, OCP uses a namespace child's parent_id.
+locals {
+  snapshot_source_id = tostring(tonumber(split("::", module.protect_cluster.source_registration_id)[1]))
+
+  snapshot_object_id = try([
+    for env in try(module.protect_cluster.protection_sources.protection_sources, []) : [
+      for cluster_node in(env.nodes != null ? env.nodes : []) :
+      tonumber(cluster_node.protection_source[0].id)
+      if cluster_node.protection_source != null && length(cluster_node.protection_source) > 0 &&
+      tostring(cluster_node.protection_source[0].id) == local.snapshot_source_id
+    ]
+  ][0][0], null)
+}
+
+# Snapshots of the cluster object taken by the backup run that wait_for_backup
+# polled. Read from BRS, so the snapshot ID lives in Terraform state.
+data "ibm_backup_recovery_object_snapshots" "latest" {
   count = local.is_full_recovery ? 1 : 0
 
-  triggers_replace = [terraform_data.snapshot_id_writer[0].id]
+  object_id       = local.snapshot_object_id
+  x_ibm_tenant_id = module.protect_cluster.brs_tenant_id
+  instance_id     = module.protect_cluster.brs_instance_guid
+  region          = local.region
 
-  input = try(trimspace(file("/tmp/snapshot_id_out_${terraform_data.snapshot_id_writer[0].id}.txt")), "")
+  depends_on = [time_sleep.wait_for_snapshot_visibility]
 
   lifecycle {
-    ignore_changes = [input]
+    postcondition {
+      condition     = length(self.snapshots) > 0
+      error_message = "No snapshot found for object ${local.snapshot_object_id} after the backup run. Increase the wait or check BRS."
+    }
   }
-
-  depends_on = [terraform_data.snapshot_id_writer]
 }
 
 locals {
-  # snapshot_id is read from Terraform state (.input), never from /tmp.
-  # Always known after first apply. Unknown at first plan → snapshot_data
-  # is null → ibm_backup_recovery is correctly deferred to apply.
-  snapshot_data = (
-    local.is_full_recovery &&
-    length(terraform_data.snapshot_id) > 0 &&
-    terraform_data.snapshot_id[0].output != null
-    ) ? {
-    snapshot_id = tostring(terraform_data.snapshot_id[0].output)
+  snapshot_data = local.is_full_recovery ? {
+    snapshot_id = data.ibm_backup_recovery_object_snapshots.latest[0].snapshots[0].id
   } : null
 }
 
@@ -851,7 +818,7 @@ resource "terraform_data" "recovery_trigger" {
         '${self.input.endpoint_type}' \
         '${self.input.instance_id}' \
         '${self.input.pg_id}' \
-        "${tostring(terraform_data.snapshot_id[0].output)}" \
+        "${local.snapshot_data.snapshot_id}" \
         "${self.input.recovery_type == "cross-cluster" ? "cross-cluster-" : ""}recovery-${self.input.recovery_pg_label}-$(date +%Y%m%d-%H%M)" \
         '${self.input.namespace_prefix}' \
         '${self.input.target_source_id}' \
@@ -865,7 +832,7 @@ resource "terraform_data" "recovery_trigger" {
   }
 
   depends_on = [
-    terraform_data.snapshot_id,
+    data.ibm_backup_recovery_object_snapshots.latest,
     terraform_data.wait_for_backup,
     module.target_cluster_registration,
     time_sleep.wait_for_target_registration,

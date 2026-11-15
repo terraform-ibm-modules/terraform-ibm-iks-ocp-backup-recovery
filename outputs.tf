@@ -5,7 +5,6 @@
 output "source_registration_id" {
   description = "ID of the registered Kubernetes source."
   value       = try(ibm_backup_recovery_source_registration.source_registration[0].id, null)
-  sensitive   = true
 }
 
 output "brs_instance_crn" {
@@ -33,7 +32,6 @@ output "connection_id" {
 output "protection_group_ids" {
   description = "Map of protection group names to their IDs. Empty if protection groups are not deployed."
   value       = { for k, v in ibm_backup_recovery_protection_group.protection_group : k => v.id }
-  sensitive   = true
 }
 
 output "auto_protect_pg_id" {

@@ -452,21 +452,15 @@ variable "brs_endpoint_type" {
 
 variable "registration_images" {
   type = object({
-    data_mover                  = string
-    velero                      = string
-    velero_aws_plugin           = string
+    data_mover                  = optional(string, null)
+    velero                      = optional(string, null)
+    velero_aws_plugin           = optional(string, null)
     velero_openshift_plugin     = optional(string, null)
-    cohesity_dataprotect_plugin = string
+    cohesity_dataprotect_plugin = optional(string, null)
     init_container              = optional(string, null)
   })
-  default = {
-    data_mover                  = "icr.io/ext/brs/cohesity-datamover:7.3.13@sha256:1010ce08a8b60e614bf1775285229116b45211530da7e6a8bb59eb8e88431044"
-    velero                      = "icr.io/ext/brs/oadp-velero:1.6.0@sha256:b6d60599283f7711dbd85030ddb543100d19ab3673fb7b146e39642aecc1ecac"
-    velero_aws_plugin           = "icr.io/ext/brs/oadp-velero-plugin-for-aws:1.6.0@sha256:e571cb3297759e31afcdfebe11c4b9f2c3f2fcc1192bc8f1fd51b8121b57c875"
-    velero_openshift_plugin     = "icr.io/ext/brs/oadp-velero-plugin-for-openshift:1.6.0@sha256:a5a4320ba41c391941089b591aabfa1faa7531294d36643d507b34884014f2a5"
-    cohesity_dataprotect_plugin = "icr.io/ext/brs/cohesity-dataprotect-plugin:7.3.13@sha256:54120e029541071e25c5cd816eaea6cadfc54f0a522b939265e041ea4cd71803"
-  }
-  description = "The images required for backup and recovery registration."
+  default     = {}
+  description = "Optional image overrides for backup and recovery registration. Any image left as `null` (the default) is not sent, so the Backup and Recovery service uses its own default image."
   nullable    = false
 }
 

@@ -5,7 +5,7 @@ terraform {
   required_providers {
     ibm = {
       source                = "IBM-Cloud/ibm"
-      version               = "2.4.0"
+      version               = "2.9.0"
       configuration_aliases = [ibm.source_cluster, ibm.target_cluster]
     }
     helm = {

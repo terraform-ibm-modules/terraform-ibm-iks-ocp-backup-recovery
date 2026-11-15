@@ -85,3 +85,4 @@ cleanup-test-resources.sh
 terraform.tfvars
 solutions/fully-configurable/scenarios
 scripts/run-examples.sh
+SOURCES.md
