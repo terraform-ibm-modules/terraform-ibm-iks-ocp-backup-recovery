@@ -222,11 +222,13 @@ module "protect_cluster" {
   brsagent_token = module.source_cluster_prep.brsagent_token
 
   # DSC Settings referenced during registration/discovery
-  dsc_chart_uri       = var.dsc_chart_uri
-  dsc_name            = var.dsc_name
-  dsc_namespace       = var.dsc_namespace
-  registration_images = var.registration_images
-  enable_auto_protect = var.enable_auto_protect
+  dsc_chart_uri             = var.dsc_chart_uri
+  dsc_name                  = var.dsc_name
+  dsc_namespace             = var.dsc_namespace
+  registration_images       = var.registration_images
+  datamover_service_type    = var.datamover_service_type
+  datamover_hostport_number = var.datamover_hostport_number
+  enable_auto_protect       = var.enable_auto_protect
 
   # Backup Policy & Groups
   auto_protect_policy_name = var.auto_protect_policy_name
@@ -558,11 +560,13 @@ module "target_cluster_registration" {
   brsagent_token = module.target_cluster_prep[0].brsagent_token
 
   # DSC settings referenced during registration
-  dsc_chart_uri       = var.dsc_chart_uri
-  dsc_name            = var.dsc_name
-  dsc_namespace       = var.dsc_namespace
-  registration_images = var.registration_images
-  enable_auto_protect = false # Don't auto-protect target cluster
+  dsc_chart_uri             = var.dsc_chart_uri
+  dsc_name                  = var.dsc_name
+  dsc_namespace             = var.dsc_namespace
+  registration_images       = var.registration_images
+  datamover_service_type    = var.datamover_service_type
+  datamover_hostport_number = var.datamover_hostport_number
+  enable_auto_protect       = false # Don't auto-protect target cluster
 
   # No protection groups for target (it's just a recovery destination)
   protection_groups = null

@@ -631,6 +631,30 @@ variable "registration_images" {
   nullable = false
 }
 
+variable "datamover_service_type" {
+  description = "The service type used for communication with the data mover pods. Allowed values are `kHostPort`, `kNodePort`, `kLoadBalancer`, and `kClusterIP`."
+  type        = string
+  default     = "kHostPort"
+  nullable    = false
+
+  validation {
+    condition     = contains(["kHostPort", "kNodePort", "kLoadBalancer", "kClusterIP"], var.datamover_service_type)
+    error_message = "`datamover_service_type` must be one of 'kHostPort', 'kNodePort', 'kLoadBalancer', or 'kClusterIP'."
+  }
+}
+
+variable "datamover_hostport_number" {
+  description = "Port number for data mover communication. Only used, and only sent, when `datamover_service_type` is `kHostPort`; it is ignored for every other service type. The default `33769` is the Backup and Recovery default HostPort."
+  type        = number
+  default     = 33769
+  nullable    = false
+
+  validation {
+    condition     = var.datamover_hostport_number >= 1 && var.datamover_hostport_number <= 65535 && floor(var.datamover_hostport_number) == var.datamover_hostport_number
+    error_message = "`datamover_hostport_number` must be a whole number between 1 and 65535."
+  }
+}
+
 ##############################################################################
 # Recovery Variables
 ##############################################################################

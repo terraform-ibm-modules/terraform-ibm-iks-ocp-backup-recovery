@@ -729,8 +729,11 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
     velero_openshift_plugin_image_location     = var.registration_images.velero_openshift_plugin
     init_container_image_location              = var.registration_images.init_container
     cohesity_dataprotect_plugin_image_location = var.registration_images.cohesity_dataprotect_plugin
-    kubernetes_type                            = "kCluster"
-    client_private_key                         = try(chomp(kubernetes_secret_v1.brsagent_token[0].data["token"]), chomp(var.brsagent_token), "")
+    datamover_service_type                     = var.datamover_service_type
+    # The port is only meaningful for the HostPort model; omit it for every other type.
+    datamover_hostport_number = var.datamover_service_type == "kHostPort" ? var.datamover_hostport_number : null
+    kubernetes_type           = "kCluster"
+    client_private_key        = try(chomp(kubernetes_secret_v1.brsagent_token[0].data["token"]), chomp(var.brsagent_token), "")
   }
 
   depends_on = [

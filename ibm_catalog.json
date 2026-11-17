@@ -493,6 +493,32 @@
               }
             },
             {
+              "key": "datamover_service_type",
+              "display_name": "Data Mover Service Type",
+              "options": [
+                {
+                  "displayname": "Host Port",
+                  "value": "kHostPort"
+                },
+                {
+                  "displayname": "Node Port",
+                  "value": "kNodePort"
+                },
+                {
+                  "displayname": "Load Balancer",
+                  "value": "kLoadBalancer"
+                },
+                {
+                  "displayname": "Cluster IP",
+                  "value": "kClusterIP"
+                }
+              ]
+            },
+            {
+              "key": "datamover_hostport_number",
+              "display_name": "Data Mover Host Port Number"
+            },
+            {
               "key": "access_tags",
               "display_name": "Access Tags"
             },
