@@ -418,20 +418,6 @@
               "display_name": "Add Security Group Rules"
             },
             {
-              "key": "registration_images",
-              "display_name": "Registration Images",
-              "custom_config": {
-                "type": "code_editor",
-                "grouping": "deployment",
-                "original_grouping": "deployment",
-                "config_constraints": {
-                  "supportedLanguages": [
-                    "hcl"
-                  ]
-                }
-              }
-            },
-            {
               "key": "datamover_service_type",
               "display_name": "Datamover Service Type",
               "options": [
