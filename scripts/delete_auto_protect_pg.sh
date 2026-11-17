@@ -46,6 +46,9 @@ REGION=$1
 TENANT=$2
 PROTECTION_GROUP_ID=$3
 BRS_ENDPOINT=$4
+# Sanitise to a bare hostname (any "https://" scheme and "/v2" path removed) so
+# the service URL below always carries the scheme and "/v2" exactly once.
+BRS_ENDPOINT=$(brs_endpoint_host "${BRS_ENDPOINT}")
 # REGISTRATION_ID ($5) accepted but not used — snapshot expiry skipped for now.
 
 # Extract numeric PG ID (strip leading "tenant::" prefix).
@@ -82,7 +85,8 @@ ibmcloud_login() {
   # correct instance. Without this step every 'ibmcloud backup-recovery'
   # command fails with an authentication or 404 error — the CLI has no default
   # endpoint and the config is not persisted between sessions.
-  local brs_url="https://${BRS_ENDPOINT}/v2"
+  local brs_url
+  brs_url=$(brs_endpoint_service_url "${BRS_ENDPOINT}")
   echo "Setting BRS service URL: ${brs_url}" >&2
   ibmcloud backup-recovery config set service-url "${brs_url}" 2>&1 \
     | grep -v "^$" >&2 || true

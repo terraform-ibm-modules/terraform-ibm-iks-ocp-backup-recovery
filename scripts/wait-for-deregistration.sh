@@ -41,6 +41,9 @@ fi
 REGION="${1:-}"
 TENANT="${2:-}"
 BRS_ENDPOINT="${3:-}"
+# Sanitise to a bare hostname (any "https://" scheme and "/v2" path removed) so
+# the service URL below always carries the scheme and "/v2" exactly once.
+BRS_ENDPOINT=$(brs_endpoint_host "${BRS_ENDPOINT}")
 CONNECTION_ID="${4:-}"
 CLUSTER_ENDPOINT="${5:-}"
 TIMEOUT_S="${6:-1800}"
@@ -80,7 +83,7 @@ echo "Logging in to IBM Cloud (region: ${REGION}, endpoint: ${IBMCLOUD_API_ENDPO
 ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${IBMCLOUD_API_ENDPOINT}" -r "${REGION}" -q 2>&1 \
   | grep -v "^$" >&2 || true # pragma: allowlist secret
 
-brs_url="https://${BRS_ENDPOINT}/v2"
+brs_url="$(brs_endpoint_service_url "${BRS_ENDPOINT}")"
 echo "Setting BRS service URL: ${brs_url}" >&2
 ibmcloud backup-recovery config set service-url "${brs_url}" 2>&1 \
   | grep -v "^$" >&2 || true

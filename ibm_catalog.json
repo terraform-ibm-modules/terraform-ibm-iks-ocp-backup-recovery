@@ -432,6 +432,32 @@
               }
             },
             {
+              "key": "datamover_service_type",
+              "display_name": "Datamover Service Type",
+              "options": [
+                {
+                  "displayname": "HostPort",
+                  "value": "kHostPort"
+                },
+                {
+                  "displayname": "NodePort",
+                  "value": "kNodePort"
+                },
+                {
+                  "displayname": "LoadBalancer",
+                  "value": "kLoadBalancer"
+                },
+                {
+                  "displayname": "ClusterIP",
+                  "value": "kClusterIp"
+                }
+              ]
+            },
+            {
+              "key": "datamover_hostport_number",
+              "display_name": "Datamover HostPort Number"
+            },
+            {
               "key": "access_tags",
               "display_name": "Access Tags"
             },
