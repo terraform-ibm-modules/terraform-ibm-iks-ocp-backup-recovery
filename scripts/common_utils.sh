@@ -50,6 +50,23 @@ brs_endpoint_service_url() {
   echo "${url}/v2"
 }
 
+# ---------------------------------------------------------------------------
+# Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
+# Defined here so it is available to all scripts that source common_utils.sh.
+# Individual scripts set VERBOSE="${VERBOSE:-0}" before sourcing this file,
+# or rely on the VERBOSE env var set by the caller (e.g. VERBOSE=1 terraform apply).
+# ---------------------------------------------------------------------------
+
+# vlog LABEL JSON — print label + pretty-printed JSON to stderr when verbose.
+# Safe to call even before VERBOSE is set (defaults to off).
+vlog() {
+  [[ "${VERBOSE:-0}" == "1" ]] || return 0
+  local label="$1"
+  local body="$2"
+  echo "[VERBOSE] ${label}:" >&2
+  echo "${body}" | jq '.' 2>/dev/null >&2 || echo "${body}" >&2
+}
+
 # Get IAM token from IBM Cloud.
 # Usage: get_iam_token API_KEY ENDPOINT_TYPE
 # Returns: IAM access token

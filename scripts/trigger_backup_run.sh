@@ -64,6 +64,8 @@ call_api() {
   local body
   body=$(echo "$response" | sed '$d')
 
+  vlog "${method} ${path} → HTTP ${http_code}" "${body}"
+
   if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
     echo "API Error: HTTP $http_code from $method $path" >&2
     echo "Response: $body" >&2

@@ -90,6 +90,8 @@ response=$(curl --retry 3 -s -w "\n%{http_code}" -X POST "${URL}/v2/data-protect
 http_code=$(echo "$response" | tail -n1)
 body=$(echo "$response" | sed '$d')
 
+vlog "POST /v2/data-protect/recoveries → HTTP ${http_code}" "${body}"
+
 if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
   echo "Recovery API Error: HTTP $http_code" >&2
   echo "Response: $body" >&2
