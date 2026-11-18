@@ -40,6 +40,18 @@ resource "ibm_is_subnet" "subnet_zone_1" {
 }
 
 ########################################################################################################################
+# Wait for IAM to propagate subnet visibility before creating the cluster.
+# Without this, the container service sometimes rejects the token as not
+# authorised to view the subnet that was just created in the same apply.
+########################################################################################################################
+
+resource "time_sleep" "wait_for_subnet" {
+  count           = var.cluster_name_id == null && !var.classic_cluster ? 1 : 0
+  depends_on      = [ibm_is_subnet.subnet_zone_1]
+  create_duration = "30s"
+}
+
+########################################################################################################################
 # Classic Infrastructure: VLANs
 ########################################################################################################################
 
@@ -111,6 +123,7 @@ module "ocp_base" {
   access_tags                         = var.access_tags
   ocp_entitlement                     = var.ocp_entitlement
   disable_outbound_traffic_protection = true
+  depends_on                          = [time_sleep.wait_for_subnet]
 }
 
 # Lookup the current default OpenShift version
