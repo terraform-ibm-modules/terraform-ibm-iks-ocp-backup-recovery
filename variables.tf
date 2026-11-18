@@ -591,7 +591,7 @@ variable "protection_groups" {
 }
 
 ##############################################################################
-# Registration Images
+# Datamover Configuration
 ##############################################################################
 
 variable "datamover_service_type" {
