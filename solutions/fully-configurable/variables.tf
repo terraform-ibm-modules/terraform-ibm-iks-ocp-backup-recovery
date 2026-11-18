@@ -440,11 +440,6 @@ variable "datamover_service_type" {
   description = "Service type used for datamover communication during source registration. Allowed values are `kHostPort` (default, recommended), `kNodePort`, `kLoadBalancer` and `kClusterIp`."
   default     = "kHostPort"
   nullable    = false
-
-  validation {
-    condition     = contains(["kHostPort", "kNodePort", "kLoadBalancer", "kClusterIp"], var.datamover_service_type)
-    error_message = "`datamover_service_type` must be one of 'kHostPort', 'kNodePort', 'kLoadBalancer' or 'kClusterIp'."
-  }
 }
 
 variable "datamover_hostport_number" {
@@ -452,11 +447,6 @@ variable "datamover_hostport_number" {
   description = "Host port the datamover DaemonSet listens on. Defaults to `33769`. Only used when `datamover_service_type` is `kHostPort`; ignored for the other service types. If you change it, make sure network policies and security groups allow traffic from the Data Source Connector to this port on the worker nodes."
   default     = 33769
   nullable    = false
-
-  validation {
-    condition     = var.datamover_hostport_number >= 1 && var.datamover_hostport_number <= 65535 && floor(var.datamover_hostport_number) == var.datamover_hostport_number
-    error_message = "`datamover_hostport_number` must be an integer between 1 and 65535."
-  }
 }
 
 variable "kube_type" {

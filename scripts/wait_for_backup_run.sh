@@ -49,7 +49,7 @@ call_api() {
     -H "X-IBM-Tenant-Id: ${TENANT}" \
     -H "Accept: application/json" \
     -H "Content-Type: application/json" \
-    "$@")
+    "$@") || response=$'\n000'
 
   local http_code
   http_code=$(echo "$response" | tail -n1)

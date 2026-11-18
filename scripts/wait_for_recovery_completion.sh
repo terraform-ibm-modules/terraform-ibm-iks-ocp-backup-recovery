@@ -66,7 +66,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   response=$(curl --retry 3 -s -w "\n%{http_code}" -X GET "${URL}/v2/data-protect/recoveries/${RECOVERY_ID}" \
     -H "Authorization: Bearer ${IAM_TOKEN}" \
     -H "X-IBM-Tenant-Id: ${TENANT}" \
-    -H "Accept: application/json")
+    -H "Accept: application/json") || response=$'\n000'
 
   http_code=$(echo "$response" | tail -n1)
   body=$(echo "$response" | sed '$d')
