@@ -231,9 +231,6 @@ module "backup_recover_protect_ocp" {
   vpc_id         = var.create_brs_vpe && !var.classic_cluster ? local.vpc_id : null
   vpc_subnets    = var.create_brs_vpe && !var.classic_cluster ? local.vpc_subnets : []
 
-  # ---- Datamover Configuration ----
-  datamover_service_type = var.datamover_service_type
-
   # ---- Backup Policy ----
   auto_protect_policy_name = "${var.prefix}-retention"
   access_tags              = var.access_tags
