@@ -124,3 +124,19 @@ variable "brs_endpoint_type" {
     error_message = "`brs_endpoint_type` must be 'public' or 'private'."
   }
 }
+
+##############################################################################
+# Datamover Configuration
+##############################################################################
+
+variable "datamover_service_type" {
+  type        = string
+  description = "Service type for the datamover DaemonSet. Default is `kNodePort`. Valid values: `kHostPort`, `kNodePort`, `kLoadBalancer`, `kClusterIp`."
+  default     = "kNodePort"
+  nullable    = false
+
+  validation {
+    condition     = contains(["kHostPort", "kNodePort", "kLoadBalancer", "kClusterIp"], var.datamover_service_type)
+    error_message = "`datamover_service_type` must be one of 'kHostPort', 'kNodePort', 'kLoadBalancer' or 'kClusterIp'."
+  }
+}

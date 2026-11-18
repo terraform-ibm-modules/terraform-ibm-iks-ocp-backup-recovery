@@ -434,6 +434,7 @@ func TestRunOCPExample(t *testing.T) {
 	t.Parallel()
 
 	options := setupOptions(t, "brs-ocp", ocpExampleDir, []string{})
+	options.TerraformVars["datamover_service_type"] = "kNodePort"
 
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
