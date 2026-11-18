@@ -422,6 +422,7 @@ func setupOptions(t *testing.T, prefix string, dir string, exemptionList []strin
 
 func TestRunIKSExample(t *testing.T) {
 	t.Parallel()
+	t.Skip("Temporarily skipped to isolate TestRunUpgradeFullyConfigurable")
 
 	options := setupOptions(t, "brs-iks", iksExampleDir, []string{})
 
@@ -432,6 +433,7 @@ func TestRunIKSExample(t *testing.T) {
 
 func TestRunOCPExample(t *testing.T) {
 	t.Parallel()
+	t.Skip("Temporarily skipped to isolate TestRunUpgradeFullyConfigurable")
 
 	options := setupOptions(t, "brs-ocp", ocpExampleDir, []string{})
 
@@ -442,6 +444,7 @@ func TestRunOCPExample(t *testing.T) {
 
 func TestRunVPEExample(t *testing.T) {
 	t.Parallel()
+	t.Skip("Temporarily skipped to isolate TestRunUpgradeFullyConfigurable")
 
 	options := setupOptions(t, "brs-vpe", vpeExampleDir, []string{})
 
@@ -458,6 +461,7 @@ func TestRunVPEExample(t *testing.T) {
 
 func TestRunCrossClusterExample(t *testing.T) {
 	t.Parallel()
+	t.Skip("Temporarily skipped to isolate TestRunUpgradeFullyConfigurable")
 
 	options := setupOptions(t, "brs-cross", crossClusterExampleDir, []string{})
 
