@@ -3,8 +3,9 @@ terraform {
 
   required_providers {
     ibm = {
-      source  = "IBM-Cloud/ibm"
-      version = ">= 2.7.0, < 3.0.0"
+      source = "IBM-Cloud/ibm"
+      # Pin to lowest supported provider version to test backwards compatibility
+      version = "2.7.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
