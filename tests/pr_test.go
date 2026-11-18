@@ -39,9 +39,7 @@ var includeFiletypes = []string{".tf", ".yaml", ".py", ".tpl", ".md", ".sh"}
 var validRegions = []string{
 	"eu-de",
 	"br-sao",
-	"ca-tor",
 	"jp-osa",
-	"jp-tok",
 }
 
 type tarIncludePatterns struct {
