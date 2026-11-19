@@ -744,7 +744,6 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
     # runs them before the DELETE, and orphans the namespace.
     terraform_data.wait_before_helm_destroy,
   ]
-
 }
 
 # Poll until BRS confirms the source registration is gone, before the data source

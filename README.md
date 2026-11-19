@@ -297,7 +297,7 @@ You need the following permissions to run this module:
 ### Requirements
 
 | Name | Version |
-|------|---------|
+| ---- | ------- |
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.9.0 |
 | <a name="requirement_helm"></a> [helm](#requirement\_helm) | >=3.1.0, <4.0.0 |
 | <a name="requirement_ibm"></a> [ibm](#requirement\_ibm) | >= 2.7.0, < 3.0.0 |
@@ -311,7 +311,7 @@ No modules.
 ### Resources
 
 | Name | Type |
-|------|------|
+| ---- | ---- |
 | [helm_release.data_source_connector](https://registry.terraform.io/providers/hashicorp/helm/latest/docs/resources/release) | resource |
 | [ibm_backup_recovery.recover_snapshot](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery) | resource |
 | [ibm_backup_recovery_protection_group.protection_group](https://registry.terraform.io/providers/IBM-Cloud/ibm/latest/docs/resources/backup_recovery_protection_group) | resource |
@@ -349,7 +349,7 @@ No modules.
 ### Inputs
 
 | Name | Description | Type | Default | Required |
-|------|-------------|------|---------|:--------:|
+| ---- | ----------- | ---- | ------- | :------: |
 | <a name="input_add_cluster_tags"></a> [add\_cluster\_tags](#input\_add\_cluster\_tags) | Whether to add BRS tags to the cluster. Set to false if you manage cluster tags externally to avoid drift. When false, you should manually add the tags 'brs-region:<region>' and 'brs-guid:<guid>' to your cluster. | `bool` | `true` | no |
 | <a name="input_auto_protect_policy_name"></a> [auto\_protect\_policy\_name](#input\_auto\_protect\_policy\_name) | Name of an existing protection policy to use for auto-protect. Defaults to 'Basic', which is the out-of-the-box policy shipped with every BRS instance. The policy must already exist in the BRS instance. Only relevant when `enable_auto_protect` is `true` and `deployment_mode` is 'backup\_only' or 'full\_backup\_recovery'. | `string` | `"Basic"` | no |
 | <a name="input_backup_run_poll_interval_seconds"></a> [backup\_run\_poll\_interval\_seconds](#input\_backup\_run\_poll\_interval\_seconds) | Polling interval in seconds when waiting for the first restorable backup run. | `number` | `30` | no |
@@ -408,7 +408,7 @@ No modules.
 ### Outputs
 
 | Name | Description |
-|------|-------------|
+| ---- | ----------- |
 | <a name="output_auto_protect_pg_id"></a> [auto\_protect\_pg\_id](#output\_auto\_protect\_pg\_id) | ID of the auto-protect protection group created by BRS when enable\_auto\_protect=true. Null when auto-protect is not enabled or the registration has not yet propagated. |
 | <a name="output_backup_runs_summary"></a> [backup\_runs\_summary](#output\_backup\_runs\_summary) | Summary of backup runs per protection group. Shows run count and latest run status. Empty if recovery is not enabled by the calling module. |
 | <a name="output_brs_instance_crn"></a> [brs\_instance\_crn](#output\_brs\_instance\_crn) | CRN of the Backup & Recovery Service instance |
