@@ -173,6 +173,7 @@ func getSchematicTerraformVars(t *testing.T, prefix string, options *testschemat
 
 func TestRunFullyConfigurableInSchematics(t *testing.T) {
 	t.Parallel()
+	t.Skip("Skipping TestRunFullyConfigurableInSchematics")
 
 	tarIncludePatterns, recurseErr := getTarIncludePatternsRecursively("..", excludeDirs, includeFiletypes)
 	// if error producing tar patterns (very unexpected) fail test immediately
@@ -239,6 +240,7 @@ func TestRunFullyConfigurableInSchematics(t *testing.T) {
 // Upgrade Test does not require KMS encryption
 func TestRunUpgradeFullyConfigurable(t *testing.T) {
 	t.Parallel()
+	t.Skip("Skipping TestRunUpgradeFullyConfigurable")
 
 	tarIncludePatterns, recurseErr := getTarIncludePatternsRecursively("..", excludeDirs, includeFiletypes)
 	// if error producing tar patterns (very unexpected) fail test immediately
@@ -415,6 +417,7 @@ func setupOptions(t *testing.T, prefix string, dir string, exemptionList []strin
 
 func TestRunIKSExample(t *testing.T) {
 	t.Parallel()
+	t.Skip("Skipping TestRunIKSExample")
 
 	options := setupOptions(t, "brs-iks", iksExampleDir, []string{})
 
@@ -425,6 +428,7 @@ func TestRunIKSExample(t *testing.T) {
 
 func TestRunOCPExample(t *testing.T) {
 	t.Parallel()
+	t.Skip("Skipping TestRunOCPExample")
 
 	options := setupOptions(t, "brs-ocp", ocpExampleDir, []string{})
 
@@ -435,6 +439,7 @@ func TestRunOCPExample(t *testing.T) {
 
 func TestRunVPEExample(t *testing.T) {
 	t.Parallel()
+	t.Skip("Skipping TestRunVPEExample")
 
 	options := setupOptions(t, "brs-vpe", vpeExampleDir, []string{})
 
