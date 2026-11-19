@@ -473,10 +473,6 @@ func TestRunCrossClusterExample(t *testing.T) {
 
 func TestRunCrossClusterExistingConnection(t *testing.T) {
 	t.Parallel()
-	// TODO: re-enable once cancel_pg_runs.sh auth flap and DSC pod probe
-	// timeouts on destroy are resolved. The "existing connection" code path
-	// is covered indirectly by TestRunCrossClusterExample (brs_create_new_connection=true).
-	t.Skip("Skipping TestRunCrossClusterExistingConnection: transient destroy failures (cancel_pg_runs auth + DSC probe timeout)")
 
 	// Provision pre-existing BRS connections using dedicated helper directory.
 	// Pass existing_brs_instance_crn so both source_connection and target_connection
