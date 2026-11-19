@@ -14,7 +14,6 @@ const iksClassicExampleDir = "examples/kubernetes"
 
 func TestRunIKSClassicExample(t *testing.T) {
 	t.Parallel()
-	t.Skip("Skipping TestRunIKSClassicExample")
 
 	region := validRegions[common.CryptoIntn(len(validRegions))]
 	options := setupOptions(t, "brs-iksc", iksClassicExampleDir, []string{
@@ -38,7 +37,6 @@ func TestRunIKSClassicExample(t *testing.T) {
 
 func TestRunOCPClassicExample(t *testing.T) {
 	t.Parallel()
-	t.Skip("Skipping TestRunOCPClassicExample")
 
 	region := validRegions[common.CryptoIntn(len(validRegions))]
 	options := setupOptions(t, "brs-ocpc", ocpClassicExampleDir, []string{
