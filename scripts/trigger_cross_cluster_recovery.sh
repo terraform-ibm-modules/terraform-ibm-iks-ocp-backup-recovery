@@ -18,6 +18,9 @@ if [ -z "${IBMCLOUD_API_KEY:-}" ]; then  # pragma: allowlist secret
 fi
 
 URL=$1
+# Sanitise to "https://<host>" (scheme once, no path): this script appends its
+# own "/v2/..." paths, so a caller-supplied "/v2" suffix must not be doubled.
+URL=$(brs_endpoint_url "${URL}")
 TENANT=$2
 ENDPOINT_TYPE=$3
 # shellcheck disable=SC2034  # Used in API URL construction
@@ -86,6 +89,8 @@ response=$(curl --retry 3 -s -w "\n%{http_code}" -X POST "${URL}/v2/data-protect
 
 http_code=$(echo "$response" | tail -n1)
 body=$(echo "$response" | sed '$d')
+
+vlog "POST /v2/data-protect/recoveries → HTTP ${http_code}" "${body}"
 
 if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
   echo "Recovery API Error: HTTP $http_code" >&2

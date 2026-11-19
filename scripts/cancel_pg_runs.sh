@@ -34,17 +34,9 @@ source "${SCRIPT_DIR}/common_utils.sh"
 # ---------------------------------------------------------------------------
 # Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
 # Toggle off once the script is known-good to reduce Terraform output noise.
+# vlog is provided by common_utils.sh (sourced above).
 # ---------------------------------------------------------------------------
 VERBOSE="${VERBOSE:-0}"
-
-# vlog LABEL JSON — print label + pretty-printed JSON to stderr when verbose.
-vlog() {
-  [[ "${VERBOSE}" == "1" ]] || return 0
-  local label="$1"
-  local body="$2"
-  echo "[VERBOSE] ${label}:" >&2
-  echo "${body}" | jq '.' 2>/dev/null >&2 || echo "${body}" >&2
-}
 
 if [ "$#" -lt 4 ]; then
   echo "Usage: $0 REGION TENANT PROTECTION_GROUP_ID BRS_ENDPOINT" >&2
@@ -61,6 +53,9 @@ REGION=$1
 TENANT=$2
 PROTECTION_GROUP_ID=$3
 BRS_ENDPOINT=$4
+# Sanitise to a bare hostname (any "https://" scheme and "/v2" path removed) so
+# the service URL below always carries the scheme and "/v2" exactly once.
+BRS_ENDPOINT=$(brs_endpoint_host "${BRS_ENDPOINT}")
 
 # Extract numeric PG ID (after ::)
 # Format: clusterid/::timestamp:id:id -> timestamp:id:id
@@ -82,7 +77,8 @@ ibmcloud_login() {
   # correct instance. Without this step every 'ibmcloud backup-recovery'
   # command fails with an authentication or 404 error — the CLI has no default
   # endpoint and the config is not persisted between sessions.
-  local brs_url="https://${BRS_ENDPOINT}/v2"
+  local brs_url
+  brs_url=$(brs_endpoint_service_url "${BRS_ENDPOINT}")
   echo "Setting BRS service URL: ${brs_url}" >&2
   ibmcloud backup-recovery config set service-url "${brs_url}" 2>&1 \
     | grep -v "^$" >&2 || true
@@ -184,7 +180,10 @@ pg_active_backup_runs() {
     --include-object-details=false \
     --output json -q 2>&1) \
     || out='{"runs":[]}'
-  # Guard: CLI may return empty string (not JSON) on a valid 200 with no runs.
+  # Guard: CLI may return empty, whitespace-only, or non-JSON output on a valid
+  # 200 with no matching runs. Strip all whitespace before checking for '{' so
+  # that a response consisting only of spaces/newlines is also caught.
+  out="${out//[$' \t\n\r']/}"
   [[ "${out}" == *"{"* ]] || out='{"runs":[]}'
   vlog "protection-group-run list (backup)" "${out}"
   echo "${out}"
@@ -202,7 +201,10 @@ pg_active_archival_runs() {
     --include-object-details=false \
     --output json -q 2>&1) \
     || out='{"runs":[]}'
-  # Guard: CLI may return empty string (not JSON) on a valid 200 with no runs.
+  # Guard: CLI may return empty, whitespace-only, or non-JSON output on a valid
+  # 200 with no matching runs. Strip all whitespace before checking for '{' so
+  # that a response consisting only of spaces/newlines is also caught.
+  out="${out//[$' \t\n\r']/}"
   [[ "${out}" == *"{"* ]] || out='{"runs":[]}'
   vlog "protection-group-run list (archival)" "${out}"
   echo "${out}"
@@ -236,10 +238,11 @@ check_and_cancel() {
   archival_data=$(pg_active_archival_runs)
 
   # Collect the union of all active run IDs across both responses.
+  # Use (.runs // []) to guard against "runs": null in the server response.
   local all_run_ids
   all_run_ids=$(
     { echo "$backup_data"; echo "$archival_data"; } \
-      | jq -rs '[.[].runs[].id // empty] | unique | .[]'
+      | jq -rs '[.[].runs // [] | .[].id // empty] | unique | .[]'
   )
 
   [[ -z "$all_run_ids" ]] && { echo "0"; return 0; }

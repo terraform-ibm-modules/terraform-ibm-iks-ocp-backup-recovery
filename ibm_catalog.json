@@ -418,18 +418,30 @@
               "display_name": "Add Security Group Rules"
             },
             {
-              "key": "registration_images",
-              "display_name": "Registration Images",
-              "custom_config": {
-                "type": "code_editor",
-                "grouping": "deployment",
-                "original_grouping": "deployment",
-                "config_constraints": {
-                  "supportedLanguages": [
-                    "hcl"
-                  ]
+              "key": "datamover_service_type",
+              "display_name": "Datamover Service Type",
+              "options": [
+                {
+                  "displayname": "HostPort",
+                  "value": "kHostPort"
+                },
+                {
+                  "displayname": "NodePort",
+                  "value": "kNodePort"
+                },
+                {
+                  "displayname": "LoadBalancer",
+                  "value": "kLoadBalancer"
+                },
+                {
+                  "displayname": "ClusterIP",
+                  "value": "kClusterIp"
                 }
-              }
+              ]
+            },
+            {
+              "key": "datamover_hostport_number",
+              "display_name": "Datamover HostPort Number"
             },
             {
               "key": "access_tags",

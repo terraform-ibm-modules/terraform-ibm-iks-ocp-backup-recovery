@@ -967,14 +967,15 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
         policy_id                 = local.resolved_policy_ids[var.auto_protect_policy_name]
       }
     }
-    data_mover_image_location                  = var.registration_images.data_mover
-    velero_image_location                      = var.registration_images.velero
-    velero_aws_plugin_image_location           = var.registration_images.velero_aws_plugin
-    velero_openshift_plugin_image_location     = var.registration_images.velero_openshift_plugin
-    init_container_image_location              = var.registration_images.init_container
-    cohesity_dataprotect_plugin_image_location = var.registration_images.cohesity_dataprotect_plugin
-    kubernetes_type                            = "kCluster"
-    client_private_key                         = chomp(kubernetes_secret_v1.brsagent_token.data["token"])
+    kubernetes_type    = "kCluster"
+    client_private_key = chomp(kubernetes_secret_v1.brsagent_token.data["token"])
+    # Set explicitly: IBM provider >= 2.7.0 sends an unset datamover_hostport_number
+    # as 0, which the BRS API rejects unless datamover_service_type is HostPort
+    # ("Hostport number is supported only with service type 'HostPort'").
+    # Defaults (kHostPort / 33769) are the documented defaults for the datamover.
+    # The port is only meaningful for kHostPort, so it is not set for other service types.
+    datamover_service_type    = var.datamover_service_type
+    datamover_hostport_number = var.datamover_service_type == "kHostPort" ? var.datamover_hostport_number : null
   }
 
   depends_on = [

@@ -23,6 +23,9 @@ if [ -z "${IBMCLOUD_API_KEY:-}" ]; then  # pragma: allowlist secret
 fi
 
 URL=$1
+# Sanitise to "https://<host>" (scheme once, no path): this script appends its
+# own "/v2/..." paths, so a caller-supplied "/v2" suffix must not be doubled.
+URL=$(brs_endpoint_url "${URL}")
 TENANT=$2
 ENDPOINT_TYPE=$3
 # shellcheck disable=SC2034  # Used in API URL construction
@@ -46,15 +49,26 @@ call_api() {
     -H "X-IBM-Tenant-Id: ${TENANT}" \
     -H "Accept: application/json" \
     -H "Content-Type: application/json" \
-    "$@")
+    "$@") || response=$'\n000'
 
   local http_code
   http_code=$(echo "$response" | tail -n1)
   local body
   body=$(echo "$response" | sed '$d')
 
+  vlog "${method} ${path} → HTTP ${http_code}" "${body}"
+
   if [[ "$http_code" -eq 404 ]]; then
     echo "__HTTP_404__"
+    return 0
+  fi
+
+  # HTTP 000 means curl could not connect at all (DNS failure, network not ready,
+  # BRS endpoint not yet reachable). Treat it as a retryable transient error so
+  # the polling loop keeps trying rather than failing immediately.
+  if [[ "$http_code" -eq 0 ]]; then
+    echo "API Error: Received HTTP 000 (curl connection failure) from $path — will retry" >&2
+    echo "__HTTP_000__"
     return 0
   fi
 
@@ -194,7 +208,9 @@ main() {
 
     echo "API call completed, response length: ${#run_response} chars" | tee -a "$debug_file" >&2
 
-    if [[ "$run_response" != "__HTTP_404__" ]]; then
+    if [[ "$run_response" == "__HTTP_000__" ]]; then
+      echo "BRS endpoint unreachable (HTTP 000), waiting ${POLL_INTERVAL_SECONDS}s before retry..." | tee -a "$debug_file" >&2
+    elif [[ "$run_response" != "__HTTP_404__" ]]; then
       # Debug: Write full response to file
       echo "=== Poll at $(date) ===" | tee -a "$debug_file" >&2
       echo "$run_response" | jq '.' >> "$debug_file" 2>&1

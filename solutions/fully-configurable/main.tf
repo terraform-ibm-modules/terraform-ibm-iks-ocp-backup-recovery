@@ -101,9 +101,11 @@ module "protect_cluster" {
   dsc_pod_memory_limits   = var.dsc_pod_memory_limits
   dsc_pod_cpu_requests    = var.dsc_pod_cpu_requests
   dsc_pod_memory_requests = var.dsc_pod_memory_requests
-  # --- Registration Settings ---
-  registration_images = var.registration_images
-  enable_auto_protect = var.enable_auto_protect
+  enable_auto_protect     = var.enable_auto_protect
+
+  # Datamover settings
+  datamover_service_type    = var.datamover_service_type
+  datamover_hostport_number = var.datamover_hostport_number
   # --- Backup Policy ---
   auto_protect_policy_name = var.auto_protect_policy_name
   protection_groups        = var.protection_groups
@@ -231,9 +233,11 @@ module "target_cluster_registration" {
   dsc_storage_class      = var.target_dsc_storage_class
   create_dsc_worker_pool = var.target_create_dsc_worker_pool
 
-  # Registration settings
-  registration_images = var.registration_images
   enable_auto_protect = false # Don't auto-protect target cluster
+
+  # Datamover settings
+  datamover_service_type    = var.datamover_service_type
+  datamover_hostport_number = var.datamover_hostport_number
 
   # No policies or protection groups for target (it's just a recovery destination)
   policies          = []

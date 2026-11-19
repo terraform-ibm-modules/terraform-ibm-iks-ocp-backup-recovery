@@ -27,6 +27,9 @@ if [ -z "${IBMCLOUD_API_KEY:-}" ]; then # pragma: allowlist secret
 fi
 
 URL=$1
+# Sanitise to "https://<host>" (scheme once, no path): this script appends its
+# own "/v2/..." paths, so a caller-supplied "/v2" suffix must not be doubled.
+URL=$(brs_endpoint_url "${URL}")
 TENANT=$2
 ENDPOINT_TYPE=$3
 # shellcheck disable=SC2034  # Accepted for signature parity with the other BRS scripts; not used here.
@@ -60,6 +63,8 @@ call_api() {
   http_code=$(echo "$response" | tail -n1)
   local body
   body=$(echo "$response" | sed '$d')
+
+  vlog "${method} ${path} → HTTP ${http_code}" "${body}"
 
   if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
     echo "API Error: HTTP $http_code from $method $path" >&2
