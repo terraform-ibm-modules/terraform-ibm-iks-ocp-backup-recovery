@@ -50,7 +50,7 @@ resource "ibm_is_subnet" "subnet_zone_1" {
 
 resource "time_sleep" "wait_for_subnet" {
   depends_on      = [ibm_is_subnet.subnet_zone_1]
-  create_duration = "30s"
+  create_duration = "60s"
 }
 
 ########################################################################################################################

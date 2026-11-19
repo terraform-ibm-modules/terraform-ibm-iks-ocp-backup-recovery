@@ -21,11 +21,11 @@ set -euo pipefail
 #   IBMCLOUD_API_KEY     — IBM Cloud API key used to log in
 #
 # Optional env var:
-#   VERBOSE              — set to 0 to suppress raw API responses (default: 1 — on).
-#                          On by default to expose all server responses during
-#                          active development. Set to 0 once the script is
-#                          known-good to reduce Terraform output noise.
-#                          Example: VERBOSE=0 terraform destroy
+#   VERBOSE              — set to 1 to print every raw API response to stderr.
+#                          Off (0) by default to keep Terraform output clean.
+#                          Enable when diagnosing whether failures originate
+#                          in server responses or in this script's logic.
+#                          Example: VERBOSE=1 terraform destroy
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/common_utils.sh
@@ -33,18 +33,10 @@ source "${SCRIPT_DIR}/common_utils.sh"
 
 # ---------------------------------------------------------------------------
 # Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
-# Set VERBOSE=0 once the script is known-good to reduce Terraform output noise.
+# Toggle off once the script is known-good to reduce Terraform output noise.
+# vlog is provided by common_utils.sh (sourced above).
 # ---------------------------------------------------------------------------
-VERBOSE="${VERBOSE:-1}"
-
-# vlog LABEL JSON — print label + pretty-printed JSON to stderr when verbose.
-vlog() {
-  [[ "${VERBOSE}" == "1" ]] || return 0
-  local label="$1"
-  local body="$2"
-  echo "[VERBOSE] ${label}:" >&2
-  echo "${body}" | jq '.' 2>/dev/null >&2 || echo "${body}" >&2
-}
+VERBOSE="${VERBOSE:-0}"
 
 if [ "$#" -lt 4 ]; then
   echo "Usage: $0 REGION TENANT PROTECTION_GROUP_ID BRS_ENDPOINT" >&2
@@ -61,6 +53,9 @@ REGION=$1
 TENANT=$2
 PROTECTION_GROUP_ID=$3
 BRS_ENDPOINT=$4
+# Sanitise to a bare hostname (any "https://" scheme and "/v2" path removed) so
+# the service URL below always carries the scheme and "/v2" exactly once.
+BRS_ENDPOINT=$(brs_endpoint_host "${BRS_ENDPOINT}")
 
 # Extract numeric PG ID (after ::)
 # Format: clusterid/::timestamp:id:id -> timestamp:id:id
@@ -74,14 +69,16 @@ ibmcloud_login() {
   api_endpoint=$(get_ibmcloud_api_endpoint "${BRS_ENDPOINT}")
   echo "Logging in to IBM Cloud (region: ${REGION}, endpoint: ${api_endpoint})..." >&2
   local login_out
-  login_out=$(ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${api_endpoint}" -r "${REGION}" -q 2>&1) || true  echo "${login_out}" | grep -v "^$" >&2 || true
+  login_out=$(ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${api_endpoint}" -r "${REGION}" -q 2>&1) || true
+  echo "${login_out}" | grep -v "^$" >&2 || true
   vlog "ibmcloud login" "${login_out}"
 
   # Set the BRS service URL so all backup-recovery CLI commands reach the
   # correct instance. Without this step every 'ibmcloud backup-recovery'
   # command fails with an authentication or 404 error — the CLI has no default
   # endpoint and the config is not persisted between sessions.
-  local brs_url="https://${BRS_ENDPOINT}/v2"
+  local brs_url
+  brs_url=$(brs_endpoint_service_url "${BRS_ENDPOINT}")
   echo "Setting BRS service URL: ${brs_url}" >&2
   ibmcloud backup-recovery config set service-url "${brs_url}" 2>&1 \
     | grep -v "^$" >&2 || true

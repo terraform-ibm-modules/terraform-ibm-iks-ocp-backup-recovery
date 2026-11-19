@@ -479,44 +479,30 @@
               "display_name": "Manage VPC Block CSI Addon"
             },
             {
-              "key": "registration_images",
-              "display_name": "Registration Images",
-              "custom_config": {
-                "type": "code_editor",
-                "grouping": "deployment",
-                "original_grouping": "deployment",
-                "config_constraints": {
-                  "supportedLanguages": [
-                    "hcl"
-                  ]
-                }
-              }
-            },
-            {
               "key": "datamover_service_type",
-              "display_name": "Data Mover Service Type",
+              "display_name": "Datamover Service Type",
               "options": [
                 {
-                  "displayname": "Host Port",
+                  "displayname": "HostPort",
                   "value": "kHostPort"
                 },
                 {
-                  "displayname": "Node Port",
+                  "displayname": "NodePort",
                   "value": "kNodePort"
                 },
                 {
-                  "displayname": "Load Balancer",
+                  "displayname": "LoadBalancer",
                   "value": "kLoadBalancer"
                 },
                 {
-                  "displayname": "Cluster IP",
-                  "value": "kClusterIP"
+                  "displayname": "ClusterIP",
+                  "value": "kClusterIp"
                 }
               ]
             },
             {
               "key": "datamover_hostport_number",
-              "display_name": "Data Mover Host Port Number"
+              "display_name": "Datamover HostPort Number"
             },
             {
               "key": "access_tags",

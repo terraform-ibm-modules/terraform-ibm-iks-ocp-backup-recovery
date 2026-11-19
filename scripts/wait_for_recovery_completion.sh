@@ -18,6 +18,9 @@ if [ -z "${IBMCLOUD_API_KEY:-}" ]; then  # pragma: allowlist secret
 fi
 
 URL=$1
+# Sanitise to "https://<host>" (scheme once, no path): this script appends its
+# own "/v2/..." paths, so a caller-supplied "/v2" suffix must not be doubled.
+URL=$(brs_endpoint_url "${URL}")
 TENANT=$2
 ENDPOINT_TYPE=$3
 # shellcheck disable=SC2034  # Used in error messages and file paths
@@ -28,21 +31,6 @@ POLL_INTERVAL_SECONDS=${7:-30}
 BINARIES_PATH=${8:-/tmp}
 
 export PATH="${PATH}:${BINARIES_PATH}"
-
-# ---------------------------------------------------------------------------
-# Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
-# Set VERBOSE=0 once the script is known-good to reduce Terraform output noise.
-# ---------------------------------------------------------------------------
-VERBOSE="${VERBOSE:-1}"
-
-# vlog LABEL JSON — print label + pretty-printed JSON to stderr when verbose.
-vlog() {
-  [[ "${VERBOSE}" == "1" ]] || return 0
-  local label="$1"
-  local body="$2"
-  echo "[VERBOSE] ${label}:" >&2
-  echo "${body}" | jq '.' 2>/dev/null >&2 || echo "${body}" >&2
-}
 
 echo "=== Waiting for Recovery Completion ===" >&2
 echo "Recovery ID: ${RECOVERY_ID}" >&2
@@ -78,12 +66,20 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   response=$(curl --retry 3 -s -w "\n%{http_code}" -X GET "${URL}/v2/data-protect/recoveries/${RECOVERY_ID}" \
     -H "Authorization: Bearer ${IAM_TOKEN}" \
     -H "X-IBM-Tenant-Id: ${TENANT}" \
-    -H "Accept: application/json")
+    -H "Accept: application/json") || response=$'\n000'
 
   http_code=$(echo "$response" | tail -n1)
   body=$(echo "$response" | sed '$d')
 
   vlog "GET /v2/data-protect/recoveries/${RECOVERY_ID} → HTTP ${http_code}" "${body}"
+
+  # HTTP 000 means curl could not connect at all (DNS failure, network not ready,
+  # BRS endpoint not yet reachable). Treat it as a retryable transient error.
+  if [[ "$http_code" -eq 0 ]]; then
+    echo "Recovery Status API Error: Received HTTP 000 (curl connection failure) — will retry" >&2
+    sleep "$POLL_INTERVAL_SECONDS"
+    continue
+  fi
 
   if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
     echo "Recovery Status API Error: HTTP $http_code" >&2

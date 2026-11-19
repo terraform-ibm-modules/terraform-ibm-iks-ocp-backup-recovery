@@ -23,6 +23,9 @@ if [ -z "${IBMCLOUD_API_KEY:-}" ]; then  # pragma: allowlist secret
 fi
 
 URL=$1
+# Sanitise to "https://<host>" (scheme once, no path): this script appends its
+# own "/v2/..." paths, so a caller-supplied "/v2" suffix must not be doubled.
+URL=$(brs_endpoint_url "${URL}")
 TENANT=$2
 ENDPOINT_TYPE=$3
 # shellcheck disable=SC2034  # Used in API URL construction
@@ -61,7 +64,7 @@ call_api() {
     -H "X-IBM-Tenant-Id: ${TENANT}" \
     -H "Accept: application/json" \
     -H "Content-Type: application/json" \
-    "$@")
+    "$@") || response=$'\n000'
 
   local http_code
   http_code=$(echo "$response" | tail -n1)

@@ -46,6 +46,9 @@ REGION=$1
 TENANT=$2
 PROTECTION_GROUP_ID=$3
 BRS_ENDPOINT=$4
+# Sanitise to a bare hostname (any "https://" scheme and "/v2" path removed) so
+# the service URL below always carries the scheme and "/v2" exactly once.
+BRS_ENDPOINT=$(brs_endpoint_host "${BRS_ENDPOINT}")
 # REGISTRATION_ID ($5) accepted but not used — snapshot expiry skipped for now.
 
 # Extract numeric PG ID (strip leading "tenant::" prefix).
@@ -55,16 +58,9 @@ API_PG_ID="${PROTECTION_GROUP_ID#*::}"
 
 # ---------------------------------------------------------------------------
 # Verbose logging
+# vlog is provided by common_utils.sh (sourced above).
 # ---------------------------------------------------------------------------
 VERBOSE="${VERBOSE:-1}"
-
-vlog() {
-  [[ "${VERBOSE}" == "1" ]] || return 0
-  local label="$1"
-  local body="$2"
-  echo "[VERBOSE] ${label}:" >&2
-  echo "${body}" | jq '.' 2>/dev/null >&2 || echo "${body}" >&2
-}
 
 # ---------------------------------------------------------------------------
 # Login + set BRS service URL (identical to cancel_pg_runs.sh)
@@ -81,7 +77,8 @@ ibmcloud_login() {
   # correct instance. Without this step every 'ibmcloud backup-recovery'
   # command fails with an authentication or 404 error — the CLI has no default
   # endpoint and the config is not persisted between sessions.
-  local brs_url="https://${BRS_ENDPOINT}/v2"
+  local brs_url
+  brs_url=$(brs_endpoint_service_url "${BRS_ENDPOINT}")
   echo "Setting BRS service URL: ${brs_url}" >&2
   ibmcloud backup-recovery config set service-url "${brs_url}" 2>&1 \
     | grep -v "^$" >&2 || true
@@ -213,7 +210,7 @@ check_and_cancel() {
   local all_run_ids
   all_run_ids=$(
     { echo "$backup_data"; echo "$archival_data"; } \
-      | jq -rs '[.[].runs?[]?.id // empty] | unique | .[]'
+      | jq -rs '[.[].runs // [] | .[].id // empty] | unique | .[]'
   )
 
   [[ -z "$all_run_ids" ]] && { echo "0"; return 0; }

@@ -141,7 +141,7 @@ variable "auto_protect_policy_name" {
 variable "dsc_chart_uri" {
   description = "The full OCI registry URI for the Data Source Connector Helm chart, including the digest."
   type        = string
-  default     = "oci://icr.io/brs-charts/brs-ds-connector-chart:7.3.13-release-20261002-46146703@sha256:7add3258775c29182333794222ffac4b0d77f6bd176c3e4c042f53f6332cfae"
+  default     = "oci://icr.io/brs-charts/brs-ds-connector-chart:7.3.13-release-20261002-46146703@sha256:7add3258775c29182333794222ffac4b0d77f6bd176c3e4c042f53f6332cfae1"
   nullable    = false
 }
 
@@ -450,42 +450,18 @@ variable "brs_endpoint_type" {
   }
 }
 
-variable "registration_images" {
-  type = object({
-    data_mover                  = optional(string, null)
-    velero                      = optional(string, null)
-    velero_aws_plugin           = optional(string, null)
-    velero_openshift_plugin     = optional(string, null)
-    cohesity_dataprotect_plugin = optional(string, null)
-    init_container              = optional(string, null)
-  })
-  default     = {}
-  description = "Optional image overrides for backup and recovery registration. Any image left as `null` (the default) is not sent, so the Backup and Recovery service uses its own default image."
-  nullable    = false
-}
-
 variable "datamover_service_type" {
   type        = string
-  description = "The service type used for communication with the data mover pods. Allowed values are `kHostPort`, `kNodePort`, `kLoadBalancer`, and `kClusterIP`."
+  description = "Service type used for datamover communication during source registration. Allowed values are `kHostPort` (default, recommended), `kNodePort`, `kLoadBalancer` and `kClusterIp`."
   default     = "kHostPort"
   nullable    = false
-
-  validation {
-    condition     = contains(["kHostPort", "kNodePort", "kLoadBalancer", "kClusterIP"], var.datamover_service_type)
-    error_message = "`datamover_service_type` must be one of 'kHostPort', 'kNodePort', 'kLoadBalancer', or 'kClusterIP'."
-  }
 }
 
 variable "datamover_hostport_number" {
   type        = number
-  description = "Port number for data mover communication. Only used, and only sent, when `datamover_service_type` is `kHostPort`; it is ignored for every other service type. The default `33769` is the Backup and Recovery default HostPort."
+  description = "Host port the datamover DaemonSet listens on. Defaults to `33769`. Only used when `datamover_service_type` is `kHostPort`; ignored for the other service types. If you change it, make sure network policies and security groups allow traffic from the Data Source Connector to this port on the worker nodes."
   default     = 33769
   nullable    = false
-
-  validation {
-    condition     = var.datamover_hostport_number >= 1 && var.datamover_hostport_number <= 65535 && floor(var.datamover_hostport_number) == var.datamover_hostport_number
-    error_message = "`datamover_hostport_number` must be a whole number between 1 and 65535."
-  }
 }
 
 variable "source_kube_type" {

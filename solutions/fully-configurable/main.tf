@@ -175,7 +175,6 @@ module "source_cluster_prep" {
   dsc_pod_memory_limits   = var.dsc_pod_memory_limits
   dsc_pod_cpu_requests    = var.dsc_pod_cpu_requests
   dsc_pod_memory_requests = var.dsc_pod_memory_requests
-
   # Auth token passed from BRS connection so DSC Helm deployment can register
   brs_registration_token = module.brs_instance.registration_token
 
@@ -225,7 +224,6 @@ module "protect_cluster" {
   dsc_chart_uri             = var.dsc_chart_uri
   dsc_name                  = var.dsc_name
   dsc_namespace             = var.dsc_namespace
-  registration_images       = var.registration_images
   datamover_service_type    = var.datamover_service_type
   datamover_hostport_number = var.datamover_hostport_number
   enable_auto_protect       = var.enable_auto_protect
@@ -563,7 +561,6 @@ module "target_cluster_registration" {
   dsc_chart_uri             = var.dsc_chart_uri
   dsc_name                  = var.dsc_name
   dsc_namespace             = var.dsc_namespace
-  registration_images       = var.registration_images
   datamover_service_type    = var.datamover_service_type
   datamover_hostport_number = var.datamover_hostport_number
   enable_auto_protect       = false # Don't auto-protect target cluster

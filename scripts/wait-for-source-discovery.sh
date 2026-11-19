@@ -1,9 +1,5 @@
 #!/bin/bash
 # wait-for-source-discovery.sh
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/common_utils.sh
-source "${SCRIPT_DIR}/common_utils.sh"
 #
 # Poll the BRS registration-get API until the initial source refresh has
 # completed — i.e., until lastRefreshedTimeMsecs is substantially greater
@@ -46,26 +42,12 @@ REGION=$1
 TENANT=$2
 REGISTRATION_ID=$3
 BRS_ENDPOINT=$4
+# Sanitise to a bare hostname (any "https://" scheme and "/v2" path removed) so
+# the service URL below always carries the scheme and "/v2" exactly once.
+BRS_ENDPOINT=$(brs_endpoint_host "${BRS_ENDPOINT}")
 TIMEOUT_S="${5:-1800}"
 POLL_S="${6:-30}"
 
-# Set VERBOSE=0 once the script is known-good to reduce Terraform output noise.
-# vlog is provided by common_utils.sh (sourced above).
-VERBOSE="${VERBOSE:-1}"
-
-# Minimum refresh lag (ms) to consider initial discovery complete.
-# The registration sets lastRefreshedTimeMsecs only a few seconds after
-# registrationTimeMsecs on first contact.  A full Velero discovery pass
-# typically takes 1–5 minutes; we require at least 60 s of lag to avoid
-# treating that initial superficial refresh as "done".
-MIN_REFRESH_LAG_MS=60000
-
-# After the registration-get check passes we additionally poll
-# protection-sources until at least one child node (namespace) is present
-# under the registered cluster source.  This confirms the BRS API has fully
-# indexed the source tree so protection_group objects can be resolved by name.
-# Without this extra check the data source read immediately after apply may
-# return an empty nodes list, causing "objects.0.id required" errors.
 CHILDREN_TIMEOUT_S="${TIMEOUT_S}"
 CHILDREN_POLL_S="${POLL_S}"
 
@@ -78,20 +60,20 @@ echo "timeout=${TIMEOUT_S}s  poll=${POLL_S}s" >&2
 # ---------------------------------------------------------------------------
 IBMCLOUD_API_ENDPOINT=$(get_ibmcloud_api_endpoint "${BRS_ENDPOINT}")
 echo "Logging in to IBM Cloud (region: ${REGION}, endpoint: ${IBMCLOUD_API_ENDPOINT})..." >&2
-login_out=$(ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${IBMCLOUD_API_ENDPOINT}" -r "${REGION}" -q 2>&1) || { # pragma: allowlist secret
+login_out=$(ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${IBMCLOUD_API_ENDPOINT}" -r "${REGION}" -q 2>&1) || {  # pragma: allowlist secret
   echo "ERROR: ibmcloud login failed:" >&2
   echo "${login_out}" >&2
   exit 1
 }
 echo "${login_out}" | grep -v "^$" >&2 || true
 
-brs_url="https://${BRS_ENDPOINT}/v2"
+brs_url="$(brs_endpoint_service_url "${BRS_ENDPOINT}")"
 echo "Setting BRS service URL: ${brs_url}" >&2
 ibmcloud backup-recovery config set service-url "${brs_url}" 2>&1 \
   | grep -v "^$" >&2 || true
 
 # ---------------------------------------------------------------------------
-# Polling loop
+# Polling loop: Phase 1 waits for the source registration to reach "Finished"
 # ---------------------------------------------------------------------------
 elapsed=0
 while (( elapsed < TIMEOUT_S )); do
@@ -107,39 +89,20 @@ while (( elapsed < TIMEOUT_S )); do
     }
   vlog "registration-get id=${REGISTRATION_ID}" "${raw}"
 
-  # The CLI returns timestamps as floating-point (e.g. 1.786125694124e+12).
-  # Use jq to convert both to integers before comparing so bash arithmetic
-  # doesn't choke on scientific notation.
   auth=$(echo "${raw}" | jq -r '.authenticationStatus // ""')
-  lag=$(echo "${raw}" | jq '
-    (.lastRefreshedTimeMsecs // 0 | floor) -
-    (.registrationTimeMsecs  // 0 | floor)
-  ')
+  echo "[${elapsed}s] authStatus=${auth}" >&2
 
-  echo "[${elapsed}s] authStatus=${auth}  lag=${lag}ms" >&2
-  # Check if child nodes (namespaces) are already indexed under this source
-  child_count=$(ibmcloud backup-recovery protection-source list \
-    --xibm-tenant-id "${TENANT}" \
-    --environments "kKubernetes" \
-    --id "${REGISTRATION_ID}" \
-    --output json -q 2>&1 | jq '
-    [ .protectionSources[]?
-      | .nodes[]?
-    ] | length
-  ' 2>/dev/null || echo "0")
-
-  echo "[${elapsed}s] authStatus=${auth}  lag=${lag}ms  child_nodes=${child_count}" >&2
-
-  if [[ "${auth}" == "Finished" ]] && { (( lag >= MIN_REFRESH_LAG_MS )) || (( child_count > 0 )); }; then
-    echo "=== wait-for-source-discovery.sh: registration refresh complete (lag=${lag}ms, child_nodes=${child_count}, elapsed=${elapsed}s) ===" >&2
-    exit 0
+  if [[ "${auth}" == "Finished" ]]; then
+    echo "=== wait-for-source-discovery.sh: registration complete (authStatus=${auth}, elapsed=${elapsed}s) ===" >&2
+    break
   fi
 
-  if (( lag < MIN_REFRESH_LAG_MS && child_count == 0 )); then
-    echo "[${elapsed}s] refresh lag ${lag}ms < ${MIN_REFRESH_LAG_MS}ms and no child nodes yet — waiting for initial Velero discovery pass…" >&2
-  else
-    echo "[${elapsed}s] authStatus not Finished yet (${auth}) — waiting…" >&2
+  if [[ "${auth}" =~ ^(Failed|Error)$ ]]; then
+    echo "ERROR: source ${REGISTRATION_ID} registration failed (authStatus=${auth})" >&2
+    exit 1
   fi
+
+  echo "[${elapsed}s] authStatus not Finished yet (${auth}) — waiting…" >&2
 
   sleep "${POLL_S}"
   (( elapsed += POLL_S )) || true

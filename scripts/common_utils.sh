@@ -2,9 +2,58 @@
 # Common utility functions for BRS scripts
 
 # ---------------------------------------------------------------------------
+# BRS endpoint sanitising.
+#
+# The BRS instance endpoints (extensions.endpoints.public / .private) are bare
+# hostnames, e.g. <guid>.us-east.backup-recovery.cloud.ibm.com. Callers may
+# nonetheless pass a value that already carries "https://" and/or a "/v2" suffix,
+# which would otherwise yield "https://https://host/v2/v2" style URLs.
+# These helpers accept any of those forms and always return the same result.
+# ---------------------------------------------------------------------------
+
+# brs_endpoint_host ENDPOINT — print the bare hostname.
+# Strips any http(s):// scheme, then everything from the first "/" (path such as
+# "/v2" and any trailing slashes), plus surrounding whitespace.
+#   host                         -> host
+#   https://host                 -> host
+#   https://host/v2              -> host
+#   https://host/v2/             -> host
+#   https://https://host/v2      -> host
+brs_endpoint_host() {
+  local e="${1:-}"
+  e="${e#"${e%%[![:space:]]*}"}"   # trim leading whitespace
+  e="${e%"${e##*[![:space:]]}"}"   # trim trailing whitespace
+  # Loop: tolerate a scheme that was already doubled ("https://https://host").
+  while [[ "${e}" == http://* || "${e}" == https://* ]]; do
+    e="${e#http://}"
+    e="${e#https://}"
+  done
+  e="${e%%/*}"
+  echo "${e}"
+}
+
+# brs_endpoint_url ENDPOINT — print "https://<host>" (scheme once, no path).
+# Use for scripts that append their own "/v2/..." path.
+brs_endpoint_url() {
+  local host
+  host=$(brs_endpoint_host "${1:-}")
+  [[ -n "${host}" ]] || return 0
+  echo "https://${host}"
+}
+
+# brs_endpoint_service_url ENDPOINT — print "https://<host>/v2" (scheme and /v2
+# each exactly once). Use as the ibmcloud backup-recovery CLI service-url.
+brs_endpoint_service_url() {
+  local url
+  url=$(brs_endpoint_url "${1:-}")
+  [[ -n "${url}" ]] || return 0
+  echo "${url}/v2"
+}
+
+# ---------------------------------------------------------------------------
 # Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
 # Defined here so it is available to all scripts that source common_utils.sh.
-# Individual scripts set VERBOSE="${VERBOSE:-1}" before sourcing this file,
+# Individual scripts set VERBOSE="${VERBOSE:-0}" before sourcing this file,
 # or rely on the VERBOSE env var set by the caller (e.g. VERBOSE=1 terraform apply).
 # ---------------------------------------------------------------------------
 
