@@ -627,6 +627,12 @@ resource "helm_release" "data_source_connector" {
         # Frozen at first apply — see dsc_immutable_values.
         storageClass = terraform_data.dsc_immutable_values[0].input.storage_class
       }
+      deploymentPlatform = {
+        rocp = {
+          # OpenShift (ROKS) requires SCC permissions for nonroot-v2; standard Kubernetes (IKS) does not.
+          sccEnabled = var.kube_type == "openshift"
+        }
+      }
     })
   ]
 
