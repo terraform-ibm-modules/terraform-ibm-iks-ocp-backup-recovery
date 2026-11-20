@@ -50,7 +50,6 @@ locals {
     null
   )
   discovered_helm_ref = try(local.discovered_k8s_connector.helm_chart_oci_ref[0], null)
-  clean_registry_host = try(trim(replace(replace(local.discovered_helm_ref.registry_host, "oci://", ""), "oci:/", ""), "/"), null)
 
   # Helm chart URI parsing — if var.dsc_chart_uri is explicitly provided, parse it;
   # otherwise derive chart name, version, and OCI registry location from BRS connectors metadata,
@@ -61,7 +60,7 @@ locals {
   dsc_chart = (
     var.dsc_chart_uri != null
     ? split(":", local.chart_with_version)[0]
-    : coalesce(try(local.discovered_helm_ref.repository, null), "brs-ds-connector-chart")
+    : "brs-ds-connector-chart"
   )
 
   dsc_chart_version = (
@@ -73,15 +72,7 @@ locals {
   dsc_chart_location = (
     var.dsc_chart_uri != null
     ? replace(local.uri_no_digest, "/${local.chart_with_version}", "")
-    : (
-      try(local.clean_registry_host, null) != null && try(local.clean_registry_host, "") != ""
-      ? (
-        try(local.discovered_helm_ref.namespace, "") != "" && try(local.discovered_helm_ref.namespace, null) != null
-        ? "oci://${local.clean_registry_host}/${trim(local.discovered_helm_ref.namespace, "/")}"
-        : "oci://${local.clean_registry_host}"
-      )
-      : "oci://icr.io/brs-charts"
-    )
+    : "oci://icr.io/brs-charts"
   )
 
   # Resolved storage class for the DSC PVC — used in both the Helm values and

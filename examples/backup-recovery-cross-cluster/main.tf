@@ -632,12 +632,6 @@ module "target_backup_recovery" {
     kubernetes = kubernetes.target
   }
 
-  # Serialise the two DSC Helm deployments so they do not race to download
-  # the OpenAPI schema from their respective (freshly created) cluster API
-  # servers at the same time.  The source module must fully complete before
-  # the target provider attempts its own schema fetch.
-  depends_on = [module.source_backup_recovery]
-
   # ---- Cluster ----
   cluster_id                   = local.target_cluster_id
   cluster_resource_group_id    = module.resource_group.resource_group_id
