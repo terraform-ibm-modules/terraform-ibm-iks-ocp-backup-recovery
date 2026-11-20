@@ -139,10 +139,9 @@ variable "auto_protect_policy_name" {
 }
 
 variable "dsc_chart_uri" {
-  description = "The full OCI registry URI for the Data Source Connector Helm chart, including the digest."
+  description = "The full OCI registry URI for the Data Source Connector Helm chart, including the digest. If not specified, the chart URI is dynamically discovered from the Backup & Recovery Service connectors metadata."
   type        = string
-  default     = "oci://icr.io/brs-charts/brs-ds-connector-chart:7.3.13-release-20261002-46146703@sha256:7add3258775c29182333794222ffac4b0d77f6bd176c3e4c042f53f6332cfae1"
-  nullable    = false
+  default     = null
 }
 
 variable "enable_auto_protect" {

@@ -193,7 +193,7 @@ resource "ibm_container_addons" "source_cluster_addons" {
   lifecycle {
     # The IBM IKS API returns additional system-managed addons that are not declared
     # here. Ignoring these fields prevents perpetual update diffs after first apply.
-    ignore_changes = [addons, managed_addons]
+    ignore_changes = [addons]
   }
 }
 
@@ -237,7 +237,7 @@ resource "ibm_container_addons" "target_cluster_addons" {
   lifecycle {
     # The IBM IKS API returns additional system-managed addons that are not declared
     # here. Ignoring these fields prevents perpetual update diffs after first apply.
-    ignore_changes = [addons, managed_addons]
+    ignore_changes = [addons]
   }
 }
 
