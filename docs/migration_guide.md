@@ -11,6 +11,7 @@ This guide covers upgrading to the new major version of `terraform-ibm-iks-ocp-b
 4. **Root module outputs removed.** `brs_vpe_ips` and `s2s_auth_policies` are no longer output by the root module.
 5. **Provider alias removed.** `configuration_aliases = [ibm.cluster]` was removed from the root module's `version.tf`.
 6. **Execution stages.** The new `execution_stage` input (`cluster_prep`, `brs_management`, `all`, `custom`) splits the work into stages.
+7. **IBM Cloud Provider minimum version.** The minimum required IBM Cloud provider version is now `>= 2.10.0, < 3.0.0` (raised to support `ibm_backup_recovery_connectors_metadata`).
 
 ## Step 1: Create the BRS instance
 
@@ -61,6 +62,11 @@ Set `brs_endpoint_type` to `"public"` or `"private"` to choose which URL is used
 | `brsagent_token` | Service account token from the `cluster_prep` stage, used by `brs_management`. |
 | `resolved_policy_ids` | Protection policy IDs resolved outside this module. |
 | `enable_cluster_infra_prep`, `enable_dsc_helm_deployment`, `enable_brs_registration`, `enable_protection_groups`, `enable_backup_and_recovery` | Per-stage feature flags. |
+| `datamover_tolerations` | Custom tolerations to patch onto the `cohesity-dm` Data Mover DaemonSet. Defaults to `[{ operator = "Exists" }]` to tolerate all taints across worker nodes. Set to `[]` to disable patching. |
+| `datamover_service_type` | Service type used for datamover communication during source registration (`kHostPort` (default), `kNodePort`, `kLoadBalancer`, `kClusterIp`). |
+| `datamover_hostport_number` | Host port the datamover DaemonSet listens on when `datamover_service_type = "kHostPort"` (default `33769`). |
+| `dsc_chart_uri` | Now optional (`default = null`). When null, the chart URI is dynamically discovered from the Backup & Recovery Service connectors metadata API, with static plan-time resolution fallback. Explicit URI overrides remain supported. |
+| `registration_images` | Now an optional input (`default = null`) that defaults to the BRS server-side defaults, while allowing custom overrides. |
 
 ## Deployable Architecture variables
 
@@ -90,6 +96,10 @@ New in this release:
 
 - `manage_vpc_block_csi_addon` (default `true`). Set to `false` if you manage the `vpc-block-csi-driver` addon outside this module.
 - `vpc_block_csi_driver_version` (default `5.2`).
+- `datamover_tolerations` (default `[{ operator = "Exists" }]`). Tolerations applied to the `cohesity-dm` DaemonSet so it can schedule on tainted worker nodes.
+- `datamover_service_type` (default `kHostPort`) and `datamover_hostport_number` (default `33769`).
+- `dsc_chart_uri` (default `null`). Allows dynamic discovery from BRS connectors metadata, or custom URI override.
+- `registration_images` (default `null`). Allows custom image overrides for the BRS registration components.
 
 ## Outputs
 
@@ -103,5 +113,6 @@ New in this release:
 After applying, confirm:
 
 - The source registration appears in BRS and points at your cluster.
-- The DSC pods are running in the `brs-backup-agent` namespace.
+- The DSC pods are running in the `ibm-brs-data-source-connector` namespace.
+- The datamover DaemonSet pods (`cohesity-dm`) are running across worker nodes including any tainted pools.
 - A test protection group runs a backup.
