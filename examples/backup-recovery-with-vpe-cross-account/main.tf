@@ -336,7 +336,11 @@ module "source_cluster_prep" {
   dsc_worker_pool_zones        = 1
   enable_auto_protect          = false
 
-  # Registration token passed from BRS connection so DSC Helm deployment can authenticate
+  # Registration token and BRS instance metadata for DSC Helm deployment
+  brs_endpoint_type      = "public"
+  brs_tenant_id          = module.brs_instance.tenant_id
+  brs_instance_guid      = module.brs_instance.brs_instance_guid
+  brs_instance_crn       = module.brs_instance.brs_instance_crn
   brs_registration_token = module.brs_instance.registration_token
 
   depends_on = [

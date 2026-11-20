@@ -175,7 +175,11 @@ module "source_cluster_prep" {
   dsc_pod_memory_limits   = var.dsc_pod_memory_limits
   dsc_pod_cpu_requests    = var.dsc_pod_cpu_requests
   dsc_pod_memory_requests = var.dsc_pod_memory_requests
-  # Auth token passed from BRS connection so DSC Helm deployment can register
+  # BRS prerequisite inputs for DSC metadata discovery and registration
+  brs_endpoint_type      = var.brs_endpoint_type
+  brs_tenant_id          = module.brs_instance.tenant_id
+  brs_instance_guid      = module.brs_instance.brs_instance_guid
+  brs_instance_crn       = module.brs_instance.brs_instance_crn
   brs_registration_token = module.brs_instance.registration_token
 
   # Wait for addon upgrade to complete before DSC Helm install — the DSC PVC
@@ -513,7 +517,11 @@ module "target_cluster_prep" {
   create_dsc_worker_pool = var.target_create_dsc_worker_pool
   dsc_worker_pool_flavor = var.target_dsc_worker_pool_flavor
 
-  # Auth token passed from target BRS connection
+  # BRS prerequisite inputs for DSC metadata discovery and registration
+  brs_endpoint_type      = var.brs_endpoint_type
+  brs_tenant_id          = module.brs_instance.tenant_id
+  brs_instance_guid      = module.brs_instance.brs_instance_guid
+  brs_instance_crn       = module.brs_instance.brs_instance_crn
   brs_registration_token = module.brs_target_connection[0].registration_token
 
   depends_on = [

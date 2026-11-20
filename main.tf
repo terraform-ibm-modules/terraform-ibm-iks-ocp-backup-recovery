@@ -50,7 +50,7 @@ locals {
     null
   )
   discovered_helm_ref = try(local.discovered_k8s_connector.helm_chart_oci_ref[0], null)
-  clean_registry_host = try(replace(replace(local.discovered_helm_ref.registry_host, "oci://", ""), "oci:/", ""), null)
+  clean_registry_host = try(trim(replace(replace(local.discovered_helm_ref.registry_host, "oci://", ""), "oci:/", ""), "/"), null)
 
   # Helm chart URI parsing — if var.dsc_chart_uri is explicitly provided, parse it;
   # otherwise derive chart name, version, and OCI registry location from BRS connectors metadata.
@@ -76,7 +76,7 @@ locals {
       local.clean_registry_host != null
       ? (
         try(local.discovered_helm_ref.namespace, "") != "" && try(local.discovered_helm_ref.namespace, null) != null
-        ? "oci://${local.clean_registry_host}/${local.discovered_helm_ref.namespace}"
+        ? "oci://${local.clean_registry_host}/${trim(local.discovered_helm_ref.namespace, "/")}"
         : "oci://${local.clean_registry_host}"
       )
       : null
