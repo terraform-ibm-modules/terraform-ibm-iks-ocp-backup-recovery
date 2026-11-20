@@ -769,6 +769,15 @@ resource "ibm_backup_recovery_source_registration" "source_registration" {
     # The port is only meaningful for kHostPort, so it is not set for other service types.
     datamover_service_type    = var.datamover_service_type
     datamover_hostport_number = var.datamover_service_type == "kHostPort" ? var.datamover_hostport_number : null
+
+    # Custom container image overrides (for private registries or pinning).
+    # If var.registration_images is null, all image locations evaluate to null and BRS uses native default images.
+    cohesity_dataprotect_plugin_image_location = try(var.registration_images.cohesity_dataprotect_plugin, null)
+    data_mover_image_location                  = try(var.registration_images.data_mover, null)
+    init_container_image_location              = try(var.registration_images.init_container, null)
+    velero_aws_plugin_image_location           = try(var.registration_images.velero_aws_plugin, null)
+    velero_image_location                      = try(var.registration_images.velero, null)
+    velero_openshift_plugin_image_location     = try(var.registration_images.velero_openshift_plugin, null)
   }
 
   depends_on = [

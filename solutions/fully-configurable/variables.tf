@@ -463,6 +463,19 @@ variable "datamover_hostport_number" {
   nullable    = false
 }
 
+variable "registration_images" {
+  type = object({
+    data_mover                  = optional(string)
+    velero                      = optional(string)
+    velero_aws_plugin           = optional(string)
+    velero_openshift_plugin     = optional(string)
+    cohesity_dataprotect_plugin = optional(string)
+    init_container              = optional(string)
+  })
+  default     = null
+  description = "Optional container image overrides for backup and recovery registration. If null (default), BRS uses its native default container images. For private or air-gapped registries, specify custom image locations."
+}
+
 variable "source_kube_type" {
   type        = string
   description = "Type of Kubernetes cluster. Allowed values are 'kubernetes' or 'openshift'."

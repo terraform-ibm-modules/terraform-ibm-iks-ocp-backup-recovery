@@ -226,6 +226,7 @@ module "protect_cluster" {
   dsc_namespace             = var.dsc_namespace
   datamover_service_type    = var.datamover_service_type
   datamover_hostport_number = var.datamover_hostport_number
+  registration_images       = var.registration_images
   enable_auto_protect       = var.enable_auto_protect
 
   # Backup Policy & Groups
@@ -563,6 +564,7 @@ module "target_cluster_registration" {
   dsc_namespace             = var.dsc_namespace
   datamover_service_type    = var.datamover_service_type
   datamover_hostport_number = var.datamover_hostport_number
+  registration_images       = var.registration_images
   enable_auto_protect       = false # Don't auto-protect target cluster
 
   # No protection groups for target (it's just a recovery destination)

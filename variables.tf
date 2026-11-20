@@ -640,6 +640,19 @@ variable "datamover_hostport_number" {
   }
 }
 
+variable "registration_images" {
+  description = "Optional container image overrides for backup and recovery registration. If null (default), BRS uses its native default container images. For private or air-gapped registries, specify custom image locations."
+  type = object({
+    data_mover                  = optional(string)
+    velero                      = optional(string)
+    velero_aws_plugin           = optional(string)
+    velero_openshift_plugin     = optional(string)
+    cohesity_dataprotect_plugin = optional(string)
+    init_container              = optional(string)
+  })
+  default = null
+}
+
 ##############################################################################
 # Recovery Variables
 ##############################################################################
