@@ -53,33 +53,34 @@ locals {
   clean_registry_host = try(trim(replace(replace(local.discovered_helm_ref.registry_host, "oci://", ""), "oci:/", ""), "/"), null)
 
   # Helm chart URI parsing — if var.dsc_chart_uri is explicitly provided, parse it;
-  # otherwise derive chart name, version, and OCI registry location from BRS connectors metadata.
+  # otherwise derive chart name, version, and OCI registry location from BRS connectors metadata,
+  # falling back to default BRS OCI registry reference if metadata is not yet available at plan time.
   uri_no_digest      = var.dsc_chart_uri != null ? split("@", var.dsc_chart_uri)[0] : null
   chart_with_version = local.uri_no_digest != null ? element(split("/", local.uri_no_digest), -1) : null
 
   dsc_chart = (
     var.dsc_chart_uri != null
     ? split(":", local.chart_with_version)[0]
-    : try(local.discovered_helm_ref.repository, null)
+    : coalesce(try(local.discovered_helm_ref.repository, null), "brs-ds-connector-chart")
   )
 
   dsc_chart_version = (
     var.dsc_chart_uri != null
     ? replace(local.chart_with_version, "${local.dsc_chart}:", "")
-    : try(local.discovered_helm_ref.tag, null)
+    : coalesce(try(local.discovered_helm_ref.tag, null), "7.3.13-release-20261002-46146703")
   )
 
   dsc_chart_location = (
     var.dsc_chart_uri != null
     ? replace(local.uri_no_digest, "/${local.chart_with_version}", "")
     : (
-      local.clean_registry_host != null
+      try(local.clean_registry_host, null) != null && try(local.clean_registry_host, "") != ""
       ? (
         try(local.discovered_helm_ref.namespace, "") != "" && try(local.discovered_helm_ref.namespace, null) != null
         ? "oci://${local.clean_registry_host}/${trim(local.discovered_helm_ref.namespace, "/")}"
         : "oci://${local.clean_registry_host}"
       )
-      : null
+      : "oci://icr.io/brs-charts"
     )
   )
 
