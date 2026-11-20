@@ -22,7 +22,7 @@ set -euo pipefail
 #   IBMCLOUD_API_KEY     — IBM Cloud API key
 #
 # Optional env var:
-#   VERBOSE              — set to 1 to print every raw CLI response to stderr
+#   VERBOSE              — set to 0 to suppress raw CLI responses (default: 1 — on)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/common_utils.sh
@@ -60,7 +60,7 @@ API_PG_ID="${PROTECTION_GROUP_ID#*::}"
 # Verbose logging
 # vlog is provided by common_utils.sh (sourced above).
 # ---------------------------------------------------------------------------
-VERBOSE="${VERBOSE:-0}"
+VERBOSE="${VERBOSE:-1}"
 
 # ---------------------------------------------------------------------------
 # Login + set BRS service URL (identical to cancel_pg_runs.sh)
@@ -71,7 +71,6 @@ ibmcloud_login() {
   echo "Logging in to IBM Cloud (region: ${REGION}, endpoint: ${api_endpoint})..." >&2
   local login_out
   login_out=$(ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -a "${api_endpoint}" -r "${REGION}" -q 2>&1) || true  # pragma: allowlist secret
-  echo "${login_out}" | grep -v "^$" >&2 || true
   vlog "ibmcloud login" "${login_out}"
 
   # Set the BRS service URL so all backup-recovery CLI commands reach the

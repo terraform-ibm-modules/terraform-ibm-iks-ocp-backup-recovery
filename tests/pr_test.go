@@ -37,12 +37,9 @@ var includeFiletypes = []string{".tf", ".yaml", ".py", ".tpl", ".md", ".sh"}
 // to minimise same-region collisions, which slow down IKS cluster provisioning
 // and can push total wall-clock time over the GitHub Actions job limit.
 var validRegions = []string{
-	"eu-es",
 	"eu-de",
 	"br-sao",
-	"ca-tor",
 	"jp-osa",
-	"jp-tok",
 }
 
 type tarIncludePatterns struct {
@@ -142,18 +139,18 @@ func cleanupTerraform(t *testing.T, options *terraform.Options, prefix string) {
 func getSchematicTerraformVars(t *testing.T, prefix string, options *testschematic.TestSchematicOptions, existingTerraformOptions *terraform.Options) []testschematic.TestSchematicTerraformVar {
 	return []testschematic.TestSchematicTerraformVar{
 		{Name: "ibmcloud_api_key", Value: options.RequiredEnvironmentVars["TF_VAR_ibmcloud_api_key"], DataType: "string", Secure: true},
-		{Name: "cluster_id", Value: terraform.OutputContext(t, context.Background(), existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
-		{Name: "cluster_resource_group_id", Value: terraform.OutputContext(t, context.Background(), existingTerraformOptions, "cluster_resource_group_id"), DataType: "string"},
+		{Name: "source_cluster_id", Value: terraform.OutputContext(t, context.Background(), existingTerraformOptions, "workload_cluster_id"), DataType: "string"},
+		{Name: "source_cluster_resource_group_id", Value: terraform.OutputContext(t, context.Background(), existingTerraformOptions, "cluster_resource_group_id"), DataType: "string"},
 		{Name: "enable_auto_protect", Value: "false", DataType: "bool"},
 		{Name: "existing_brs_instance_crn", Value: existing_brs_instance_crn, DataType: "string"},
-		{Name: "brs_connection_name", Value: fmt.Sprintf("%s-conn", prefix), DataType: "string"},
+		{Name: "source_brs_connection_name", Value: fmt.Sprintf("%s-conn", prefix), DataType: "string"},
 		{Name: "brs_endpoint_type", Value: "public", DataType: "string"},
-		{Name: "cluster_config_endpoint_type", Value: "private", DataType: "string"},
+		{Name: "source_cluster_config_endpoint_type", Value: "private", DataType: "string"},
 		{Name: "dsc_replicas", Value: "1", DataType: "number"},
-		{Name: "brs_create_new_connection", Value: "true", DataType: "bool"},
+		{Name: "source_brs_create_new_connection", Value: "true", DataType: "bool"},
 		{Name: "region", Value: terraform.OutputContext(t, context.Background(), existingTerraformOptions, "region"), DataType: "string"},
-		{Name: "connection_env_type", Value: "kRoksVpc", DataType: "string"},
-		{Name: "kube_type", Value: "openshift", DataType: "string"},
+		{Name: "source_connection_env_type", Value: "kRoksVpc", DataType: "string"},
+		{Name: "source_kube_type", Value: "openshift", DataType: "string"},
 		{Name: "policies", Value: []map[string]interface{}{
 			{
 				"name":              fmt.Sprintf("%s-test-policy", prefix),
@@ -176,10 +173,6 @@ func getSchematicTerraformVars(t *testing.T, prefix string, options *testschemat
 
 func TestRunFullyConfigurableInSchematics(t *testing.T) {
 	t.Parallel()
-	// TODO: re-enable once IBM Schematics eu-de storage stabilises.
-	// Skipped due to intermittent "Error while uploading template to storage" failures
-	// on the eu-de Schematics TAR upload endpoint (transient IBM Cloud service issue).
-	t.Skip("Skipping TestRunFullyConfigurableInSchematics: Schematics eu-de storage instability")
 
 	tarIncludePatterns, recurseErr := getTarIncludePatternsRecursively("..", excludeDirs, includeFiletypes)
 	// if error producing tar patterns (very unexpected) fail test immediately
@@ -269,7 +262,7 @@ func TestRunUpgradeFullyConfigurable(t *testing.T) {
 	// Override connection name to distinguish the upgrade test's connection from
 	// the standard schematics test's connection when running in parallel.
 	for i, v := range vars {
-		if v.Name == "brs_connection_name" {
+		if v.Name == "source_brs_connection_name" {
 			vars[i].Value = fmt.Sprintf("%s-upgrade-conn", prefix)
 		}
 	}
@@ -480,10 +473,6 @@ func TestRunCrossClusterExample(t *testing.T) {
 
 func TestRunCrossClusterExistingConnection(t *testing.T) {
 	t.Parallel()
-	// TODO: re-enable once cancel_pg_runs.sh auth flap and DSC pod probe
-	// timeouts on destroy are resolved. The "existing connection" code path
-	// is covered indirectly by TestRunCrossClusterExample (brs_create_new_connection=true).
-	t.Skip("Skipping TestRunCrossClusterExistingConnection: transient destroy failures (cancel_pg_runs auth + DSC probe timeout)")
 
 	// Provision pre-existing BRS connections using dedicated helper directory.
 	// Pass existing_brs_instance_crn so both source_connection and target_connection
@@ -525,5 +514,5 @@ func TestRunCrossClusterExistingConnection(t *testing.T) {
 
 	output, err := options.RunTestConsistency()
 	assert.NoError(t, err, "This should not have errored")
-	assert.NotNil(t, output, "Expected some output")
+	assert.NotNil(t, output, "Expected some output ")
 }

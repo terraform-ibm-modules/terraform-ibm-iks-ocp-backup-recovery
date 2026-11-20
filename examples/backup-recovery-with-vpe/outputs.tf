@@ -16,10 +16,12 @@ output "brs_connection_id" {
 
 output "brs_private_hostname" {
   description = "BRS private hostname that should resolve to the VPEG reserved IP inside the cluster VPC. Run 'getent hosts <value>' from inside a DSC pod to verify VPE routing."
-  value       = "${module.backup_recovery.brs_instance_guid}.private.${var.region}.backup-recovery.cloud.ibm.com"
+  value       = "${module.backup_recovery.brs_instance_guid}.private.${local.brs_region}.backup-recovery.cloud.ibm.com"
 }
 
 output "brs_vpe_ips" {
-  description = "Map of VPEG name to reserved IP list. Each entry contains the private IP objects bound to each subnet zone."
-  value       = module.backup_recovery.brs_vpe_ips
+  description = "Map of VPEG name to reserved IP list. Each entry contains the private IP addresses bound to each subnet zone."
+  value = var.create_source_cluster_brs_vpe_gateway ? {
+    (local.brs_vpe_name) = ibm_is_virtual_endpoint_gateway.brs_vpe[0].ips[*].address
+  } : {}
 }

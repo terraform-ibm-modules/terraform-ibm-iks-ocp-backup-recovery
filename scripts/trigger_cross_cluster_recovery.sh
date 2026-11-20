@@ -34,6 +34,21 @@ BINARIES_PATH=${10:-/tmp}
 
 export PATH="${PATH}:${BINARIES_PATH}"
 
+# ---------------------------------------------------------------------------
+# Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
+# Set VERBOSE=0 once the script is known-good to reduce Terraform output noise.
+# ---------------------------------------------------------------------------
+VERBOSE="${VERBOSE:-1}"
+
+# vlog LABEL JSON — print label + pretty-printed JSON to stderr when verbose.
+vlog() {
+  [[ "${VERBOSE}" == "1" ]] || return 0
+  local label="$1"
+  local body="$2"
+  echo "[VERBOSE] ${label}:" >&2
+  echo "${body}" | jq '.' 2>/dev/null >&2 || echo "${body}" >&2
+}
+
 echo "=== Cross-Cluster Recovery ===" >&2
 echo "Source PG ID: ${SOURCE_PG_ID}" >&2
 echo "Target Source ID: ${TARGET_SOURCE_ID}" >&2

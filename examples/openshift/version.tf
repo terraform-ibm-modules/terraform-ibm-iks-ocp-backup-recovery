@@ -5,19 +5,19 @@ terraform {
     ibm = {
       source = "IBM-Cloud/ibm"
       # Pin to lowest supported provider version to test backwards compatibility
-      version = "2.7.0"
+      version = "2.10.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "3.0.1"
+      version = ">= 3.0.1, < 4.0.0"
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "3.1.0"
+      version = ">= 3.1.0, < 4.0.0"
     }
     time = {
       source  = "hashicorp/time"
-      version = "0.13.1"
+      version = ">= 0.12.1, < 1.0.0"
     }
   }
 }

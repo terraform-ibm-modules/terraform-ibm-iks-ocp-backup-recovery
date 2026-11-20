@@ -102,7 +102,7 @@ variable "cluster_config_endpoint_type" {
 # VPE Gateway configuration (VPC clusters only)
 ##############################################################################
 
-variable "create_brs_vpe" {
+variable "create_source_cluster_brs_vpe_gateway" {
   description = "Set to true to create a Virtual Private Endpoint Gateway (VPEG) in the cluster VPC, routing DSC→BRS traffic over the IBM private backbone. Only effective for VPC clusters — ignored when classic_cluster is true."
   type        = bool
   default     = true
@@ -122,5 +122,16 @@ variable "brs_endpoint_type" {
   validation {
     condition     = contains(["public", "private"], var.brs_endpoint_type)
     error_message = "`brs_endpoint_type` must be 'public' or 'private'."
+  }
+}
+
+variable "datamover_service_type" {
+  description = "Service type used for datamover communication during source registration. Allowed values are 'kHostPort', 'kNodePort', 'kLoadBalancer' and 'kClusterIp'."
+  type        = string
+  default     = "kNodePort"
+
+  validation {
+    condition     = contains(["kHostPort", "kNodePort", "kLoadBalancer", "kClusterIp"], var.datamover_service_type)
+    error_message = "`datamover_service_type` must be one of 'kHostPort', 'kNodePort', 'kLoadBalancer', or 'kClusterIp'."
   }
 }

@@ -94,5 +94,10 @@ module "ocp_base" {
   vpc_subnets          = local.cluster_vpc_subnets
   worker_pools         = local.worker_pools
   access_tags          = []
-  depends_on           = [time_sleep.wait_for_subnet]
+  addons = {
+    vpc-block-csi-driver = {
+      version = "5.2"
+    }
+  }
+  depends_on = [time_sleep.wait_for_subnet]
 }
