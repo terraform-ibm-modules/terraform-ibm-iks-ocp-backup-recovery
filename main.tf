@@ -928,6 +928,50 @@ resource "terraform_data" "wait_for_source_discovery" {
   }
 }
 
+##############################################################################
+# Patch Datamover Tolerations (Stopgap for Tainted Nodes)
+##############################################################################
+
+# BRS does not currently expose tolerations in its source registration API.
+# If a cluster has tainted worker nodes (e.g. GPU, database, or dedicated pools),
+# cohesity-dm cannot schedule there by default, preventing backups of workloads
+# on those nodes. This resource patches the cohesity-dm DaemonSet with user-defined
+# tolerations once BRS has deployed the agent and discovery completes.
+resource "terraform_data" "patch_datamover_tolerations" {
+  count = local.stage_brs_registration && length(var.datamover_tolerations) > 0 ? 1 : 0
+
+  depends_on = [
+    terraform_data.wait_for_source_discovery,
+    terraform_data.install_dependencies,
+    ibm_backup_recovery_source_registration.source_registration,
+  ]
+
+  triggers_replace = {
+    tolerations_hash = md5(jsonencode(var.datamover_tolerations))
+    source_id        = try(tostring(ibm_backup_recovery_source_registration.source_registration[0].source_id), "")
+  }
+
+  input = {
+    kubeconfig_path  = try(data.ibm_container_cluster_config.cluster_config[0].config_file_path, "")
+    cluster_endpoint = local.cluster_endpoint
+    token            = try(chomp(kubernetes_secret_v1.brsagent_token[0].data["token"]), chomp(var.brsagent_token), "")
+    tolerations_json = jsonencode(var.datamover_tolerations)
+    binaries_path    = local.binaries_path
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = "${path.module}/scripts/patch-datamover-tolerations.sh"
+    environment = {
+      KUBECONFIG       = self.input.kubeconfig_path
+      CLUSTER_ENDPOINT = self.input.cluster_endpoint
+      CLUSTER_TOKEN    = self.input.token
+      TOLERATIONS_JSON = self.input.tolerations_json
+      BINARIES_PATH    = self.input.binaries_path
+    }
+  }
+}
+
 data "ibm_backup_recovery_protection_sources" "sources" {
   count           = local.stage_brs_registration || local.stage_protection_groups ? 1 : 0
   x_ibm_tenant_id = var.brs_tenant_id
@@ -937,7 +981,10 @@ data "ibm_backup_recovery_protection_sources" "sources" {
   endpoint_type   = var.brs_endpoint_type
   service_name    = var.brs_service_type
 
-  depends_on = [terraform_data.wait_for_source_discovery]
+  depends_on = [
+    terraform_data.wait_for_source_discovery,
+    terraform_data.patch_datamover_tolerations,
+  ]
 }
 
 ##############################################################################

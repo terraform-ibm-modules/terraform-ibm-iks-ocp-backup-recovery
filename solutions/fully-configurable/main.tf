@@ -230,6 +230,7 @@ module "protect_cluster" {
   dsc_namespace             = var.dsc_namespace
   datamover_service_type    = var.datamover_service_type
   datamover_hostport_number = var.datamover_hostport_number
+  datamover_tolerations     = var.datamover_tolerations
   registration_images       = var.registration_images
   enable_auto_protect       = var.enable_auto_protect
 
@@ -572,6 +573,7 @@ module "target_cluster_registration" {
   dsc_namespace             = var.dsc_namespace
   datamover_service_type    = var.datamover_service_type
   datamover_hostport_number = var.datamover_hostport_number
+  datamover_tolerations     = var.datamover_tolerations
   registration_images       = var.registration_images
   enable_auto_protect       = false # Don't auto-protect target cluster
 

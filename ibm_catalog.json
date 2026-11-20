@@ -505,6 +505,20 @@
               "display_name": "Datamover HostPort Number"
             },
             {
+              "key": "datamover_tolerations",
+              "display_name": "Datamover Tolerations",
+              "custom_config": {
+                "type": "code_editor",
+                "grouping": "deployment",
+                "original_grouping": "deployment",
+                "config_constraints": {
+                  "supportedLanguages": [
+                    "hcl"
+                  ]
+                }
+              }
+            },
+            {
               "key": "registration_images",
               "display_name": "Registration Images",
               "custom_config": {

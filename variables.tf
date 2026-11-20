@@ -641,6 +641,18 @@ variable "datamover_hostport_number" {
   }
 }
 
+variable "datamover_tolerations" {
+  description = "Custom tolerations to apply to the cohesity-dm Data Mover DaemonSet deployed by BRS. This allows the data mover to schedule onto tainted worker nodes (e.g., GPU pools, database pools, dedicated pools) so that workloads on those nodes can be backed up. Defaults to an empty list `[]` (no patching). To tolerate all taints across the cluster, set to `[{ operator = \"Exists\" }]`."
+  type = list(object({
+    key      = optional(string)
+    operator = optional(string, "Equal")
+    value    = optional(string)
+    effect   = optional(string)
+  }))
+  default  = []
+  nullable = false
+}
+
 variable "registration_images" {
   description = "Optional container image overrides for backup and recovery registration. If null (default), BRS uses its native default container images. For private or air-gapped registries, specify custom image locations."
   type = object({
