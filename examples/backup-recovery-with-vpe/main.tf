@@ -276,8 +276,6 @@ module "backup_recovery" {
       objects     = [{ name = var.workload_namespace }]
     }
   ]
-
-  depends_on = [time_sleep.wait_operators]
 }
 
 ##############################################################################
