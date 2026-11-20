@@ -642,14 +642,14 @@ variable "datamover_hostport_number" {
 }
 
 variable "datamover_tolerations" {
-  description = "Custom tolerations to apply to the cohesity-dm Data Mover DaemonSet deployed by BRS. This allows the data mover to schedule onto tainted worker nodes (e.g., GPU pools, database pools, dedicated pools) so that workloads on those nodes can be backed up. Defaults to an empty list `[]` (no patching). To tolerate all taints across the cluster, set to `[{ operator = \"Exists\" }]`."
+  description = "Custom tolerations to apply to the cohesity-dm Data Mover DaemonSet deployed by BRS. This allows the data mover to schedule onto tainted worker nodes (e.g., GPU pools, database pools, dedicated pools) so that workloads on those nodes can be backed up. Defaults to `[{ operator = \"Exists\" }]` to tolerate all taints across the cluster. Set to `[]` to disable patching."
   type = list(object({
     key      = optional(string)
     operator = optional(string, "Equal")
     value    = optional(string)
     effect   = optional(string)
   }))
-  default  = []
+  default  = [{ operator = "Exists" }]
   nullable = false
 }
 
