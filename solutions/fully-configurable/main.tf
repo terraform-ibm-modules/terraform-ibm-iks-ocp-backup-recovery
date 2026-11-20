@@ -181,6 +181,10 @@ module "source_cluster_prep" {
   brs_instance_guid      = module.brs_instance.brs_instance_guid
   brs_instance_crn       = module.brs_instance.brs_instance_crn
   brs_registration_token = module.brs_instance.registration_token
+
+  # Wait for addon upgrade to complete before DSC Helm install — the DSC PVC
+  # uses ibmc-vpc-block-metro-5iops-tier which requires the CSI driver to be ready.
+  depends_on = [ibm_container_addons.source_cluster_addons]
 }
 
 # Stage 2: Source Cluster BRS Registration, Protection Groups & Operations (BRS Account)
@@ -520,6 +524,10 @@ module "target_cluster_prep" {
   brs_instance_guid      = module.brs_instance.brs_instance_guid
   brs_instance_crn       = module.brs_instance.brs_instance_crn
   brs_registration_token = module.brs_target_connection[0].registration_token
+
+  depends_on = [
+    data.ibm_container_cluster_config.target_cluster_config
+  ]
 }
 
 # Stage 2 (Target): Register target cluster with BRS (BRS Account)

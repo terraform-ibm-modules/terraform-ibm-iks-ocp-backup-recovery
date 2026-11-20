@@ -41,39 +41,13 @@ locals {
 ##############################################################################
 
 locals {
-  # Look up connector info matching cluster's connection environment type from BRS metadata
-  discovered_k8s_connector = try(
-    [
-      for conn in data.ibm_backup_recovery_connectors_metadata.connectors_metadata[0].k8s_connector_info_list :
-      conn if conn.k8s_platform_type == var.connection_env_type
-    ][0],
-    null
-  )
-  discovered_helm_ref = try(local.discovered_k8s_connector.helm_chart_oci_ref[0], null)
-
-  # Helm chart URI parsing — if var.dsc_chart_uri is explicitly provided, parse it;
-  # otherwise derive chart name, version, and OCI registry location from BRS connectors metadata,
-  # falling back to default BRS OCI registry reference if metadata is not yet available at plan time.
-  uri_no_digest      = var.dsc_chart_uri != null ? split("@", var.dsc_chart_uri)[0] : null
-  chart_with_version = local.uri_no_digest != null ? element(split("/", local.uri_no_digest), -1) : null
-
-  dsc_chart = (
-    var.dsc_chart_uri != null
-    ? split(":", local.chart_with_version)[0]
-    : "brs-ds-connector-chart"
-  )
-
-  dsc_chart_version = (
-    var.dsc_chart_uri != null
-    ? replace(local.chart_with_version, "${local.dsc_chart}:", "")
-    : coalesce(try(local.discovered_helm_ref.tag, null), "7.3.13-release-20261002-46146703")
-  )
-
-  dsc_chart_location = (
-    var.dsc_chart_uri != null
-    ? replace(local.uri_no_digest, "/${local.chart_with_version}", "")
-    : "oci://icr.io/brs-charts"
-  )
+  # Helm chart URI parsing — splits the OCI URI into its chart name, version,
+  # and registry location components used by the helm_release resource.
+  uri_no_digest      = split("@", var.dsc_chart_uri)[0]
+  chart_with_version = element(split("/", local.uri_no_digest), -1)
+  dsc_chart          = split(":", local.chart_with_version)[0]
+  dsc_chart_version  = replace(local.chart_with_version, "${local.dsc_chart}:", "")
+  dsc_chart_location = replace(local.uri_no_digest, "/${local.chart_with_version}", "")
 
   # Resolved storage class for the DSC PVC — used in both the Helm values and
   # the diagnostics script so the expression is not repeated.
@@ -559,16 +533,8 @@ resource "terraform_data" "purge_stale_dsc_pvc" {
 }
 
 ##############################################################################
-# Data Source Connector Metadata & Helm Release
+# Data Source Connector Helm Release
 ##############################################################################
-
-data "ibm_backup_recovery_connectors_metadata" "connectors_metadata" {
-  count           = local.stage_dsc_helm_deployment && var.dsc_chart_uri == null ? 1 : 0
-  x_ibm_tenant_id = var.brs_tenant_id
-  endpoint_type   = var.brs_endpoint_type
-  instance_id     = var.brs_instance_guid
-  region          = local.brs_instance_region
-}
 
 resource "helm_release" "data_source_connector" {
   count = local.stage_dsc_helm_deployment ? 1 : 0
