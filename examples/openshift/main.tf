@@ -290,6 +290,9 @@ module "backup_recover_protect_ocp" {
   dsc_storage_class     = var.dsc_storage_class
   dsc_worker_pool_zones = 1
 
+  # Use kNodePort service type to validate nodeport datamover communication
+  datamover_service_type = var.datamover_service_type
+
   # ---- Backup Policy ----
   auto_protect_policy_name = "${var.prefix}-retention"
 
