@@ -38,6 +38,21 @@ BINARIES_PATH=${8:-/tmp}
 
 export PATH="${PATH}:${BINARIES_PATH}"
 
+# ---------------------------------------------------------------------------
+# Verbose logging — all raw API responses are emitted to stderr when VERBOSE=1.
+# Set VERBOSE=0 once the script is known-good to reduce Terraform output noise.
+# ---------------------------------------------------------------------------
+VERBOSE="${VERBOSE:-1}"
+
+# vlog LABEL JSON — print label + pretty-printed JSON to stderr when verbose.
+vlog() {
+  [[ "${VERBOSE}" == "1" ]] || return 0
+  local label="$1"
+  local body="$2"
+  echo "[VERBOSE] ${label}:" >&2
+  echo "${body}" | jq '.' 2>/dev/null >&2 || echo "${body}" >&2
+}
+
 call_api() {
   local method=$1
   local path=$2
