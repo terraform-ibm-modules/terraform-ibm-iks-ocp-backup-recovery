@@ -1,0 +1,47 @@
+##############################################################################
+# Outputs
+##############################################################################
+
+output "cluster_id" {
+  description = "ID of the OCP cluster being protected."
+  value       = module.ocp_base.cluster_id
+}
+
+output "source_registration_id" {
+  description = "ID of the registered OpenShift source."
+  value       = module.backup_recover_protect_ocp.source_registration_id
+  sensitive   = true
+}
+
+output "brs_instance_crn" {
+  description = "CRN of the Backup & Recovery Service instance."
+  value       = module.backup_recover_protect_ocp.brs_instance_crn
+}
+
+output "brs_instance_guid" {
+  description = "GUID of the Backup & Recovery Service instance."
+  value       = module.backup_recover_protect_ocp.brs_instance_guid
+}
+
+output "brs_instance_url" {
+  description = "Public API endpoint URL for the BRS instance."
+  value       = module.backup_recover_protect_ocp.brs_instance_url
+}
+
+output "brs_private_hostname" {
+  description = "BRS private hostname that should resolve to the VPEG reserved IP inside the cluster VPC. Run 'getent hosts <value>' from inside a DSC pod to verify VPE routing."
+  value       = "${module.backup_recover_protect_ocp.brs_instance_guid}.private.${local.brs_region}.backup-recovery.cloud.ibm.com"
+}
+
+output "brs_vpe_ips" {
+  description = "Map of VPEG name → reserved IP list."
+  value = {
+    (local.brs_vpe_name) = ibm_is_virtual_endpoint_gateway.brs_vpe.ips[*].address
+  }
+}
+
+output "protection_group_ids" {
+  description = "Map of protection group names to their IDs."
+  value       = module.backup_recover_protect_ocp.protection_group_ids
+  sensitive   = true
+}
