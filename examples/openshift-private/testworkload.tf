@@ -1,5 +1,5 @@
 ##############################################################################
-# Test Workload — brs-testing-10g
+# Test Workload — <prefix>-demo-ns
 #
 # Creates the namespace + StatefulSet + headless Service that the protection
 # group will back up. The StatefulSet uses a 20 Gi VPC Block PVC so that
@@ -8,7 +8,7 @@
 # The image is pulled from icr.io, which is reachable privately, so no public
 # internet access is required.
 #
-# The namespace name ("brs-testing-10g") is used as the object name in the
+# The namespace name ("<prefix>-demo-ns") is used as the object name in the
 # protection group, so BRS knows exactly which namespace to protect.
 ##############################################################################
 
@@ -16,7 +16,7 @@
 
 resource "kubernetes_namespace_v1" "brs_testing" {
   metadata {
-    name = var.workload_namespace
+    name = "${var.prefix}-demo-ns"
     labels = {
       "app.kubernetes.io/managed-by" = "terraform"
       "backup-enabled"               = "true"

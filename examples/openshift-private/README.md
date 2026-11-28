@@ -22,7 +22,7 @@ This example provisions the following:
 - A new Backup & Recovery instance, or an existing one when `existing_brs_instance_crn` is set.
 - A Virtual Private Endpoint gateway so that the Data Source Connector reaches BRS over the IBM private backbone. It is
   created **before** the connector is installed, because there is no other path to BRS.
-- The Data Source Connector, source registration, a test workload (`brs-testing-10g` with a 20 Gi block volume) and a
+- The Data Source Connector, source registration, a test workload (`<prefix>-demo-ns` with a 20 Gi block volume) and a
   protection group for that namespace.
 
 ## Prerequisites

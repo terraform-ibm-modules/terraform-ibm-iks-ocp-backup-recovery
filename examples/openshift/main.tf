@@ -296,7 +296,31 @@ module "backup_recover_protect_ocp" {
   # ---- Backup Policy ----
   auto_protect_policy_name = "${var.prefix}-retention"
 
-  protection_groups = []
+  # Protect the test workload namespace. Referencing the namespace resource (not
+  # the literal string) ensures it exists before BRS source discovery resolves
+  # the object name to an ID. policy_name must match a policy created by
+  # module.brs_instance above.
+  protection_groups = [
+    {
+      name        = "${var.prefix}-pg"
+      description = "Backup test workloads"
+      policy_name = "${var.prefix}-retention"
+      priority    = "kHigh"
+
+      enable_indexing       = true
+      leverage_csi_snapshot = true
+      non_snapshot_backup   = false
+      volume_backup_failure = false
+
+      objects = [
+        {
+          name                        = kubernetes_namespace_v1.brs_testing.metadata[0].name
+          backup_only_pvc             = false
+          fail_backup_on_hook_failure = false
+        }
+      ]
+    }
+  ]
 }
 
 ##############################################################################

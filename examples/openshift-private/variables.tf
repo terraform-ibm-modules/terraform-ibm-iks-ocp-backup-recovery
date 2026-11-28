@@ -96,9 +96,3 @@ variable "datamover_service_type" {
     error_message = "`datamover_service_type` must be one of 'kHostPort', 'kNodePort', 'kLoadBalancer', or 'kClusterIp'."
   }
 }
-
-variable "workload_namespace" {
-  type        = string
-  description = "Kubernetes namespace to create for the test workload. Also used as the BRS protection-group object name."
-  default     = "brs-testing-10g"
-}
